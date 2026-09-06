@@ -73,6 +73,9 @@ final class AmbientRuntime {
     }
     func activate(automatic: Bool = false) {
         guard !stopped, !isBlocked else { return }
+        // Recheck after any asynchronous media query. Never cover a file chooser,
+        // an AirDrop recipient picker or an agenda permission prompt automatically.
+        if automatic && model.notch?.preventsAutomaticStandby == true { rescheduleIdle(); return }
         idleTimer?.invalidate(); idleTimer = nil
         mediaSerial += 1; mediaCheck?.cancel(); mediaCheck = nil
         model.automaticActivationStatus = automatic ? "Presentación automática" : "Presentación manual"
@@ -135,6 +138,10 @@ final class AmbientRuntime {
         if window.isVisible {
             if NSApp.isActive || model.settingsOpen || window.attachedSheet != nil { return }
             dismiss(); return
+        }
+        if model.notch?.preventsAutomaticStandby == true {
+            model.automaticActivationStatus = "En espera · notch en uso"
+            scheduleIdleTimer(after: 30); return
         }
         let now = ProcessInfo.processInfo.systemUptime
         let idle = Self.systemIdleSeconds()
