@@ -3,6 +3,7 @@ import Foundation
 enum LyricsResult: Sendable {
     case available(LyricsPayload)
     case message(String)
+    case unavailable(String)
     case retry(String)
 }
 
@@ -69,7 +70,7 @@ actor LyricsRepository {
               track.duration.isFinite, track.duration >= 1, track.duration <= 3600 else {
             return .message("Faltan datos de esta grabación para buscar su letra.")
         }
-        if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .message("Sin letra sincronizada para esta versión. Puedes importar un .lrc.") }
+        if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable("Esta canción no tiene letra sincronizada disponible.") }
         do {
             while busy { try await Task.sleep(nanoseconds: 100_000_000); try Task.checkCancellation() }
             busy = true
@@ -82,7 +83,7 @@ actor LyricsRepository {
             guard reply.status == 200 || reply.status == 404 else { return .retry("El proveedor de letras no respondió. Se reintentará.") }
             var records: [RemoteLyrics] = []
             if reply.status == 200 { records = [try JSONDecoder().decode(RemoteLyrics.self, from: reply.data)] }
-            if let record = records.first, record.matches(track), record.instrumental == true { return .message("Pista instrumental.") }
+            if let record = records.first, record.matches(track), record.instrumental == true { return .unavailable("Esta canción es instrumental y no tiene letra.") }
             if let record = records.first, record.matches(track), let payload = payload(record) {
                 save(payload, name: name); return .available(payload)
             }
@@ -106,7 +107,7 @@ actor LyricsRepository {
                 if let payload = payload(record) { save(payload, name: name); return .available(payload) }
             }
             rememberMiss(name)
-            return .message("Sin letra sincronizada que coincida con esta grabación. Puedes importar un .lrc.")
+            return .unavailable("Esta canción no tiene letra sincronizada disponible.")
         } catch is CancellationError { return .message("") }
         catch { return .retry("Letras temporalmente sin conexión. Se reintentará automáticamente.") }
     }

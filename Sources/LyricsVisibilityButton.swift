@@ -7,9 +7,9 @@ struct LyricsVisibilityButton: View {
     @Environment(\.colorScheme) private var scheme
     @State private var hovering = false
     var body: some View {
-        let selected = model.musicShowsLyrics
+        let selected = model.visibleLyrics
         let foreground: Color = selected ? (scheme == .dark ? .black : .white) : (scheme == .dark ? .white : .black)
-        Button { model.musicShowsLyrics.toggle() } label: {
+        Button { model.toggleLyrics() } label: {
             Image(systemName: "text.quote")
                 .font(.system(size: 16, weight: selected ? .semibold : .regular))
                 .foregroundStyle(foreground.opacity(selected ? 1 : 0.72))

@@ -35,7 +35,7 @@ exec > "$BUILD/build.log" 2>&1
 mkdir -p "$BUILD/tmp" "$ROOT/dist"; export TMPDIR="$BUILD/tmp/"
 export ORUVI_BUILD_NUMBER="${ORUVI_BUILD_NUMBER:-$(date +%s)}"
 [[ "$ORUVI_BUILD_NUMBER" =~ ^[0-9]{1,10}$ ]] || { echo 'Número de compilación no válido.'; exit 1; }
-REPOSITORY="${ORUVI_REPOSITORY:-}"
+REPOSITORY="${ORUVI_REPOSITORY:-kaizentrick/oruvi}"
 if [[ -n "$REPOSITORY" ]]; then [[ "$REPOSITORY" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$ && "$REPOSITORY" != */.. && "$REPOSITORY" != */. ]] || exit 1; fi
 [[ -s Resources/UpdatePublicKey.pub && -s Resources/Luma.icns ]]
 PUBLIC_KEY="$(tr -d '\r\n' < Resources/UpdatePublicKey.pub)"
@@ -50,6 +50,10 @@ BASE=(-j 1 -disable-bridging-pch -warnings-as-errors -swift-version 5 -parse-as-
 printf '\n[1/5] Puente Apple Events\n'
 xcrun clang -fobjc-arc -fmodules -O2 -arch arm64 -isysroot "$SDK" -mmacosx-version-min=26.0 -c Sources/MusicBridge.m -o "$BUILD/MusicBridge.o"
 [[ -s "$BUILD/MusicBridge.o" ]]
+xcrun clang -fobjc-arc -fmodules -O2 -arch arm64 -isysroot "$SDK" -mmacosx-version-min=26.0 -c Sources/SpotifyBridge.m -o "$BUILD/SpotifyBridge.o"
+[[ -s "$BUILD/SpotifyBridge.o" ]]
+xcrun libtool -static -o "$BUILD/libOruviPlayers.a" "$BUILD/MusicBridge.o" "$BUILD/SpotifyBridge.o"
+[[ -s "$BUILD/libOruviPlayers.a" ]]
 prepare_app() {
     local app="$1"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
@@ -74,14 +78,14 @@ for source in Sources/*.swift; do ALL+=("$source"); [[ "$source" == Sources/Luma
 if [[ -f Sources/LumaQA.swift && "${SKIP_VERIFICATION:-0}" != 1 ]]; then
     printf '\n[2/5] Verificación de desarrollo\n'
     QA_APP="$BUILD/qa-app/Oruvi.app"; prepare_app "$QA_APP"
-    xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${ALL[@]}" "$BUILD/MusicBridge.o" "${FRAMEWORKS[@]}" -o "$QA_APP/Contents/MacOS/Oruvi"
+    xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${ALL[@]}" "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$QA_APP/Contents/MacOS/Oruvi"
     codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$QA_APP"
     "$QA_APP/Contents/MacOS/Oruvi" --smoke-test --qa-output "$BUILD/qa"
 fi
 if [[ "${QA_ONLY:-0}" == 1 ]]; then echo 'Verificación terminada.' >&3; exit 0; fi
 printf '\n[3/5] Aplicación optimizada\n'
 APP="$BUILD/stage/Oruvi.app"; prepare_app "$APP"
-xcrun swiftc "${BASE[@]}" -O -whole-module-optimization "${RELEASE[@]}" "$BUILD/MusicBridge.o" "${FRAMEWORKS[@]}" -o "$APP/Contents/MacOS/Oruvi"
+xcrun swiftc "${BASE[@]}" -O -whole-module-optimization "${RELEASE[@]}" "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$APP/Contents/MacOS/Oruvi"
 [[ -s "$APP/Contents/MacOS/Oruvi" ]]
 plutil -lint "$APP/Contents/Info.plist"
 codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$APP"

@@ -72,10 +72,7 @@ final class BoundedRequest: NSObject, URLSessionDataDelegate, @unchecked Sendabl
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         guard let original = task.originalRequest?.url, let target = request.url,
-              target.scheme == "https", target.user == nil, target.password == nil,
-              target.port == nil || target.port == 443,
-              let oldHost = original.host?.lowercased(), let newHost = target.host?.lowercased(),
-              oldHost == newHost || (oldHost.hasSuffix(".mzstatic.com") && newHost.hasSuffix(".mzstatic.com")) else {
+              ArtworkURLPolicy.redirect(from: original, to: target) else {
             completionHandler(nil); finish(.failure(RemoteError.invalidURL), cancelTask: true); return
         }
         completionHandler(request)

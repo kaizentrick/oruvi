@@ -77,6 +77,7 @@ final class AmbientRuntime {
         mediaSerial += 1; mediaCheck?.cancel(); mediaCheck = nil
         model.automaticActivationStatus = automatic ? "Presentación automática" : "Presentación manual"
         model.automaticSession = automatic
+        model.notch?.hideForPresentation()
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? window.screen ?? NSScreen.main
         if let screen {
             window.setFrame(screen.frame, display: true)
@@ -118,6 +119,7 @@ final class AmbientRuntime {
         lastDismissed = ProcessInfo.processInfo.systemUptime
         model.automaticSession = false
         model.refreshVisibility()
+        model.notch?.resumeDesktop()
         refreshPhrases(); rescheduleIdle()
     }
     func rescheduleIdle() {

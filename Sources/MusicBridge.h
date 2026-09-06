@@ -7,4 +7,8 @@ NSDictionary<NSString *, id> *LumaMusicCommand(NSString *command, double positio
 NSData * _Nullable LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle);
 void LumaResetMusicBridge(void);
 BOOL LumaValidateMusicBindings(void);
+NSDictionary<NSString *, id> *OruviReadSpotifySnapshot(void);
+NSDictionary<NSString *, id> *OruviSpotifyCommand(NSString *command, double position);
+void OruviResetSpotifyBridge(void);
+BOOL OruviValidateSpotifyBindings(void);
 NS_ASSUME_NONNULL_END

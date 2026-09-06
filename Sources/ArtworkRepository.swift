@@ -67,6 +67,15 @@ actor ArtworkRepository {
         if let data = try? JSONEncoder().encode(payload) { try? data.write(to: file, options: .atomic); prune() }
         return payload
     }
+    /// Spotify supplies its own artwork URL. Never substitute a different catalog image.
+    /// Keep only the current decoded image in the model; Spotify artwork is not persisted here.
+    func loadSpotify(_ text: String) async throws -> ArtworkPayload? {
+        guard let url = ArtworkURLPolicy.spotify(text) else { return nil }
+        try Task.checkCancellation()
+        let result = try await client.get(url, maxBytes: 4_000_000)
+        guard result.status == 200, !result.data.isEmpty else { throw RemoteError.unavailable }
+        return ArtworkPayload(data: result.data, link: nil, savedAt: Date())
+    }
     func clearCache() {
         guard let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
         for file in urls where file.pathExtension == "json" { try? FileManager.default.removeItem(at: file) }

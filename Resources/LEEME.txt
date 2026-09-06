@@ -1,40 +1,58 @@
-ORUVI · 0.6.0
-Apple Silicon · macOS 26 o posterior
+ORUVI 0.7.0
+Notch y Standby para macOS
+
+REQUISITOS
+Mac con Apple Silicon (M1 o posterior), macOS 26 o posterior.
+Apple Music o Spotify de escritorio. No requiere Xcode para instalar.
 
 INSTALAR
-Cierra la copia anterior. Arrastra Oruvi a Applications y ábrela desde Aplicaciones.
-No se sustituye la copia instalada al generar este DMG.
+Arrastra Oruvi.app a Applications y ábrela desde Aplicaciones.
+Cierra la versión anterior antes de reemplazarla.
+Oruvi permanece en la barra superior y presenta su notch en el escritorio.
+Pasa el puntero sobre el notch para ver los controles.
 
-LETRAS Y DISEÑO
-El botón de comillas tiene estado apagado transparente y encendido de alto contraste.
-La portada conserva su tamaño al mostrar/ocultar letras. En pantallas compactas,
-portada y letra se alternan dentro del mismo espacio; en pantallas amplias el reproductor
-se desplaza y la letra aparece a su lado.
-SF Pro, SF Pro Rounded, SF Mono y New York se obtienen del sistema, sin archivos de fuentes.
+REPRODUCIR
+Abre el reproductor desde el botón de música. macOS puede solicitar
+Automatización para Apple Music y Spotify. Autoriza solo las apps que uses.
+En Ajustes puedes elegir Automático, Apple Music o Spotify.
+No se leen contraseñas ni tokens, ni se cambia tu biblioteca.
+Spotify debe estar instalado; no es una integración con su reproductor web.
+
+STANDBY
+Actívalo desde el notch o el menú, o espera el tiempo de inactividad configurado.
+El notch se oculta durante Standby y regresa al salir con Esc.
+No se reemplaza la pantalla de bloqueo. Elige un tiempo de inactividad menor
+que el reposo de pantalla de macOS para verlo antes de que la pantalla duerma.
+La protección conservadora puede esperar mientras un navegador esté al frente;
+se puede ajustar sin desactivar toda la protección multimedia.
+
+LETRAS Y MALLA
+Sin letra, el disco permanece centrado. El botón de comillas muestra un aviso
+temporal si no hay una letra disponible. Los fallos de red se indican aparte.
+Las letras provienen de LRCLIB o LRC local y se sincronizan por línea.
+La malla Aurora es la predeterminada; los colores pueden seguir la portada.
+No hay grabación de audio ni análisis del ritmo.
 
 ACTUALIZACIONES
-Este instalador incorpora Sparkle y una clave pública Ed25519. Si aún no tiene un
-repositorio configurado, no intenta conectarse a un destino inexistente.
-Después de crear y publicar el repositorio con scripts/publish-github.sh,
-guarda propietario/repositorio en Ajustes > Actualizaciones.
-Las versiones de GitHub Actions incluirán el destino automáticamente.
-Se verifican firmas del feed y del instalador; un commit no compilado no se instala.
-La búsqueda automática se realiza al iniciar y aproximadamente cada hora.
-No se fuerza un reinicio durante la reproducción.
+Utiliza Buscar actualizaciones en el menú de Oruvi. La distribución de GitHub
+publica un feed y un DMG firmados con Ed25519. No se instala cada commit aislado:
+solo releases terminadas y verificadas.
+
+SEGURIDAD
+Esta compilación local NO está notarizada por Apple. macOS puede impedir el
+primer inicio. Comprueba el origen y, solo si confías en esta copia, autoriza
+esta aplicación desde Privacidad y seguridad > Abrir igualmente.
+No desactives Gatekeeper ni SIP. La firma Ed25519 no sustituye Developer ID.
 
 PRIVACIDAD
-El actualizador consulta GitHub, que recibe la solicitud y la IP. No envía datos de Música.
-Las letras opcionales usan LRCLIB y se sincronizan por línea, no son las letras oficiales
-de Apple. La búsqueda externa de portadas es opcional. Puedes desactivar ambos proveedores.
-No se graba audio ni se leen pestañas o historial.
-
-DISTRIBUCIÓN
-Compilación local ad hoc, no notarizada. No desactives Gatekeeper ni SIP.
-La firma de actualizaciones es distinta de Developer ID y no implica aprobación de Apple.
-La actualización remota requiere una release pública real y validación posterior.
+Los proveedores de letras e imágenes reciben metadatos necesarios y tu IP.
+Las búsquedas opcionales se configuran en Ajustes. Oruvi no captura pantalla,
+micrófono, cámara, pestañas ni historial. No hay telemetría propia.
+El consumo de batería y la sincronía auditiva requieren validación en cada Mac;
+no se promete consumo cero ni compatibilidad universal con todas las canciones.
 
 ATAJOS
-Esc: ocultar · 1/2/3 o flechas: cambiar display · Espacio: reproducir/pausar
-Cmd+,: Ajustes · Cmd+Q: salir
+Esc: volver al escritorio. 1 / 2 / 3: cambiar vista. Flechas: anterior/siguiente vista.
+Espacio: reproducir/pausar. Cmd+,: Ajustes. Cmd+Q: salir.
 
-Oruvi es independiente de Apple.
+Oruvi es una aplicación independiente de Apple y Spotify.

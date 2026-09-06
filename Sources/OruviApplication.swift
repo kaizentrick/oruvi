@@ -16,6 +16,7 @@ struct OruviApplication {
 final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var window: StandbyWindow?
     private var runtime: AmbientRuntime?
+    private var notch: NotchController?
     private var status: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -45,6 +46,9 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         runtime = controller
         installStatusItem()
         model.start()
+        let notchController = NotchController(model: model)
+        notch = notchController
+        notchController.start()
         OruviUpdates.shared.startIfConfigured()
         if LumaEnvironment.isTesting {
             controller.activate()
@@ -52,7 +56,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
             LumaQA.run(model: model, runtime: controller, window: viewWindow)
             #endif
         } else {
-            controller.launchRespectingMedia()
+            controller.rescheduleIdle() // Desktop notch first; Standby only on demand or inactivity.
         }
     }
     private func installStatusItem() {
@@ -86,6 +90,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
             entry.state = model.layout == mode ? .on : .off
         }
         menu.addItem(.separator())
+        let notchItem = item("Mostrar notch", #selector(toggleNotch))
+        notchItem.state = model.notchEnabled ? .on : .off
         let automatic = item("Activación por inactividad", #selector(toggleAutomatic))
         automatic.state = model.idleEnabled ? .on : .off
         _ = item(model.automaticActivationStatus, nil, enabled: false)
@@ -116,6 +122,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         guard LayoutMode.allCases.indices.contains(sender.tag) else { return }
         StandbyModel.shared.selectLayout(LayoutMode.allCases[sender.tag]); showPresentation()
     }
+    @objc private func toggleNotch() { StandbyModel.shared.notchEnabled.toggle() }
     @objc private func toggleAutomatic() { StandbyModel.shared.idleEnabled.toggle() }
     @objc private func pauseAutomatic() { runtime?.pauseAutomatic(minutes: StandbyModel.shared.autoPausedUntil == nil ? 60 : nil) }
     @objc private func checkUpdates() { OruviUpdates.shared.checkNow() }

@@ -10,8 +10,8 @@ struct RGB: Equatable {
     var color: Color { Color(red: r, green: g, blue: b) }
     static let dusk = [RGB(r: 0.16, g: 0.10, b: 0.28), RGB(r: 0.55, g: 0.29, b: 0.47), RGB(r: 0.93, g: 0.49, b: 0.32), RGB(r: 0.27, g: 0.39, b: 0.55)]
     static func fallback(for track: TrackIdentity) -> [RGB] {
-        guard !track.id.isEmpty else { return dusk }
-        let hash = (track.artist + "|" + track.album).utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
+        guard !track.id.isEmpty else { return aurora }
+        let hash = (track.artist + "|" + track.album + "|" + track.title).utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
         let hue = Double(hash % 1000) / 1000
         return [0.0, 0.10, 0.26, 0.56].enumerated().map { index, shift in
             let color = NSColor(calibratedHue: (hue + shift).truncatingRemainder(dividingBy: 1), saturation: 0.42, brightness: [0.30, 0.56, 0.78, 0.46][index], alpha: 1).usingColorSpace(.deviceRGB)!
@@ -34,11 +34,28 @@ final class StandbyModel {
     var artwork: NSImage?
     var artworkLink: URL?
     var artworkStatus = ""
-    var palette = RGB.dusk
+    var palette = RGB.aurora
     var lines: [LyricLine] = []
     var activeLine: Int?
     var lyricStatus = "La letra se buscará al reproducir una canción."
     var lyricSource = ""
+    var lyricsAvailability: LyricsAvailability = .idle
+    var toastMessage: String?
+    var activePlayer: PlayerSource = .music
+    var playerPreference: PlayerPreference = .automatic {
+        didSet { prefs.set(playerPreference.rawValue, forKey: "playerPreference"); if started { connectMusic() } }
+    }
+    var notchEnabled = true {
+        didSet { prefs.set(notchEnabled, forKey: "notchEnabled"); notch?.reconcile() }
+    }
+    var notchVisible = false
+    var notchExpanded = false
+    var playerArtworkURL = ""
+    var meshTheme: MeshTheme = .aurora {
+        didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
+    }
+    var visibleLyrics: Bool { musicShowsLyrics && !lines.isEmpty }
+    var needsPlayback: Bool { (isVisible || notchVisible) && !screenSleeping }
     var connectionStatus = "Conecta Música de este Mac"
     var connected = false
     var demoMode = false
@@ -79,7 +96,7 @@ final class StandbyModel {
     var phraseIndex = 0
     var qaClockText: String?
     var currentPhrase: String { MotivationalPhrases.all[phraseIndex] }
-    var meshPalette: [RGB] { meshFollowsMusic ? palette : RGB.dusk }
+    var meshPalette: [RGB] { meshFollowsMusic && hasTrack ? palette : meshTheme.palette }
     var layout: LayoutMode = .editorial {
         didSet { prefs.set(layout.rawValue, forKey: "layout"); runtime?.refreshPhrases() }
     }
@@ -134,6 +151,8 @@ final class StandbyModel {
     @ObservationIgnored private let prefs = LumaEnvironment.preferences
     @ObservationIgnored private let musicQueue = DispatchQueue(label: "com.kaizentrick.luma.music", qos: .userInitiated)
     @ObservationIgnored private let repository = LyricsRepository()
+    @ObservationIgnored private let playerRouter = PlayerRouter()
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private let artworkQueue = DispatchQueue(label: "com.kaizentrick.luma.artwork", qos: .utility)
     @ObservationIgnored private var recovery = PlaybackRecovery()
     @ObservationIgnored private let artworkRepository = ArtworkRepository()
@@ -154,6 +173,7 @@ final class StandbyModel {
     @ObservationIgnored private var hasAssertion = false
     @ObservationIgnored weak var mainWindow: NSWindow?
     @ObservationIgnored weak var runtime: AmbientRuntime?
+    @ObservationIgnored weak var notch: NotchController?
 
     var policy: RenderPolicy {
         RenderPolicy(visible: isVisible && !screenSleeping, onBattery: onBattery, lowPower: lowPower, hot: hot, reduceMotion: reduceMotion, mode: energyMode)
@@ -171,13 +191,16 @@ final class StandbyModel {
     private init() {
         let defaults = LumaEnvironment.preferences
         defaults.register(defaults: ["twentyFourHour": true, "energyMode": "Automático", "appearance": "Oscuro", "automaticArtwork": true,
-                                     "meshFollowsMusic": true, "idleEnabled": true, "idleMinutes": 5.0, "showPhrases": true, "phraseInterval": 60.0, "avoidMedia": true, "protectBrowsers": true])
+                                     "meshFollowsMusic": true, "idleEnabled": true, "idleMinutes": 5.0, "showPhrases": true, "phraseInterval": 60.0, "avoidMedia": true, "protectBrowsers": true, "notchEnabled": true])
         // One-time migration implements the requested automatic recovery; subsequent opt-outs persist.
         if defaults.integer(forKey: "settingsSchema") < 2 {
             defaults.set(true, forKey: "automaticLyrics")
             defaults.set(true, forKey: "automaticArtwork")
             defaults.set(2, forKey: "settingsSchema")
         }
+        notchEnabled = defaults.bool(forKey: "notchEnabled")
+        playerPreference = PlayerPreference(rawValue: defaults.string(forKey: "playerPreference") ?? "") ?? .automatic
+        meshTheme = MeshTheme(rawValue: defaults.string(forKey: "meshTheme") ?? "") ?? .aurora
         automaticLyrics = defaults.bool(forKey: "automaticLyrics")
         automaticArtwork = defaults.bool(forKey: "automaticArtwork")
         meshFollowsMusic = defaults.bool(forKey: "meshFollowsMusic")
@@ -214,7 +237,7 @@ final class StandbyModel {
     }
     func refreshVisibility() {
         let visible = (mainWindow?.isVisible ?? false) && (mainWindow?.occlusionState.contains(.visible) ?? false) && !(mainWindow?.isMiniaturized ?? false) && !NSApp.isHidden && !screenSleeping
-        if visible != isVisible { isVisible = visible; policyChanged() }
+        if visible != isVisible { isVisible = visible; notch?.reconcile(); policyChanged() }
     }
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping () -> Void) {
         let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in action() }
@@ -234,10 +257,10 @@ final class StandbyModel {
         observe(workspace, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) { [weak self] in self?.refreshPower() }
         observe(standard, .NSProcessInfoPowerStateDidChange) { [weak self] in self?.refreshPower() }
         observe(standard, ProcessInfo.thermalStateDidChangeNotification) { [weak self] in self?.refreshPower() }
-        for name in ["com.apple.Music.playerInfo", "com.apple.iTunes.playerInfo"] {
+        for name in ["com.apple.Music.playerInfo", "com.apple.iTunes.playerInfo", "com.spotify.client.PlaybackStateChanged"] {
             // Best-effort notification hints. Public Apple Events remain the source of truth.
             observe(DistributedNotificationCenter.default(), Notification.Name(name)) { [weak self] in
-                guard let self, self.connected, self.policy.visible, !self.demoMode else { return }
+                guard let self, self.connected, self.needsPlayback, !self.demoMode else { return }
                 let now = ProcessInfo.processInfo.systemUptime
                 guard now - self.lastMusicHint >= 0.25 else { return }
                 self.lastMusicHint = now
@@ -269,8 +292,9 @@ final class StandbyModel {
     private func policyChanged() {
         pollTimer?.invalidate(); pollTimer = nil
         updateDisplayAssertion(); runtime?.refreshPhrases()
-        if policy.visible {
+        if needsPlayback {
             if connected { refreshPlayback() } else { updateCue() }
+            if !policy.visible { cueTimer?.invalidate(); cueTimer = nil; lyricsTask?.cancel(); lyricsTask = nil }
         } else {
             generation += 1
             recovery.invalidate(); isResynchronizing = !demoMode
@@ -286,7 +310,7 @@ final class StandbyModel {
     }
     /// Every reveal, wake and explicit reconnect requests fresh metadata AND position.
     func refreshPlayback() {
-        guard connected, !demoMode, policy.visible else { return }
+        guard connected, !demoMode, needsPlayback else { return }
         generation += 1
         lyricsRetryAt = 0; artworkRetryAt = 0
         recovery.invalidate(); isResynchronizing = true
@@ -296,8 +320,8 @@ final class StandbyModel {
     func connectMusic() {
         demoMode = false; connected = true
         prefs.set(true, forKey: "musicEnabled")
-        connectionStatus = "Conectando con Música…"
-        musicQueue.async { LumaResetMusicBridge() }; refreshPlayback()
+        connectionStatus = "Conectando reproductor…"
+        musicQueue.async { [playerRouter] in playerRouter.reset() }; refreshPlayback()
     }
     func disconnectMusic() {
         generation += 1; connected = false; demoMode = false
@@ -307,7 +331,8 @@ final class StandbyModel {
     }
     private func clearTrack() {
         lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
-        track = .empty; anchor = PlaybackAnchor(); artwork = nil; artworkLink = nil; palette = RGB.dusk
+        track = .empty; anchor = PlaybackAnchor(); artwork = nil; artworkLink = nil; palette = RGB.aurora
+        playerArtworkURL = ""; lyricsAvailability = .idle; toastMessage = nil
         lyricsRetryAt = 0; artworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
         playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
@@ -315,15 +340,15 @@ final class StandbyModel {
         cueTimer?.invalidate(); cueTimer = nil
     }
     private func readMusic() {
-        guard connected, policy.visible, !reading, !demoMode else { return }
+        guard connected, needsPlayback, !reading, !demoMode else { return }
         reading = true; pollTimer?.invalidate(); pollTimer = nil
-        let session = generation
-        musicQueue.async { [weak self] in
-            let snapshot = LumaReadMusicSnapshot()
+        let session = generation, preference = playerPreference, preferred = activePlayer
+        musicQueue.async { [weak self, playerRouter] in
+            let snapshot = playerRouter.snapshot(preference: preference, preferred: preferred)
             DispatchQueue.main.async {
                 guard let self else { return }; self.reading = false
-                guard session == self.generation, self.connected, self.policy.visible else {
-                    if self.connected && self.policy.visible && self.pendingMusicHint {
+                guard session == self.generation, self.connected, self.needsPlayback else {
+                    if self.connected && self.needsPlayback && self.pendingMusicHint {
                         self.pendingMusicHint = false; self.readMusic()
                     } else { self.schedulePoll() }
                     return
@@ -359,11 +384,13 @@ final class StandbyModel {
             connectionStatus = snapshot["message"] as? String ?? "Actualizando canción…"
             updateCue(); return
         }
-        let next = TrackIdentity(id: snapshot["id"] as? String ?? "", title: snapshot["title"] as? String ?? "Sin título", artist: snapshot["artist"] as? String ?? "", album: snapshot["album"] as? String ?? "", duration: (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0)
+        var next = TrackIdentity(id: snapshot["id"] as? String ?? "", title: snapshot["title"] as? String ?? "Sin título", artist: snapshot["artist"] as? String ?? "", album: snapshot["album"] as? String ?? "", duration: (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0)
         guard next.duration.isFinite, next.duration >= 0, next.duration < 86400 else {
             recovery.fail(); isResynchronizing = true; updateCue(); return
         }
-        let changed = !PlaybackRecovery.sameRecording(track, next)
+        let source = PlayerSource(rawValue: snapshot["source"] as? String ?? "") ?? .music
+        next.sourceID = source.rawValue
+        let changed = activePlayer != source || !PlaybackRecovery.sameRecording(track, next)
         let sample = (snapshot["sampleUptime"] as? NSNumber)?.doubleValue ?? ProcessInfo.processInfo.systemUptime
         let position = (snapshot["position"] as? NSNumber)?.doubleValue ?? 0
         let playing = (snapshot["playing"] as? NSNumber)?.boolValue ?? false
@@ -371,11 +398,15 @@ final class StandbyModel {
             recovery.fail(); isResynchronizing = true; updateCue(); return
         }
         // Never clear a valid song for a corrupt/incomplete playback sample.
+        activePlayer = source
+        playerArtworkURL = snapshot["artworkURL"] as? String ?? ""
         if changed {
             lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
             lyricsRetryAt = 0; artworkRetryAt = 0
             track = next; artwork = nil; artworkLink = nil
+            toastTask?.cancel(); toastMessage = nil; lyricsAvailability = .idle
             setPalette(RGB.fallback(for: next)); lines = []; activeLine = nil; lyricSource = ""
+            playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
         }
         if let shuffle = snapshot["shuffle"] as? NSNumber, let repeated = snapshot["repeatMode"] as? NSNumber {
             shuffleEnabled = shuffle.boolValue; repeatMode = min(2, max(0, repeated.intValue)); playbackOptionsAvailable = true
@@ -384,7 +415,7 @@ final class StandbyModel {
         anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing)
         recovery.succeed(at: sample); isResynchronizing = false
         syncRoundTrip = (snapshot["roundTrip"] as? NSNumber)?.doubleValue ?? 0
-        connectionStatus = playing ? "Música · en este Mac" : "Música · en pausa"
+        connectionStatus = activePlayer.name + (playing ? " · reproduciendo" : " · en pausa")
         // Missing resources recover without having to close and reopen the app. Cooldowns
         // prevent a failed or unavailable lyric from being requested on every playback tick.
         let now = ProcessInfo.processInfo.systemUptime
@@ -393,8 +424,9 @@ final class StandbyModel {
         updateCue()
     }
     private func schedulePoll() {
-        guard connected, !demoMode, !reading, let normalInterval = policy.pollingInterval(playing: anchor.playing) else { return }
-        let interval = recovery.waiting ? recovery.retryInterval : normalInterval
+        guard connected, !demoMode, !reading, needsPlayback else { return }
+        let normalInterval = policy.visible ? (policy.pollingInterval(playing: anchor.playing) ?? 5) : (anchor.playing ? (onBattery ? 5.0 : 3.0) : 8.0)
+        let interval = recovery.waiting ? max(policy.visible ? 0.25 : 1.0, recovery.retryInterval) : normalInterval
         pollTimer?.invalidate()
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.readMusic() } }
         timer.tolerance = 0.1; pollTimer = timer; RunLoop.main.add(timer, forMode: .common)
@@ -409,9 +441,9 @@ final class StandbyModel {
             updateCue(); return
         }
         guard connected, position.isFinite else { return }
-        let session = generation, target = min(max(0, position), track.duration > 0 ? track.duration : max(0, position))
-        musicQueue.async { [weak self] in
-            let result = LumaMusicCommand(command, target)
+        let session = generation, source = activePlayer, target = min(max(0, position), track.duration > 0 ? track.duration : max(0, position))
+        musicQueue.async { [weak self, playerRouter] in
+            let result = playerRouter.command(command, position: target, source: source)
             DispatchQueue.main.async {
                 guard let self, session == self.generation, self.connected else { return }
                 if result["status"] as? String == "ok" {
@@ -424,6 +456,7 @@ final class StandbyModel {
         lyricsTask?.cancel(); lyricsTask = nil
         guard !demoMode, hasTrack, policy.visible, !isResynchronizing else { return }
         lines = []; activeLine = nil; lyricSource = ""
+        lyricsAvailability = .loading
         lyricStatus = automaticLyrics ? "Recuperando letra sincronizada…" : "Buscando tu archivo LRC local…"
         let identity = track, allowed = automaticLyrics
         lyricsRetryAt = ProcessInfo.processInfo.systemUptime + 600
@@ -435,9 +468,10 @@ final class StandbyModel {
                 guard !Task.isCancelled, let self, self.track == identity, self.automaticLyrics == allowed, self.policy.visible else { return }
                 switch result {
                 case .available(let payload):
-                    self.lines = payload.lines; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue(); self.lyricsTask = nil; return
-                case .message(let message): self.lyricStatus = message; self.lyricsTask = nil; return
-                case .retry(let message): self.lyricStatus = message
+                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue(); self.lyricsTask = nil; return
+                case .unavailable(let message): self.lyricsAvailability = .unavailable; self.lyricStatus = message; self.lyricsTask = nil; return
+                case .message(let message): self.lyricsAvailability = allowed ? .offline : .disabled; self.lyricStatus = message; self.lyricsTask = nil; return
+                case .retry(let message): self.lyricsAvailability = .offline; self.lyricStatus = message
                 }
             }
             guard !Task.isCancelled, let self, self.track == identity else { return }
@@ -448,22 +482,32 @@ final class StandbyModel {
     }
     func fetchArtwork() {
         artworkTask?.cancel(); artworkTask = nil
-        guard !demoMode, hasTrack, connected, policy.visible, !isResynchronizing else { return }
-        let identity = track, allowNetwork = automaticArtwork
+        guard !demoMode, hasTrack, connected, needsPlayback, !isResynchronizing else { return }
+        let identity = track, source = activePlayer, artworkURL = playerArtworkURL, allowNetwork = automaticArtwork
         artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
         artworkStatus = "Recuperando portada…"
         artworkTask = Task { [weak self, artworkRepository] in
             for attempt in 0..<3 {
                 do { if attempt > 0 { try await Task.sleep(nanoseconds: attempt == 1 ? 2_000_000_000 : 12_000_000_000) }; try Task.checkCancellation() }
                 catch { return }
-                guard let self, self.track == identity, self.connected, self.policy.visible else { return }
+                guard let self, self.track == identity, self.connected, self.needsPlayback else { return }
+                if source == .spotify {
+                    do {
+                        if let remote = try await artworkRepository.loadSpotify(artworkURL) {
+                            let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(remote.data) }.value
+                            guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
+                            if let decoded { self.artwork = decoded.0; self.setPalette(decoded.1); self.artworkStatus = "Portada de Spotify"; self.artworkTask = nil; return }
+                        }
+                    } catch { if Task.isCancelled { return } }
+                    continue
+                }
                 let local: (NSImage, [RGB])? = await withCheckedContinuation { continuation in
                     self.artworkQueue.async {
                         let result = LumaReadMusicArtwork(identity.id, identity.title).flatMap(Self.decodeArtwork)
                         continuation.resume(returning: result)
                     }
                 }
-                guard !Task.isCancelled, self.track == identity, self.policy.visible else { return }
+                guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
                 if let local {
                     self.artwork = local.0; self.setPalette(local.1); self.artworkStatus = "Portada de Música"; self.artworkTask = nil; return
                 }
@@ -471,7 +515,7 @@ final class StandbyModel {
                     do {
                         if let remote = try await artworkRepository.load(for: identity) {
                             let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(remote.data) }.value
-                            guard !Task.isCancelled, self.track == identity, self.policy.visible, self.automaticArtwork else { return }
+                            guard !Task.isCancelled, self.track == identity, self.needsPlayback, self.automaticArtwork else { return }
                             if let decoded {
                                 self.artwork = decoded.0; self.artworkLink = remote.link; self.setPalette(decoded.1)
                                 self.artworkStatus = "Portada · catálogo Apple"; self.artworkTask = nil; return
@@ -486,7 +530,7 @@ final class StandbyModel {
         }
     }
     private func setPalette(_ value: [RGB]) {
-        withAnimation(reduceMotion || !policy.visible ? nil : .easeInOut(duration: 1.4)) { palette = value }
+        palette = value // Interpolate only the mesh, not every view in the application.
     }
     private func updateCue() {
         cueTimer?.invalidate(); cueTimer = nil
@@ -523,13 +567,31 @@ final class StandbyModel {
                     guard size <= LRCParser.maximumBytes else { throw NSError(domain: "Luma", code: 2, userInfo: [NSLocalizedDescriptionKey: "El límite es 512 KB por archivo LRC."]) }
                     let payload = try await self.repository.importLocal(String(contentsOf: url, encoding: .utf8), for: identity)
                     guard self.track == identity else { return }
-                    self.lines = payload.lines; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue()
+                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue()
                 } catch { self.lyricStatus = error.localizedDescription }
             }
         }
     }
     func clearLyricsCache() {
         Task { await repository.clearDownloadedCache(); await artworkRepository.clearCache() }
+    }
+    func setNotchVisible(_ value: Bool) {
+        guard notchVisible != value else { return }
+        notchVisible = value
+        if started { policyChanged() }
+    }
+    func toggleLyrics() {
+        if visibleLyrics { musicShowsLyrics = false; return }
+        guard !lines.isEmpty else { showToast(lyricsAvailability.notification); return }
+        musicShowsLyrics = true
+    }
+    func showToast(_ text: String) {
+        toastTask?.cancel(); toastMessage = text
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(2800))
+        toastTask = Task { [weak self] in
+            do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
+            guard !Task.isCancelled else { return }; self?.toastMessage = nil
+        }
     }
     func showWindow() { runtime?.activate() }
     func dismissStandby() { runtime?.dismiss() }
@@ -548,8 +610,13 @@ final class StandbyModel {
     func openMusic() {
         // Activate Music without a content URL, so its current page/album/scroll position remain.
         // Dismissing first restores normal system UI; it never navigates to the catalog link.
+        notch?.collapse()
         runtime?.dismiss()
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Music") else { return }
+        if !connected && !demoMode { connectMusic() }
+        let source = playerPreference.source ?? activePlayer
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: source.rawValue) else {
+            connectionStatus = source.name + " no está instalado."; return
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, error in
@@ -562,12 +629,13 @@ final class StandbyModel {
         pollTimer?.invalidate(); pollTimer = nil; lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = TrackIdentity(id: "luma-demo", title: "Still, here.", artist: "Oruvi · demostración", album: "Slow mornings", duration: 214)
         anchor = PlaybackAnchor(position: 84, uptime: ProcessInfo.processInfo.systemUptime, duration: 214, playing: true)
-        artwork = nil; artworkLink = nil; palette = RGB.dusk
+        artwork = nil; artworkLink = nil; palette = RGB.aurora
+        lyricsAvailability = .ready
         lines = LRCParser.parse("[00:00.00]Un espacio para bajar el ritmo.\n[00:32.00]La luz se mueve despacio.\n[01:00.00]Deja que el día espere.\n[01:20.00]Quédate en este instante.\n[01:36.00]La música encuentra su lugar.\n[02:00.00]Todo lo demás puede esperar.\n[02:35.00]Respira. Ya estás aquí.\n[03:25.00]")
         lyricSource = "Demostración · texto original, sin audio"; lyricStatus = ""; connectionStatus = "Vista de demostración · sin audio"; updateCue()
     }
     func shutdown() {
-        generation += 1; pollTimer?.invalidate(); cueTimer?.invalidate(); lyricsTask?.cancel(); artworkTask?.cancel(); runtime?.stop()
+        generation += 1; pollTimer?.invalidate(); cueTimer?.invalidate(); lyricsTask?.cancel(); artworkTask?.cancel(); toastTask?.cancel(); runtime?.stop(); notch?.stop()
         for (center, token) in notificationTokens { center.removeObserver(token) }; notificationTokens.removeAll()
         if let powerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes) }
         if hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }

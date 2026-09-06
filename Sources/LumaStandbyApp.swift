@@ -17,7 +17,8 @@ struct StandbyView: View {
             let inset = min(64.0, max(28.0, geometry.size.width * 0.046))
             let compact = geometry.size.height < 710
             ZStack {
-                FluidMesh(palette: model.meshPalette, fps: snapshot ? 0 : model.policy.framesPerSecond, light: scheme == .light)
+                SmoothMesh(palette: model.meshPalette, framesPerSecond: snapshot ? 0 : model.policy.framesPerSecond, light: scheme == .light)
+                    .animation(model.reduceMotion ? nil : .easeInOut(duration: 1.2), value: model.meshPalette)
                 VStack(spacing: 0) {
                     topBar
                     Spacer(minLength: compact ? 12 : 26)
@@ -40,6 +41,15 @@ struct StandbyView: View {
         .ignoresSafeArea(.container, edges: .all)
         .background { if !snapshot { WindowAccessor(model: model).frame(width: 1, height: 1).allowsHitTesting(false) } }
         .sheet(isPresented: $model.settingsOpen) { SettingsPanel(model: model) }
+        .overlay(alignment: .top) {
+            if let message = model.toastMessage {
+                Text(message).font(.system(size: 13, weight: .medium)).multilineTextAlignment(.center)
+                    .padding(.horizontal, 20).padding(.vertical, 13).frame(maxWidth: 440)
+                    .lumaGlass(model: model, radius: 22).padding(.top, 90)
+                    .transition(.opacity).allowsHitTesting(false).accessibilityLabel(message)
+            }
+        }
+        .animation(model.reduceMotion ? nil : .easeInOut(duration: 0.18), value: model.toastMessage)
     }
     private func display(size: CGSize, inset: CGFloat, compact: Bool) -> some View {
         VStack(spacing: compact ? 12 : 24) {
@@ -54,8 +64,11 @@ struct StandbyView: View {
                     EditorialClock(model: model, compact: compact)
                         .frame(width: (size.width - inset * 2) * 0.43)
                     VStack(alignment: .leading, spacing: compact ? 16 : 26) {
-                        TrackHeading(model: model, compact: compact)
-                        LyricsStage(model: model, compact: compact)
+                        if model.hasTrack {
+                            TrackHeading(model: model, compact: compact)
+                            if !model.lines.isEmpty { LyricsStage(model: model, compact: compact) }
+                            else { LyricsVisibilityButton(model: model) }
+                        }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.frame(maxWidth: 1240, maxHeight: .infinity)
             }
@@ -78,15 +91,7 @@ struct StandbyView: View {
             }
         }
     }
-    private var connectBar: some View {
-        HStack(spacing: 14) {
-            Button { model.connectMusic(); model.openMusic() } label: {
-                Label("Conectar Música", systemImage: "music.note")
-                    .font(.system(size: 14, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 8)
-            }.buttonStyle(.glassProminent)
-            Button("Ver demostración") { model.useDemo() }.buttonStyle(.plain).font(.system(size: 12)).opacity(0.6)
-        }
-    }
+    private var connectBar: some View { EmptyPlayerButton(model: model) }
     private var compactTrack: some View {
         HStack(spacing: 14) {
             AlbumArtwork(model: model).frame(width: 46, height: 46).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -175,7 +180,7 @@ struct AlbumArtwork: View {
         Button { model.openMusic() } label: {
         GeometryReader { geometry in
             if let image = model.artwork {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: geometry.size.width, height: geometry.size.height)
             } else {
                 ZStack {
                     LinearGradient(colors: model.palette.map(\.color), startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -185,14 +190,14 @@ struct AlbumArtwork: View {
                 }
             }
         }
-        .overlay(Color.black.opacity(hovered ? 0.22 : 0))
+        .overlay(Color.black.opacity(hovered && model.activePlayer != .spotify ? 0.22 : 0))
         .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .animation(model.reduceMotion ? nil : .easeOut(duration: 0.16), value: hovered)
-        .help("Volver a Música")
-        .accessibilityLabel("Volver a Música. Portada de " + model.track.title)
+        .help("Volver a " + model.activePlayer.name)
+        .accessibilityLabel("Volver a " + model.activePlayer.name + ". Portada de " + model.track.title)
     }
 }
 private struct TrackHeading: View {
@@ -366,6 +371,14 @@ private struct SettingsPanel: View {
             }.padding(26)
             Form {
                 UpdatesSettings()
+                Section("Notch y reproductor") {
+                    Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
+                    Picker("Reproductor", selection: $model.playerPreference) {
+                        ForEach(PlayerPreference.allCases) { Text($0.name).tag($0) }
+                    }
+                    Text("El notch se amplía al pasar el puntero y se oculta durante Standby. En Automático se utiliza el reproductor que esté sonando. Música y Spotify requieren su permiso de Automatización.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Activación automática") {
                     Toggle("Activar después de un tiempo sin actividad", isOn: $model.idleEnabled)
                     LabeledContent("Tiempo sin actividad") {
@@ -415,11 +428,11 @@ private struct SettingsPanel: View {
                     Text("24 frases originales, sin repetir la anterior. El temporizador se detiene cuando Oruvi está oculta o las frases están apagadas.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Música de este Mac") {
+                Section("Reproducción en este Mac") {
                     Text(model.connectionStatus).font(.callout)
                     HStack {
-                        Button(model.connected ? "Reconectar Música" : "Conectar Música") { model.connectMusic() }
-                        Button("Abrir Música") { model.openMusic() }
+                        Button(model.connected ? "Reconectar reproductores" : "Conectar reproductores") { model.connectMusic() }
+                        Button("Abrir reproductor") { model.openMusic() }
                         if model.connected || model.demoMode { Button("Desconectar") { model.disconnectMusic() } }
                     }
                     Text("Requiere permiso de Automatización. No lee contraseñas, no modifica tu biblioteca y no detecta música reproducida únicamente en el iPhone o Apple TV.")
@@ -447,6 +460,9 @@ private struct SettingsPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Diseño y energía") {
+                    Picker("Malla predeterminada", selection: $model.meshTheme) {
+                        ForEach(MeshTheme.allCases) { Text($0.name).tag($0) }
+                    }
                     Toggle("Adaptar fluid mesh a la portada de la canción", isOn: $model.meshFollowsMusic)
                     Text("Transición de colores al cambiar de canción. No escucha ni graba audio; no es un visualizador de ritmo. Si aún no hay portada, usa una paleta provisional por artista y álbum.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -462,7 +478,6 @@ private struct SettingsPanel: View {
                 Section("Acerca de esta versión") {
                     Text("Oruvi · reloj, música y ambiente. Aplicación independiente de Apple, nativa SwiftUI / AppKit, sin navegador integrado ni telemetría. Pantalla completa sin bordes; no sustituye la pantalla de bloqueo. Conserva los ajustes de las versiones anteriores de Luma.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Ver demostración sin conectar cuentas") { model.useDemo(); dismiss() }
                 }
             }
             .formStyle(.grouped)

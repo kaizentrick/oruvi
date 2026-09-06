@@ -36,7 +36,7 @@ enum MediaProtection {
     }
     static func ignoredAudio(_ bundleID: String, pid: Int32, ownPID: Int32) -> Bool {
         let id = bundleID.lowercased()
-        return pid == ownPID || (id == "com.apple.music" || id.hasPrefix("com.apple.music.")) || id == "com.apple.controlcenter" || id == "com.apple.systemuiserver" || id == "com.apple.speech.speechsynthesisd"
+        return pid == ownPID || id == "com.spotify.client" || (id == "com.apple.music" || id.hasPrefix("com.apple.music.")) || id == "com.apple.controlcenter" || id == "com.apple.systemuiserver" || id == "com.apple.speech.speechsynthesisd"
     }
     static func needsFreshIdlePeriod(idle: Double, now: Double, lastProtected: Double) -> Bool {
         // Do not add a second full interval when the person has already used input since playback.

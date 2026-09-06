@@ -41,10 +41,7 @@ private final class SafeRedirects: NSObject, URLSessionTaskDelegate, @unchecked 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         guard let original = task.originalRequest?.url, let target = request.url,
-              target.scheme == "https", target.user == nil, target.password == nil,
-              target.port == nil || target.port == 443,
-              let oldHost = original.host?.lowercased(), let newHost = target.host?.lowercased(),
-              oldHost == newHost || (oldHost.hasSuffix(".mzstatic.com") && newHost.hasSuffix(".mzstatic.com")) else {
+              ArtworkURLPolicy.redirect(from: original, to: target) else {
             completionHandler(nil); return
         }
         completionHandler(request)
@@ -64,9 +61,7 @@ final class BoundedHTTPClient: @unchecked Sendable {
         self.session = URLSession(configuration: config, delegate: SafeRedirects(), delegateQueue: nil)
     }
     func get(_ url: URL, maxBytes: Int = 1_000_000) async throws -> HTTPReply {
-        guard maxBytes > 0, url.scheme == "https", url.user == nil, url.password == nil,
-              url.port == nil || url.port == 443,
-              let host = url.host?.lowercased(), host == "lrclib.net" || host == "itunes.apple.com" || host.hasSuffix(".mzstatic.com") else { throw RemoteError.invalidURL }
+        guard maxBytes > 0, ArtworkURLPolicy.allowed(url) else { throw RemoteError.invalidURL }
         var request = URLRequest(url: url)
         request.setValue("Oruvi/\(OruviRelease.version)", forHTTPHeaderField: "User-Agent")
         try Task.checkCancellation()

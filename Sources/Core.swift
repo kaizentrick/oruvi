@@ -76,7 +76,11 @@ struct TrackIdentity: Equatable, Codable, Sendable {
     var artist: String
     var album: String
     var duration: Double
-    var cacheKey: String { "\(id)|\(title)|\(artist)|\(album)|\(Int(duration.rounded()))" }
+    var sourceID: String = "com.apple.Music"
+    var cacheKey: String {
+        let base = "\(id)|\(title)|\(artist)|\(album)|\(Int(duration.rounded()))"
+        return sourceID == "com.apple.Music" ? base : sourceID + "|" + base
+    }
     static let empty = TrackIdentity(id: "", title: "Tu música, en calma.", artist: "Conecta la app Música de este Mac", album: "", duration: 0)
 }
 

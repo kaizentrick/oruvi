@@ -1,90 +1,98 @@
 # Oruvi
 
-Una presentación ambiental nativa para macOS: reloj editorial, música, letras por línea y un fondo de malla fluida. Apple Silicon; macOS 26 o posterior.
+Un compañero de música en el notch. Un Standby de pantalla completa cuando dejas de usar tu Mac.
 
-## Versión 0.6.0
+## Descargar e instalar
 
-El botón de letras distingue apagado, hover y encendido. Al abrir las letras, el reproductor conserva sus dimensiones: en una pantalla amplia se desplaza sin redimensionar portada, tipografía ni controles; en una pantalla compacta, portada y letra se funden dentro del mismo espacio. Los cambios de display usan un fundido en vez de interpolar toda la composición. Se respeta Reducir movimiento.
+### [Descargar Oruvi para Mac — Oruvi.dmg](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg)
 
-Tipografía del sistema: SF Pro, SF Pro Rounded, SF Mono, New York y variantes condensada/expandida. Nueve grosores para el reloj. Se conservan las tipografías adicionales que ya estén instaladas. No se distribuyen ni descargan fuentes de Apple.
+[Ver la última versión y sus notas](https://github.com/kaizentrick/oruvi/releases/latest)
 
-La actualización incorpora Sparkle 2.9.4, fijado por versión y SHA-256. Los archivos de actualización y el feed usan firmas Ed25519. El origen es un repositorio de GitHub configurado por su propietario, no una URL de ejecución arbitraria.
+**Requiere macOS 26 o posterior y un Mac con Apple Silicon — M1 o posterior.** Esta distribución no incluye soporte Intel. Funciona con las aplicaciones de escritorio **Apple Music y Spotify**. No necesitas Xcode, Terminal, Homebrew ni descargar el código fuente para instalar la app.
 
-## Instalar
+Abre **Oruvi.dmg**, arrastra **Oruvi.app** a **Applications** y ábrela desde Aplicaciones. El notch aparece en el escritorio; al pasar el puntero se amplía. Para escuchar música abre tu reproductor y concede el permiso específico de **Automatización** que macOS solicite. Oruvi no reproduce otro audio encima del reproductor.
 
-Abre `dist/Oruvi-0.6.0-arm64.dmg`, cierra la copia anterior y arrastra Oruvi a Applications. La compilación no modifica automáticamente una instalación existente. El menú de la barra superior permite abrir la presentación, cambiar de display, buscar actualizaciones o salir. Esc oculta la presentación; 1/2/3 y las flechas cambian de vista; Espacio reproduce/pausa.
+**Aviso de seguridad:** la distribución actual está firmada localmente, pero no está notarizada por Apple. macOS puede advertirlo o bloquear el primer inicio. Comprueba el origen y, únicamente si confías en esta copia, autoriza esa aplicación desde **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. No desactives Gatekeeper ni SIP. Un Mac administrado puede impedir esta excepción. La firma de actualizaciones Ed25519 no sustituye Developer ID ni la notarización.
 
-Se conserva el identificador `com.kaizentrick.Oruvi` y la migración única de preferencias de Luma. Los LRC locales permanecen en el directorio de soporte anterior; no se borran durante la actualización.
+El enlace directo requiere una release con el archivo **Oruvi.dmg**. El workflow de esta versión publica ese nombre fijo además del DMG numerado; las releases antiguas pueden tener únicamente el archivo numerado. Ambos contienen exactamente la misma app. Los ZIP «Source code» que GitHub agrega son para desarrolladores, no son el instalador.
 
-## Crear el repositorio público
+## Dos modos, una sola aplicación
 
-La creación requiere ejecutar GitHub CLI desde una sesión que tenga acceso a tu autorización. El acceso a las credenciales del Mac no está incluido en el código ni en el instalador.
+**Notch:** panel compacto negro integrado alrededor de la cámara, sin icono en el Dock y sin quitar el foco a lo que estás haciendo. Se amplía al pasar el puntero y ofrece portada, canción, artista, pausa, anterior/siguiente, selector de reproductor y acceso a Standby. En pantallas sin recorte físico utiliza una pequeña isla superior. Se puede desactivar desde la barra de menús o Ajustes.
 
-```bash
-cd "$HOME/Documents/LumaStandby"
-bash scripts/publish-github.sh
+**Standby:** reloj editorial, reproductor centrado o reloj con música a pantalla completa. Oculta el notch, el Dock y la barra de menús mientras está activo. Al salir con **Esc**, vuelve el notch y se restaura la interfaz del sistema. No reemplaza la pantalla de bloqueo ni se dibuja encima de las pantallas protegidas del sistema.
+
+Oruvi inicia como complemento del escritorio. Standby se activa desde el notch, desde su menú o al cumplirse el intervalo de inactividad configurado. Ajustes no se abre automáticamente. El panel es una implementación propia inspirada en el concepto de un complemento para el notch; no incluye código, iconos ni funciones de calendario, AirDrop, almacenamiento de archivos o reemplazo de HUD de Boring Notch.
+
+## Apple Music y Spotify
+
+En **Ajustes → Notch y reproductor** elige Automático, Apple Music o Spotify. Automático conserva el reproductor preferido mientras siga reproduciendo; si está pausado y el otro reproduce, utiliza el otro. Cuando ambos suenan, puedes elegir explícitamente uno. Los controles se envían únicamente al reproductor seleccionado.
+
+La integración utiliza Apple Events / ScriptingBridge de las aplicaciones de este Mac. No pide contraseñas, no usa tokens de Spotify Web API ni APIs privadas de MediaRemote. No controla directamente un reproductor web ni una sesión que exista únicamente en un teléfono. Spotify requiere su aplicación de escritorio. Su interfaz de automatización ofrece repetición activada/desactivada; Oruvi no simula un control de «repetir una» que ese puente no proporciona.
+
+Cada proveedor tiene identidad de pista y caché diferenciadas. Al cambiar de reproductor o de canción se descartan las letras anteriores. La portada de Spotify se obtiene desde la URL que proporciona su app, únicamente en dominios de imágenes permitidos. No se sustituye por otra portada del catálogo Apple, no se persiste en la caché de Oruvi y se conserva su proporción original.
+
+## Letras sin espacios vacíos
+
+Con letra disponible, el botón de comillas abre el panel y muestra su estado seleccionado. Sin letra, la portada, la información y los controles permanecen centrados. Pulsar el botón muestra **«Esta canción no tiene letra sincronizada disponible»** y el aviso desaparece solo, aproximadamente a los tres segundos.
+
+Una búsqueda en curso, una desconexión del proveedor y las letras desactivadas tienen mensajes diferentes. No se afirma que una canción carezca de letra cuando solo falló la red. No hay un panel vacío reservado para contenido ausente. Las letras recuperadas son de **LRCLIB** o de tus archivos **LRC**, no las letras oficiales de Apple o Spotify; se sincronizan por línea, no por palabra. La cobertura y los tiempos dependen de cada grabación.
+
+Cuando no hay una canción, el estado vacío del reproductor muestra únicamente un botón musical para abrir la app elegida. No incluye «Ver demostración» ni eslóganes de relleno.
+
+## Malla, fuentes y movimiento
+
+La malla predeterminada **Aurora** combina azules, índigos y tonos verde azulado. También están disponibles Atardecer y Medianoche. La adaptación a portada interpola los componentes de color en una capa independiente de la interfaz; no vuelve a animar el reloj o los controles completos. Mientras llega una imagen, una paleta provisional cambia también según el título de la canción. Una respuesta antigua de portada no puede recolorear la canción nueva.
+
+Se utilizan las tipografías nativas del sistema: SF Pro, SF Pro Rounded, monoespaciada, serif y otros estilos instalados. Reloj y contenido se configuran por separado. No se incluyen ni se descargan archivos de fuentes. Los controles siguen siendo accesibles y admiten el primer clic. Se respeta Reducir movimiento y Reducir transparencia.
+
+## Energía y privacidad
+
+El notch no captura pantalla, cámara, micrófono, muestras de audio, historial ni pestañas. No ejecuta una animación continua ni un visualizador de audio. El icono de actividad es un estado visual, no un analizador de ritmo. La ampliación se anima solamente durante la interacción.
+
+Fuera de Standby, solo se consultan metadatos para el notch: aproximadamente cada **3 segundos con corriente y 5 en batería** mientras hay reproducción, con mayor espera al pausar. Las notificaciones de reproductor son pistas de mejor esfuerzo para actualizar antes. No se solicitan letras en segundo plano para el panel compacto. Al desactivar ambas superficies se detienen las consultas periódicas. El reposo y bloqueo ocultan el panel y suspenden el trabajo.
+
+En Standby, Automático limita la malla a 24 fps con corriente y la deja estática en batería. Fluido permite hasta 30/12 fps; Ahorro, bajo consumo, calor y Reducir movimiento detienen su animación. Las portadas se decodifican fuera del hilo principal, con tamaño acotado. La sincronía usa reloj monotónico y temporizadores de cambio de línea, no consultas por fotograma.
+
+La protección multimedia impide la activación automática cuando otras aplicaciones mantienen la pantalla despierta o tienen salida de audio activa; Apple Music y Spotify por sí solos están exceptuados. La protección conservadora adicional también espera mientras un navegador o reproductor de vídeo reconocido esté al frente, incluso pausado. Se puede desactivar. No se garantiza detección universal de todos los vídeos silenciosos.
+
+Las búsquedas externas opcionales envían los metadatos necesarios a LRCLIB o al catálogo Apple; la descarga de portada de Spotify contacta su servicio de imágenes. Esos servicios reciben la IP. No hay telemetría propia, Electron, servidor de audio ni WebView integrado. Las políticas de ahorro son decisiones de implementación, no cifras medidas de autonomía o RAM.
+
+## Actualizaciones y descargas de GitHub
+
+**Buscar actualizaciones** está en el menú superior y en Ajustes. Sparkle verifica el feed y el archivo con Ed25519. Las descargas automáticas se configuran por separado; instalar no equivale a ejecutar código arbitrario desde un commit.
+
+El workflow valida los cambios de código en `main`, compila, firma el DMG y el feed, sube todos los archivos a una release en borrador y solo entonces la publica como Latest. Cambios exclusivamente en la documentación no consumen una compilación de macOS. El enlace humano fijo es:
+
+```text
+https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg
 ```
 
-Por defecto crea `TU_CUENTA_AUTENTICADA/oruvi`. Para una organización o un nombre diferente, pasa explícitamente `propietario/repositorio`. El script se niega a sobrescribir un repositorio existente o un remoto configurado, audita los archivos, realiza el commit, crea el repositorio como público, configura el secreto de firma en Actions y sube main.
+Sparkle utiliza el archivo **numerado e inmutable** de cada release, no el alias fijo. `SHA256SUMS.txt` permite comprobar que el alias y el instalador numerado son idénticos. No borres releases publicadas que aún puedan ser necesarias para una actualización.
 
-No copia claves al código ni al historial. `.private`, `dist`, las compilaciones, fuentes y credenciales están excluidos. La publicación no se da por completada hasta que GitHub confirma el repositorio y el push termina correctamente.
+### Publicar esta actualización desde el Terminal del mantenedor
 
-Después de publicar, guarda `propietario/repositorio` en **Oruvi > Ajustes > Actualizaciones**. La compilación local sin repositorio no intenta consultar un destino inexistente. La aplicación ya contiene la clave pública correspondiente; no necesitas cambiarla. Las compilaciones producidas por Actions incorporan automáticamente el repositorio correcto.
+Con el código revisado y guardado en un commit de `main`:
 
-## Actualización continua
+```bash
+bash scripts/configure-downloads.sh
+```
 
-Un push en main que modifique Sources, Resources, scripts o el workflow inicia una única compilación en macos-26. Los cambios solo de documentación no consumen una compilación de macOS. Los pull requests no reciben la clave de firma y no publican versiones.
+El script utiliza la sesión normal de `gh`, comprueba el remoto y el secreto de firma, configura descripción/enlace/temas del repositorio, hace el push y espera el workflow. No cambia la visibilidad de otros repositorios ni publica claves privadas. Si la sesión de herramientas no puede acceder a la configuración de GitHub CLI, este paso debe ejecutarse desde el Terminal del mantenedor. No se eluden restricciones de acceso.
 
-El flujo es: verificar código y comportamiento, compilar, firmar componentes, verificar el DMG montado, firmar el DMG con Ed25519, verificarlo con la clave pública incorporada, generar y firmar appcast.xml, subir ambos como una release en borrador y publicar la release completa. Si falla un paso, no se publica el feed de esa compilación.
-
-Cada build recibe un número creciente basado en la hora de construcción. La versión visible, por ejemplo 0.6.0, se cambia en Resources/Info.plist para los hitos del producto. Una modificación a un README o un commit fallido no debe convertirse en una actualización instalable.
-
-Oruvi consulta versiones publicadas al iniciar y aproximadamente cada hora cuando las comprobaciones están habilitadas. Sparkle administra el calendario, la validación, descarga e instalación. Las actualizaciones de fondo se indican en el menú sin robar el foco a una película. La instalación automática al salir está disponible; las operaciones que requieren interacción se muestran cuando el usuario abre el actualizador. No se forza el reinicio durante una reproducción.
-
-Se puede desactivar la búsqueda automática o las descargas desde Ajustes. GitHub recibe las solicitudes de red e IP; el actualizador no recibe la canción, letras, biblioteca ni contraseñas de Música. El perfil del sistema está desactivado.
-
-## Clave de firma: conservar, no publicar
-
-`.private/sparkle.key` es la semilla privada que firma las actualizaciones. Se genera localmente, con permisos restrictivos, y no se muestra en logs. **Haz una copia de seguridad cifrada y no la pierdas.** No es un archivo temporal y no se debe eliminar al limpiar compilaciones.
-
-`Resources/UpdatePublicKey.pub` es la clave pública: sí se incluye en el código y la aplicación. El script de publicación configura la semilla privada como el secreto `ORUVI_SPARKLE_PRIVATE_KEY` del nuevo repositorio para que su workflow de main pueda firmar.
-
-No cambies la clave pública de una versión distribuida sin planificar una rotación compatible con Sparkle. El script de generación falla si encuentra una clave pública sin su clave privada: no crea una identidad diferente silenciosamente.
-
-## Compilación y validación
+### Compilar localmente
 
 ```bash
 bash scripts/check.sh
 bash scripts/build.sh
 ```
 
-La primera ejecución de build descarga Sparkle del release oficial y comprueba el checksum fijado antes de ejecutarlo. El resto de dependencias son frameworks del sistema. Los temporales se eliminan al terminar; `KEEP_BUILD_ARTIFACTS=1` los conserva expresamente para depuración. La limpieza no borra claves, preferencias ni LRC importados.
+Requiere herramientas con SDK macOS 26. El resultado está en `dist/Oruvi-0.7.0-arm64.dmg`. El proyecto conserva un nombre de carpeta histórico y datos en `~/Library/Application Support/LumaStandby`; el producto y bundle son **Oruvi** / **com.kaizentrick.Oruvi**.
 
-Para un build dirigido a un repositorio ya creado:
+**Conserva una copia cifrada de `.private/sparkle.key`.** Nunca se sube a Git; solo la clave pública se incorpora a la app. En CI se utiliza `ORUVI_SPARKLE_PRIVATE_KEY`. Una distribución sin advertencias por falta de notarización requiere un certificado propio Developer ID y credenciales de notarización; `SIGN_IDENTITY` y `NOTARY_PROFILE` están previstos en la compilación local. No se debe marcar una release como notarizada sin haber completado esa validación.
 
-```bash
-ORUVI_REPOSITORY='propietario/oruvi' bash scripts/build.sh
-```
+## Verificación y límites
 
-Los instaladores están en dist; no se guardan en el historial Git. Los scripts de validación son herramientas permanentes de la publicación, no se incluyen en Oruvi.app. Los informes y capturas temporales tampoco se publican.
+Se prueban lógica de cambio de proveedor, estados de letra, dominios de imágenes, interpolación de colores y transición entre panel y Standby con datos sintéticos. Se inspeccionan capturas del contenido de la propia app, sin capturar el escritorio. La ausencia de Spotify se maneja sin abrir ni instalar otra app. Estos tests no equivalen a una prueba con una cuenta real de Spotify ni a un benchmark de batería.
 
-## Distribución y límites
-
-Esta entrega local usa firma ad hoc y no está notarizada. Al incorporar Sparkle, el build ad hoc no activa Hardened Runtime, porque las bibliotecas cargadas necesitan una identidad Developer ID compatible para la validación de bibliotecas. No se desactiva Gatekeeper, SIP ni ninguna preferencia de seguridad global.
-
-Con una identidad Developer ID instalada, `SIGN_IDENTITY` activa Hardened Runtime y el sellado temporal de todos los componentes. `NOTARY_PROFILE` permite notarizar con un perfil propio ya configurado. El workflow inicial no contiene certificados Apple ni asume aprobación de Apple. Las firmas Ed25519 de actualizaciones son distintas de la firma Developer ID.
-
-La comprobación end-to-end desde GitHub necesita una release pública real. Las pruebas locales de interfaz, geometría y firma no prueban por sí solas la instalación de una release remota ni un benchmark de energía.
-
-Música sigue siendo el reproductor, mediante su diccionario público de automatización. LRCLIB es un proveedor opcional de letras por línea, no las letras oficiales de Apple. La búsqueda externa de portadas es opcional. La cobertura y los derechos del contenido se revisan por separado; este repositorio no contiene letras comerciales, portadas de artistas, audio, contraseñas ni archivos de fuentes.
-
-La protección multimedia no analiza audio ni lee pestañas. El modo conservador también espera mientras un navegador esté en primer plano, incluso sin vídeo. No es un detector universal de todas las plataformas.
-
-## Referencias
-
-- Sparkle: https://sparkle-project.org/documentation/
-- Publicación y firmas: https://sparkle-project.org/documentation/publishing/
-- Fuentes del sistema: https://developer.apple.com/fonts/
-- Diseños nativos AppKit: https://developer.apple.com/documentation/appkit/nsfontdescriptor/systemdesign
-
-Oruvi es independiente de Apple. Hacer público el repositorio no certifica disponibilidad de marca ni aprobación en App Store. No se ha asignado una licencia de redistribución al código propio; las dependencias conservan sus licencias.
+Apple y Spotify son marcas de sus titulares; Oruvi es independiente. La publicación de código no otorga derechos sobre letras, carátulas o tipografías de terceros. Consulta `THIRD_PARTY_NOTICES.md` y `SECURITY.md`.
