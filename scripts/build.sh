@@ -35,7 +35,9 @@ exec > "$BUILD/build.log" 2>&1
 mkdir -p "$BUILD/tmp" "$ROOT/dist"; export TMPDIR="$BUILD/tmp/"
 export ORUVI_BUILD_NUMBER="${ORUVI_BUILD_NUMBER:-$(date +%s)}"
 [[ "$ORUVI_BUILD_NUMBER" =~ ^[0-9]{1,10}$ ]] || { echo 'Número de compilación no válido.'; exit 1; }
-REPOSITORY="${ORUVI_REPOSITORY:-kaizentrick/oruvi}"
+# An explicitly empty repository is for secret-free CI validation, never publication.
+# Unset retains the normal signed-release behavior.
+REPOSITORY="${ORUVI_REPOSITORY-kaizentrick/oruvi}"
 if [[ -n "$REPOSITORY" ]]; then [[ "$REPOSITORY" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$ && "$REPOSITORY" != */.. && "$REPOSITORY" != */. ]] || exit 1; fi
 [[ -s Resources/UpdatePublicKey.pub && -s Resources/Luma.icns ]]
 PUBLIC_KEY="$(tr -d '\r\n' < Resources/UpdatePublicKey.pub)"
@@ -45,7 +47,7 @@ SIGN_OPTIONS=(--timestamp=none)
 if [[ "${SIGN_IDENTITY:--}" != - ]]; then SIGN_OPTIONS=(--options runtime --timestamp); fi
 # Ad-hoc local builds are not hardened: Sparkle cannot be loaded by a hardened app
 # without a shared Developer ID. No system security setting is changed.
-FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework ScriptingBridge -framework IOKit -framework ImageIO -framework CoreText -framework CoreAudio -framework Sparkle)
+FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework ScriptingBridge -framework IOKit -framework ImageIO -framework CoreText -framework CoreAudio -framework EventKit -framework Sparkle)
 BASE=(-j 1 -disable-bridging-pch -warnings-as-errors -swift-version 5 -parse-as-library -sdk "$SDK" -target arm64-apple-macos26.0 -import-objc-header Sources/MusicBridge.h -F "$DEPS" -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 printf '\n[1/5] Puente Apple Events\n'
 xcrun clang -fobjc-arc -fmodules -O2 -arch arm64 -isysroot "$SDK" -mmacosx-version-min=26.0 -c Sources/MusicBridge.m -o "$BUILD/MusicBridge.o"
@@ -93,8 +95,21 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 printf '\n[4/5] DMG\n'
 ln -sfn /Applications "$BUILD/stage/Applications"; cp Resources/LEEME.txt "$BUILD/stage/LEEME.txt"
 NAME="Oruvi-$VERSION-arm64.dmg"
-hdiutil create -volname "Oruvi $VERSION" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"
-hdiutil verify "$BUILD/$NAME"
+# Retry image creation only inside this isolated build directory. Every attempt
+# must pass hdiutil verification; a failed image never replaces dist or a release.
+DMG_VERIFIED=0
+for attempt in 1 2 3; do
+    if hdiutil create -volname "Oruvi $VERSION" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"; then
+        sync
+        if hdiutil verify "$BUILD/$NAME"; then DMG_VERIFIED=1; break; fi
+    fi
+    printf 'DMG verification failed (attempt %s/3). Rebuilding the image.\n' "$attempt" >&3
+    ls -lh "$BUILD/$NAME" || true
+    file "$BUILD/$NAME" || true
+    hdiutil imageinfo "$BUILD/$NAME" || true
+    if [[ "$attempt" -lt 3 ]]; then sleep 2; fi
+ done
+[[ "$DMG_VERIFIED" == 1 ]] || { echo 'DMG verification failed. No artifact will be published.'; exit 1; }
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     [[ "${SIGN_IDENTITY:--}" != - ]] || { echo 'Notarización requiere Developer ID.'; exit 1; }
     xcrun notarytool submit "$BUILD/$NAME" --keychain-profile "$NOTARY_PROFILE" --wait

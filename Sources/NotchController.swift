@@ -4,36 +4,36 @@ import Observation
 import QuartzCore
 
 final class OruviNotchPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var acceptsKeyboard = false
+    var onEscape: (() -> Void)?
+    override var canBecomeKey: Bool { acceptsKeyboard }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-}
-
-struct NotchGeometry {
-    let centerX: CGFloat
-    let top: CGFloat
-    let cameraWidth: CGFloat
-    let topInset: CGFloat
-    let compactWidth: CGFloat
-    @MainActor static func resolve(_ screen: NSScreen) -> NotchGeometry {
-        let left = screen.auxiliaryTopLeftArea, right = screen.auxiliaryTopRightArea
-        let width = (left != nil && right != nil) ? max(0, right!.minX - left!.maxX) : 0
-        let cutout = width > 0 && screen.safeAreaInsets.top > 0
-        return NotchGeometry(centerX: cutout ? (left!.maxX + right!.minX) / 2 : screen.frame.midX,
-                             top: screen.frame.maxY - (cutout ? 0 : 5), cameraWidth: cutout ? width : 0,
-                             topInset: cutout ? screen.safeAreaInsets.top : 30,
-                             compactWidth: cutout ? width + 88 : 150)
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onEscape?() } else { super.keyDown(with: event) }
     }
 }
 
-/// Original implementation. No Boring Notch source, private display API or global input capture.
-/// One non-activating panel; it never raises the main app, blocks typing or duplicates audio.
+extension NotchGeometry {
+    @MainActor static func resolve(_ screen: NSScreen) -> NotchGeometry {
+        resolve(frame: screen.frame, safeTop: screen.safeAreaInsets.top,
+                left: screen.auxiliaryTopLeftArea, right: screen.auxiliaryTopRightArea, scale: screen.backingScaleFactor)
+    }
+}
+
+/// Original AppKit/SwiftUI implementation. Hover never activates the app. Keyboard
+/// focus is opt-in on click; sharing and permission dialogs keep the panel open.
 @MainActor @Observable
 final class NotchController {
     var expanded = false
+    var tab: NotchTab = .music
     var cameraWidth: CGFloat = 0
     var topInset: CGFloat = 30
     var compactWidth: CGFloat = 150
+    var draggingFiles = false
+    @ObservationIgnored let shelf = NotchShelf()
+    @ObservationIgnored let agenda = NotchAgenda()
+    @ObservationIgnored let countdown = NotchCountdown()
     @ObservationIgnored private let model: StandbyModel
     @ObservationIgnored private var panel: OruviNotchPanel?
     @ObservationIgnored private var geometry: NotchGeometry?
@@ -43,7 +43,10 @@ final class NotchController {
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var sessionBlocked = false
     @ObservationIgnored private var presentationHandoff = false
+    @ObservationIgnored private var interactionCount = 0
+    @ObservationIgnored private var trackingMenus: Set<ObjectIdentifier> = []
 
+    var preventsAutomaticStandby: Bool { expanded || interactionCount > 0 || draggingFiles }
     init(model: StandbyModel) { self.model = model; model.notch = self }
     func start() {
         let p = OruviNotchPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -52,12 +55,38 @@ final class NotchController {
         p.level = .statusBar
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         p.isMovable = false; p.isMovableByWindowBackground = false
-        p.contentView = FirstClickHostingView(rootView: NotchView(model: model, controller: self))
+        let hosting = NotchDropHostingView(rootView: NotchView(model: model, controller: self))
+        hosting.controller = self
+        // AppKit owns the window size. Do not let intrinsic SwiftUI sizing or a
+        // second automatic safe-area inset enlarge the compact camera band.
+        hosting.sizingOptions = []
+        hosting.safeAreaRegions = []
+        hosting.wantsLayer = true; hosting.layer?.masksToBounds = true
+        hosting.registerForDraggedTypes([.fileURL])
+        p.contentView = hosting
+        p.onEscape = { [weak self] in self?.collapse() }
         p.identifier = NSUserInterfaceItemIdentifier("oruvi.notch")
         p.appearance = NSAppearance(named: .darkAqua)
         panel = p
         let workspace = NSWorkspace.shared.notificationCenter
         observe(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { [weak self] in self?.reconcile() }
+        observe(NotificationCenter.default, NSWindow.didResignKeyNotification) { [weak self] in
+            guard let self, self.panel?.isKeyWindow == false, !self.hovering else { return }
+            self.hover(false)
+        }
+        for name in [NSMenu.didBeginTrackingNotification, NSMenu.didEndTrackingNotification] {
+            let token = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                MainActor.assumeIsolated {
+                    guard let self, let menu = notification.object as? NSMenu else { return }
+                    let identity = ObjectIdentifier(menu)
+                    if notification.name == NSMenu.didBeginTrackingNotification {
+                        guard self.expanded, self.trackingMenus.insert(identity).inserted else { return }
+                        self.beginInteraction()
+                    } else if self.trackingMenus.remove(identity) != nil { self.endInteraction() }
+                }
+            }
+            observers.append((NotificationCenter.default, token))
+        }
         for event in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             observe(workspace, event) { [weak self] in self?.sessionBlocked = true; self?.reconcile() }
         }
@@ -76,7 +105,10 @@ final class NotchController {
         guard let panel else { return }
         let show = !stopped && !presentationHandoff && model.notchEnabled && !model.isVisible && !model.screenSleeping && !sessionBlocked && !(model.runtime?.isBlocked ?? false)
         guard show else {
-            hoverTask?.cancel(); expanded = false; hovering = false; model.notchExpanded = false
+            hoverTask?.cancel(); expanded = false; hovering = false; draggingFiles = false; model.notchExpanded = false
+            panel.acceptsKeyboard = false
+            agenda.setActive(false)
+            if sessionBlocked || stopped { shelf.cancelChooser() }
             panel.orderOut(nil); model.setNotchVisible(false); return
         }
         guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first else { return }
@@ -90,23 +122,51 @@ final class NotchController {
     func resumeDesktop() { presentationHandoff = false; reconcile() }
     func hover(_ inside: Bool) {
         hovering = inside; hoverTask?.cancel()
+        guard inside || (interactionCount == 0 && !draggingFiles && panel?.isKeyWindow != true) else { return }
         hoverTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: inside ? 140_000_000 : 320_000_000) } catch { return }
+            do { try await Task.sleep(nanoseconds: inside ? 160_000_000 : 380_000_000) } catch { return }
             guard !Task.isCancelled, let self, self.hovering == inside, self.model.notchVisible else { return }
+            if !inside && (self.interactionCount > 0 || self.draggingFiles || self.panel?.isKeyWindow == true) { return }
             self.setExpanded(inside)
         }
     }
-    func collapse() { hoverTask?.cancel(); hovering = false; setExpanded(false) }
+    func openForKeyboard() {
+        hoverTask?.cancel(); setExpanded(true)
+        panel?.acceptsKeyboard = true; panel?.makeKey()
+    }
+    func collapse() {
+        guard interactionCount == 0 else { return }
+        hoverTask?.cancel(); hovering = false; draggingFiles = false
+        setExpanded(false)
+    }
+    func select(_ value: NotchTab) {
+        tab = value
+        agenda.setActive(expanded && value == .agenda)
+    }
     func setExpanded(_ value: Bool) {
         guard expanded != value else { return }
         expanded = value; model.notchExpanded = value
+        if !value { panel?.acceptsKeyboard = false; panel?.resignKey() }
+        agenda.setActive(value && tab == .agenda)
         updateFrame(animated: !model.reduceMotion)
+        model.runtime?.rescheduleIdle()
+    }
+    func beginInteraction() { interactionCount += 1; hoverTask?.cancel() }
+    func endInteraction() {
+        interactionCount = max(0, interactionCount - 1)
+        if !hovering { hover(false) }
+    }
+    func beginFileDrag() {
+        hoverTask?.cancel(); draggingFiles = true; select(.files); setExpanded(true)
+    }
+    func endFileDrag() {
+        draggingFiles = false
+        hovering = panel?.frame.contains(NSEvent.mouseLocation) == true
+        hover(hovering)
     }
     private func updateFrame(animated: Bool) {
         guard let panel, let geometry else { return }
-        let width = expanded ? max(392, compactWidth) : compactWidth
-        let height = expanded ? topInset + 184 : topInset + 4
-        let rect = NSRect(x: geometry.centerX - width / 2, y: geometry.top - height, width: width, height: height)
+        let rect = geometry.frame(expanded: expanded)
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.22; context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -116,8 +176,10 @@ final class NotchController {
     }
     func stop() {
         stopped = true; hoverTask?.cancel(); panel?.orderOut(nil)
+        agenda.stop(); countdown.stop(); shelf.cancelChooser(); shelf.clear()
         model.setNotchVisible(false)
         for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
+        trackingMenus.removeAll(); interactionCount = 0
         panel = nil
     }
     #if LUMA_QA
@@ -133,74 +195,23 @@ final class NotchController {
     var frame: NSRect { panel?.frame ?? .zero }
 }
 
-private struct NotchView: View {
-    let model: StandbyModel
-    let controller: NotchController
-    var body: some View {
-        ZStack(alignment: .top) {
-            UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: controller.expanded ? 26 : 16,
-                                   bottomTrailingRadius: controller.expanded ? 26 : 16, topTrailingRadius: 0)
-                .fill(.black)
-            if controller.expanded { expanded.padding(.top, controller.topInset + 8).padding(.horizontal, 22).transition(.opacity) }
-            else { compact.frame(height: controller.topInset).padding(.horizontal, 10).transition(.opacity) }
-        }
-        .foregroundStyle(.white).preferredColorScheme(.dark)
-        .contentShape(Rectangle())
-        .onHover { controller.hover($0) }
-        .animation(model.reduceMotion ? nil : .easeInOut(duration: 0.16), value: controller.expanded)
+/// AppKit handles Finder drags without polling the clipboard or requesting accessibility.
+final class NotchDropHostingView: NSHostingView<NotchView> {
+    weak var controller: NotchController?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+    private func urls(_ sender: NSDraggingInfo) -> [URL] {
+        (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
     }
-    private var compact: some View {
-        HStack(spacing: 0) {
-            if model.hasTrack {
-                AlbumArtwork(model: model).frame(width: 22, height: 22).clipShape(RoundedRectangle(cornerRadius: 5))
-            } else { playerButton(size: 18).frame(width: 26, height: 26) }
-            Spacer(minLength: max(20, controller.cameraWidth))
-            Button { model.showWindow() } label: {
-                Image(systemName: model.anchor.playing ? "waveform" : "rectangle.expand.vertical")
-                    .font(.system(size: 15, weight: .medium)).frame(width: 26, height: 26)
-            }.buttonStyle(.plain).help("Abrir Standby").accessibilityLabel("Abrir Oruvi a pantalla completa")
-        }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !urls(sender).isEmpty else { return [] }
+        controller?.beginFileDrag(); return .copy
     }
-    private var expanded: some View {
-        VStack(spacing: 14) {
-            if model.hasTrack {
-                HStack(spacing: 14) {
-                    AlbumArtwork(model: model).frame(width: 60, height: 60).clipShape(RoundedRectangle(cornerRadius: 13))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.track.title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                        Text(model.track.artist).font(.system(size: 12)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
-                        Text(model.activePlayer.name).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.46))
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    Button { controller.collapse(); model.showWindow() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 30, height: 30) }
-                        .buttonStyle(.plain).help("Standby").accessibilityLabel("Abrir Standby")
-                }
-                HStack(spacing: 28) {
-                    control("backward.fill", command: "previous", label: "Anterior")
-                    control(model.anchor.playing ? "pause.fill" : "play.fill", command: "toggle", label: model.anchor.playing ? "Pausar" : "Reproducir")
-                    control("forward.fill", command: "next", label: "Siguiente")
-                }.frame(maxWidth: .infinity).padding(.vertical, 6)
-            } else { playerButton(size: 30).frame(height: 100).frame(maxWidth: .infinity) }
-            HStack {
-                Menu {
-                    ForEach(PlayerPreference.allCases) { option in
-                        Button(option.name) { model.playerPreference = option }
-                    }
-                } label: { Image(systemName: "hifispeaker").frame(width: 28, height: 24) }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Reproductor")
-                Spacer()
-                Image(systemName: model.onBattery ? "battery.75percent" : "powerplug")
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
-                Button { controller.collapse(); model.showWindow(); model.settingsOpen = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 28, height: 24) }
-                    .buttonStyle(.plain).accessibilityLabel("Ajustes")
-            }
-        }
-    }
-    private func playerButton(size: CGFloat) -> some View {
-        Button { controller.collapse(); model.openMusic() } label: { Image(systemName: "music.note").font(.system(size: size, weight: .regular)).frame(minWidth: 28, minHeight: 28) }
-            .buttonStyle(.plain).accessibilityLabel("Abrir reproductor")
-    }
-    private func control(_ symbol: String, command: String, label: String) -> some View {
-        Button { model.control(command) } label: { Image(systemName: symbol).font(.system(size: 20, weight: .medium)).frame(width: 44, height: 32) }
-            .buttonStyle(.plain).accessibilityLabel(label)
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { urls(sender).isEmpty ? [] : .copy }
+    override func draggingExited(_ sender: NSDraggingInfo?) { controller?.endFileDrag() }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let files = urls(sender)
+        guard !files.isEmpty, let controller else { return false }
+        controller.shelf.add(files); controller.endFileDrag(); return true
     }
 }

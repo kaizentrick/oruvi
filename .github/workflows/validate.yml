@@ -1,0 +1,37 @@
+name: Validate Oruvi
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Resources/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oruvi-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out proposed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Regression checks and public-source audit
+        run: bash scripts/check.sh
+      - name: Compile and verify the complete application without release secrets
+        if: ${{ !cancelled() }}
+        env:
+          ORUVI_REPOSITORY: ''
+        run: bash scripts/build.sh
+
+# No signing secrets, uploads, releases or execution of the GUI on a personal Mac.
+# The trusted main release workflow remains the only publisher.

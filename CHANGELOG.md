@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.0 — Notch ajustado y widgets nativos
+
+### Notch
+
+Se eliminan los cuatro puntos adicionales bajo la franja de la cámara. La geometría usa coordenadas de pantalla y escala de píxeles; AppKit determina el tamaño, sin restricciones intrínsecas ni una segunda zona segura automática de SwiftUI. Las pantallas sin recorte conservan una isla superior. El indicador derecho es una nota musical visible únicamente si hay canción en reproducción; no muestra el icono de Standby al pausar.
+
+El panel ampliado organiza Música, Archivos, Agenda y Temporizador en pestañas de alto estable. Conserva negro, tipografía del sistema, controles de primer clic, etiquetas accesibles y Reducir movimiento. Standby y Ajustes permanecen en el pie. El foco del teclado es explícito, no por hover; Esc cierra el panel. Los diálogos nativos y el arrastre suspenden el cierre automático. Standby automático no cubre el notch en uso.
+
+### Widgets
+
+Bandeja de hasta 20 referencias locales, arrastre desde Finder y hacia otras apps, selección múltiple, selector de archivos y mostrar en Finder. Duplicados acotados, validación fuera del hilo principal y protección frente a respuestas tardías después de vaciar. No se copian, mueven, borran ni persisten los originales.
+
+AirDrop usa NSSharingService y el selector real de macOS. El usuario decide destinatario; el resultado se informa desde el delegado del servicio. Sin APIs privadas, listas de dispositivos inventadas ni cambios de Bluetooth/Wi-Fi.
+
+Agenda opcional con EventKit y consentimiento explícito. macOS solicita acceso completo; Oruvi solo lee. Hasta seis eventos de los próximos siete días, con estados de permiso, carga, vacío y desconexión. Consultas en un actor, actualizaciones limitadas a la pestaña visible y sin persistencia ni envío de eventos a servidores.
+
+Temporizador de 5/15/25 minutos con pausa, repetición y reinicio. ContinuousClock incluye reposo y no depende del reloj civil. Un único vencimiento de fondo; actualización visual cada segundo solo al mostrar el widget. Sonido opcional, apagado por defecto. No modifica Concentración ni la app Reloj.
+
+### Validación y distribución
+
+Nuevas pruebas para escalas y orígenes de pantalla, altura compacta, indicador, políticas de archivo y temporizador. Los PR compilan y verifican la aplicación/DMG en GitHub sin claves de publicación; únicamente main publica el feed firmado. Se conserva el instalador fijo Oruvi.dmg y Sparkle.
+
+No se ha sustituido la validación interactiva de AirDrop, permisos reales de Calendario ni inspección visual en hardware físico por una compilación. No se operó una Mac personal para implementar esta versión. Continúa sin notarización de Apple y sin mediciones nuevas de batería/RAM.
+
 ## 0.7.0 — Notch, Spotify y descargas directas
 
 ### Interfaz
