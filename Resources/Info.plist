@@ -6,8 +6,8 @@
 <key>CFBundleIdentifier</key><string>com.kaizentrick.Oruvi</string>
 <key>CFBundleExecutable</key><string>Oruvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.8.0</string>
-<key>CFBundleVersion</key><string>8</string>
+<key>CFBundleShortVersionString</key><string>0.8.1</string>
+<key>CFBundleVersion</key><string>9</string>
 <key>SUEnableAutomaticChecks</key><true/>
 <key>SUAutomaticallyUpdate</key><true/>
 <key>SUScheduledCheckInterval</key><integer>3600</integer>

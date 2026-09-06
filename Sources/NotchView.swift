@@ -1,3 +1,4 @@
+// Copyright (c) 2026 KaizenTrick.
 import AppKit
 import SwiftUI
 
@@ -25,11 +26,11 @@ struct NotchView: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
-            .clipShape(shape).contentShape(shape)
+            .clipShape(shape).contentShape(Rectangle())
         }
         .ignoresSafeArea()
         .foregroundStyle(.white).preferredColorScheme(.dark)
-        .onHover { controller.hover($0) }
+        // Hover belongs to the persistent AppKit tracking area, not this changing subtree.
         .onExitCommand { controller.collapse() }
         .animation(model.reduceMotion ? nil : .easeInOut(duration: 0.16), value: controller.expanded)
     }
@@ -45,7 +46,6 @@ struct NotchView: View {
             Spacer(minLength: 0)
             Group {
                 if NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.anchor.playing) {
-                    // State, not a fake audio visualizer or an always-visible Standby button.
                     Image(systemName: "music.note").font(.system(size: 14, weight: .medium))
                         .accessibilityLabel("Música en reproducción")
                 } else { Color.clear.frame(width: 18, height: 18).accessibilityHidden(true) }
@@ -57,24 +57,25 @@ struct NotchView: View {
         .accessibilityLabel(model.hasTrack ? "Oruvi. \(model.track.title). Abrir widgets." : "Oruvi. Abrir widgets.")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { controller.openForKeyboard() }
-        .help("Abrir Oruvi: música, archivos, agenda y temporizador")
+        .help("Abrir widgets de Oruvi")
     }
     private var workspace: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 3) {
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
                 ForEach(NotchTab.allCases) { option in
                     Button { controller.select(option) } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: option.symbol)
-                            Text(option.title).lineLimit(1).minimumScaleFactor(0.8)
-                        }.font(.system(size: 10, weight: .medium))
-                            .frame(maxWidth: .infinity).frame(height: 30)
-                            .background(.white.opacity(controller.tab == option ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 9))
-                            .contentShape(RoundedRectangle(cornerRadius: 9))
+                        Image(systemName: option.symbol)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white.opacity(controller.tab == option ? 1 : 0.6))
+                            .frame(width: 44, height: 32)
+                            .background(.white.opacity(controller.tab == option ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 10))
+                            .contentShape(RoundedRectangle(cornerRadius: 10))
                     }.buttonStyle(.plain).help(option.title)
                     .accessibilityLabel(option.title).accessibilityValue(controller.tab == option ? "Seleccionado" : "")
                 }
-            }.frame(height: 30)
+                Spacer(minLength: 0)
+            }.frame(height: 32)
             Group {
                 switch controller.tab {
                 case .music: music
@@ -83,6 +84,19 @@ struct NotchView: View {
                 case .timer: NotchTimerView(countdown: controller.countdown)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                if controller.draggingFiles {
+                    RoundedRectangle(cornerRadius: 12).fill(.black.opacity(0.94))
+                        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5, 4])) }
+                        .overlay {
+                            VStack(spacing: 8) {
+                                Image(systemName: "tray.and.arrow.down").font(.system(size: 26, weight: .light))
+                                Text("Suelta para añadir").font(.system(size: 13, weight: .medium))
+                                Text("Los originales se quedan donde están").font(.system(size: 10)).foregroundStyle(.secondary)
+                            }
+                        }.allowsHitTesting(false)
+                }
+            }
             footer.frame(height: 24)
         }.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 16)
     }
@@ -116,21 +130,27 @@ struct NotchView: View {
                         else { Text(option.name) }
                     }
                 }
-            } label: { Label(model.activePlayer.name, systemImage: "hifispeaker").font(.system(size: 10)) }
-            .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize().help("Elegir Apple Music, Spotify o Automático")
+            } label: { Image(systemName: "hifispeaker").font(.system(size: 13)).frame(width: 28, height: 24) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("Reproductor: \(model.activePlayer.name)").accessibilityLabel("Elegir reproductor; actual: \(model.activePlayer.name)")
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private var footer: some View {
         HStack(spacing: 12) {
-            Label(model.onBattery ? "Con batería" : "Con corriente", systemImage: model.onBattery ? "battery.75percent" : "powerplug")
-                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+            Image(systemName: model.onBattery ? "battery.75percent" : "powerplug")
+                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                .help(model.onBattery ? "Con batería" : "Con corriente")
+                .accessibilityLabel(model.onBattery ? "Con batería" : "Con corriente")
             Spacer(minLength: 4)
             Button { controller.collapse(); model.showWindow() } label: {
-                Label("Standby", systemImage: "arrow.up.left.and.arrow.down.right").font(.system(size: 11))
-            }.buttonStyle(.plain).help("Abrir Standby a pantalla completa")
+                Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 28, height: 24)
+            }.buttonStyle(.plain).help("Abrir Standby a pantalla completa").accessibilityLabel("Abrir Standby")
             Button { controller.collapse(); model.showWindow(); model.settingsOpen = true } label: {
                 Image(systemName: "slider.horizontal.3").frame(width: 28, height: 24)
             }.buttonStyle(.plain).help("Ajustes").accessibilityLabel("Ajustes de Oruvi")
+            Button { controller.collapse() } label: {
+                Image(systemName: "chevron.up").frame(width: 28, height: 24)
+            }.buttonStyle(.plain).help("Cerrar panel").accessibilityLabel("Cerrar panel del notch")
         }
     }
     private func control(_ symbol: String, command: String, label: String) -> some View {
