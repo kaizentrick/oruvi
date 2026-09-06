@@ -44,6 +44,7 @@ final class NotchController {
     @ObservationIgnored private var sessionBlocked = false
     @ObservationIgnored private var presentationHandoff = false
     @ObservationIgnored private var interactionCount = 0
+    @ObservationIgnored private var trackingMenus: Set<ObjectIdentifier> = []
 
     var preventsAutomaticStandby: Bool { expanded || interactionCount > 0 || draggingFiles }
     init(model: StandbyModel) { self.model = model; model.notch = self }
@@ -72,6 +73,19 @@ final class NotchController {
         observe(NotificationCenter.default, NSWindow.didResignKeyNotification) { [weak self] in
             guard let self, self.panel?.isKeyWindow == false, !self.hovering else { return }
             self.hover(false)
+        }
+        for name in [NSMenu.didBeginTrackingNotification, NSMenu.didEndTrackingNotification] {
+            let token = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                MainActor.assumeIsolated {
+                    guard let self, let menu = notification.object as? NSMenu else { return }
+                    let identity = ObjectIdentifier(menu)
+                    if notification.name == NSMenu.didBeginTrackingNotification {
+                        guard self.expanded, self.trackingMenus.insert(identity).inserted else { return }
+                        self.beginInteraction()
+                    } else if self.trackingMenus.remove(identity) != nil { self.endInteraction() }
+                }
+            }
+            observers.append((NotificationCenter.default, token))
         }
         for event in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             observe(workspace, event) { [weak self] in self?.sessionBlocked = true; self?.reconcile() }
@@ -112,7 +126,7 @@ final class NotchController {
         hoverTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: inside ? 160_000_000 : 380_000_000) } catch { return }
             guard !Task.isCancelled, let self, self.hovering == inside, self.model.notchVisible else { return }
-            if !inside && (self.interactionCount > 0 || self.draggingFiles) { return }
+            if !inside && (self.interactionCount > 0 || self.draggingFiles || self.panel?.isKeyWindow == true) { return }
             self.setExpanded(inside)
         }
     }
@@ -165,6 +179,7 @@ final class NotchController {
         agenda.stop(); countdown.stop(); shelf.cancelChooser(); shelf.clear()
         model.setNotchVisible(false)
         for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
+        trackingMenus.removeAll(); interactionCount = 0
         panel = nil
     }
     #if LUMA_QA

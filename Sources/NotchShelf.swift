@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import Observation
 
-struct NotchShelfItem: Identifiable {
+struct NotchShelfItem: Identifiable, Sendable {
     let url: URL
     let isDirectory: Bool
     var id: URL { url }
@@ -95,7 +95,8 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
         Task { @MainActor [weak self] in self?.finishSharing("Enviado con AirDrop.") }
     }
     nonisolated func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
-        let cancelled = (error as NSError).code == NSUserCancelledError
+        let failure = error as NSError
+        let cancelled = failure.domain == NSCocoaErrorDomain && failure.code == NSUserCancelledError
         Task { @MainActor [weak self] in self?.finishSharing(cancelled ? "Envío cancelado." : "No se completó el envío. Revisa AirDrop e inténtalo de nuevo.") }
     }
     private func finishSharing(_ text: String) {
@@ -131,6 +132,7 @@ struct NotchShelfView: View {
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                     }.contentShape(Rectangle())
                                 }.buttonStyle(.plain).help("Seleccionar para AirDrop")
+                                .accessibilityValue(shelf.selected.contains(item.url) ? "Seleccionado" : "No seleccionado")
                                 .onDrag { NSItemProvider(object: item.url as NSURL) }
                                 Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]); controller.collapse() } label: {
                                     Image(systemName: "magnifyingglass").frame(width: 26, height: 28)
@@ -150,7 +152,7 @@ struct NotchShelfView: View {
                     Button("Vaciar") { shelf.clear() }.buttonStyle(.plain).foregroundStyle(.secondary)
                     Spacer()
                     Button { shelf.airDrop(controller: controller) } label: {
-                        Label(shelf.sharing ? "Enviando…" : "AirDrop (\(shelf.sharingURLs.count))", systemImage: "airplayaudio")
+                        Label(shelf.sharing ? "Enviando…" : "AirDrop (\(shelf.sharingURLs.count))", systemImage: "square.and.arrow.up")
                     }.buttonStyle(.bordered).controlSize(.small).disabled(shelf.sharing || shelf.importing)
                 }.font(.system(size: 11))
             }

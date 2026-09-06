@@ -95,8 +95,21 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 printf '\n[4/5] DMG\n'
 ln -sfn /Applications "$BUILD/stage/Applications"; cp Resources/LEEME.txt "$BUILD/stage/LEEME.txt"
 NAME="Oruvi-$VERSION-arm64.dmg"
-hdiutil create -volname "Oruvi $VERSION" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"
-hdiutil verify "$BUILD/$NAME"
+# Retry image creation only inside this isolated build directory. Every attempt
+# must pass hdiutil verification; a failed image never replaces dist or a release.
+DMG_VERIFIED=0
+for attempt in 1 2 3; do
+    if hdiutil create -volname "Oruvi $VERSION" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"; then
+        sync
+        if hdiutil verify "$BUILD/$NAME"; then DMG_VERIFIED=1; break; fi
+    fi
+    printf 'DMG verification failed (attempt %s/3). Rebuilding the image.\n' "$attempt" >&3
+    ls -lh "$BUILD/$NAME" || true
+    file "$BUILD/$NAME" || true
+    hdiutil imageinfo "$BUILD/$NAME" || true
+    if [[ "$attempt" -lt 3 ]]; then sleep 2; fi
+ done
+[[ "$DMG_VERIFIED" == 1 ]] || { echo 'DMG verification failed. No artifact will be published.'; exit 1; }
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     [[ "${SIGN_IDENTITY:--}" != - ]] || { echo 'Notarización requiere Developer ID.'; exit 1; }
     xcrun notarytool submit "$BUILD/$NAME" --keychain-profile "$NOTARY_PROFILE" --wait
