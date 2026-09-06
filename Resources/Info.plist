@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Oruvi</string>
+<key>CFBundleDisplayName</key><string>Oruvi</string>
+<key>CFBundleIdentifier</key><string>com.kaizentrick.Oruvi</string>
+<key>CFBundleExecutable</key><string>Oruvi</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.6.0</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUAutomaticallyUpdate</key><true/>
+<key>SUScheduledCheckInterval</key><integer>3600</integer>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SURequireSignedFeed</key><true/>
+<key>SUShowReleaseNotes</key><false/>
+<key>SUSendProfileInfo</key><false/>
+<key>LSUIElement</key><true/>
+<key>CFBundleIconFile</key><string>Oruvi.icns</string>
+<key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.music</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSAppleEventsUsageDescription</key><string>Oruvi necesita leer la canción y la posición de Música, y enviar los controles de reproducción que pulses. No accede a tu contraseña ni modifica tu biblioteca.</string>
+<key>NSHumanReadableCopyright</key><string>© 2026 KaizenTrick. Oruvi es una aplicación independiente de Apple.</string>
+</dict></plist>

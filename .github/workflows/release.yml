@@ -1,0 +1,53 @@
+name: Build and publish Oruvi
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Resources/**'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oruvi-main-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      ORUVI_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out the exact trusted commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Require the update-signing secret
+        env:
+          UPDATE_KEY: ${{ secrets.ORUVI_SPARKLE_PRIVATE_KEY }}
+        run: |
+          test -n "$UPDATE_KEY" || { echo 'Configure ORUVI_SPARKLE_PRIVATE_KEY before publishing releases.'; exit 1; }
+          printf 'ORUVI_BUILD_NUMBER=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Audit the public source and validate behavior
+        run: |
+          python3 scripts/audit-source.py
+          bash scripts/check.sh
+      - name: Build, verify and sign the update
+        env:
+          ORUVI_SPARKLE_PRIVATE_KEY: ${{ secrets.ORUVI_SPARKLE_PRIVATE_KEY }}
+        run: bash scripts/build.sh
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/publish-release.sh
+
+# Never switch this workflow to pull_request_target or expose the signing key to PR code.
+# Documentation-only pushes do not start a macOS build. Only the trusted main branch publishes.

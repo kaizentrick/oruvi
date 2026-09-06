@@ -1,0 +1,34 @@
+# Build outputs and dependencies
+/build/
+/dist/
+/.build*/
+/.build.lock/
+/.deps/
+/QA/
+.DS_Store
+*.xcuserstate
+*.xcuserdatad/
+
+# NEVER publish credentials, signing material, caches or personal data
+/.private/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+*.log
+*.lrc
+*.ttf
+*.otf
+*.ttc
+*.dmg
+*.zip
+
+# Generated verification harnesses are not part of the shipping application
+/Sources/LumaQA.swift
