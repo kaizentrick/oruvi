@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Screen coordinates are points, not physical pixels. The compact window must never
 /// extend below the safe-area band; display scaling is applied exactly once here.
@@ -54,7 +57,8 @@ enum NotchFilePolicy {
     static func candidates(_ urls: [URL], existing: [URL]) -> [URL] {
         var seen = Set(existing.map { $0.standardizedFileURL })
         var result: [URL] = []
-        for url in urls where result.count + existing.count < limit {
+        for url in urls {
+            guard result.count + existing.count < limit else { break }
             guard url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost" else { continue }
             let normalized = url.standardizedFileURL
             guard seen.insert(normalized).inserted else { continue }

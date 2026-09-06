@@ -28,6 +28,7 @@ jobs:
       - name: Regression checks and public-source audit
         run: bash scripts/check.sh
       - name: Compile and verify the complete application without release secrets
+        if: ${{ !cancelled() }}
         env:
           ORUVI_REPOSITORY: ''
         run: bash scripts/build.sh
