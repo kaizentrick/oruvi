@@ -1,37 +1,35 @@
-# Notch 0.8.1 — Interacción
+# Notch 0.9.0 — Diseño e interacción
 
-Copyright (c) 2026 KaizenTrick. Oruvi es un proyecto de KaizenTrick.
+Copyright (c) 2026 KaizenTrick. SPDX-License-Identifier: MIT
 
-## Abrir sin música
+## Superficie compacta y ampliada
 
-La superficie de entrada ahora es nativa y permanente: NSTrackingArea con activeAlways, inVisibleRect y seguimiento de entrada, salida y movimiento. No depende de una portada, canción, permiso de Automatización ni conexión a un reproductor. La interfaz SwiftUI ya no controla el hover. El área lógica incluye la superficie completa, incluso cuando ambos laterales están vacíos.
+La altura compacta sigue limitada a safeAreaInsets.top. No se agregan píxeles debajo de la cámara. La ampliación base es de 360 puntos de ancho: Música reserva 158 puntos de contenido bajo la franja de cámara; Archivos, Agenda y Temporizador reservan 240. El tamaño se acota a la pantalla. La música tiene portada de 48 puntos, título, artista y una fila con selector visible y transporte. Las cuatro pestañas siguen siendo iconos con nombres accesibles. Standby, Ajustes y Cerrar se agrupan en un menú, sin barra inferior de iconos dispersos.
 
-La apertura se programa una sola vez, con 120 ms de espera; mover el cursor dentro del área no reinicia ese plazo. Salir antes lo cancela. El cierre conserva 380 ms de tolerancia. Los cambios de contenido no sustituyen la zona de entrada. Al volver del reposo, cambiar de Space o recuperar una pantalla, se reconcilian geometría y posición actual del cursor después de los demás observadores de la app.
+## Cámara y velocidad de apertura
 
-Esc, clic fuera o el chevron inferior cierran el panel. El cierre explícito no vuelve a abrirlo bajo un cursor inmóvil: vuelve a habilitarse al salir y entrar. La interacción de teclado sigue siendo explícita, no se activa por hover. Standby, bloqueo y reposo continúan ocultando el notch intencionadamente.
+El seguimiento nativo se mantiene, pero ya no es la única fuente de entrada. NotchPointerMonitor observa mouseMoved local y global sin modificar eventos y evalúa NSEvent.mouseLocation en coordenadas AppKit. No hay global key monitoring ni event taps.
 
-## Acercar y soltar archivos
+NotchHoverGeometry incluye el centro físico de la cámara, el borde superior exacto, 12 puntos laterales y 10 inferiores. La comprobación de límites es inclusiva: CGRect.contains por sí solo excluye el borde superior/derecho. La zona está recortada a la pantalla elegida. No se crea una ventana invisible que capture clics fuera del notch.
 
-Arrastra un archivo local desde Finder hacia la zona superior del notch. La zona de acercamiento alcanza hasta 84 puntos por debajo del compacto y un margen horizontal limitado. No aumenta el alto visible ni crea una ventana transparente que intercepte los clics del escritorio.
+La espera para abrir se configura en 35 ms; la animación, en 160 ms; el cierre tolera 220 ms. Son valores configurados, no latencias medidas. Mover el puntero dentro no rearma la espera. Antes de completar la transición se consulta su posición actual. Cerca del notch hay un sondeo temporal de 60 ms para cubrir eventos de seguimiento ausentes en la cámara; lejos de esa zona no hay sondeo ni mutaciones de estado de la interfaz por cada movimiento.
 
-Al reconocer un arrastre nuevo de archivos se abre Archivos sin cambiar de pestaña manualmente y sin esperar una animación de tamaño. Se muestra «Suelta para añadir» tanto con la bandeja vacía como con archivos existentes. El archivo solo se añade cuando AppKit entrega la operación real de soltar. Si retiras el archivo o cancelas antes de soltar, se restaura la pestaña anterior y se libera el estado de arrastre.
+Se elimina el monitor y su sondeo durante Standby, reposo, bloqueo y al salir. Al volver del reposo/cambiar de Space se recuperan geometría y posición tras los demás observadores. Los estados no dependen de título, portada ni reproductor conectado. Esc/clic fuera/Cerrar suprimen reapertura hasta salir y volver a entrar.
 
-Se distinguen los datos de un arrastre nuevo de los que hayan quedado en el portapapeles de arrastre anterior; mover una ventana después de arrastrar un archivo no debería abrir Archivos por datos antiguos. No se reciben promesas de archivos ni URLs de páginas web como documentos locales.
+## Arrastre
 
-## Solo iconos
+Se conserva la anticipación de archivos: gesto nuevo y cambio del portapapeles de arrastre, cerca de la zona de 84 puntos bajo el compacto. La pestaña Archivos se activa sin esperar una animación y el destino AppKit permanente recibe el drop. Sin drop no se añade nada; retirar/cancelar restaura la pestaña anterior. La bandeja es temporal y de referencias, sin copiar, mover ni borrar originales. No se lee el portapapeles general ni el contenido de documentos.
 
-Las cuatro pestañas usan símbolos nativos, sin nombres visibles, con un estado seleccionado común y áreas de 44 × 32 puntos. Música, Archivos, Agenda y Temporizador conservan sus etiquetas para VoiceOver y sus ayudas al detener el puntero. El selector de reproductor, energía, Standby, Ajustes y cierre también usan iconos; los nombres de archivos, canciones, eventos y acciones dentro del contenido se mantienen legibles.
+## Reproductores
 
-## Privacidad y recursos
+Notch usa notchPlayerPreference; Standby conserva playerPreference. Se migra la preferencia antigua una sola vez; no se sobrescriben elecciones posteriores. Las conexiones también conservan claves independientes. Ajustes y todos los modos de Standby permiten acceder a sus selectores. Solo se ofrecen aplicaciones detectadas; Automático no desaparece aunque haya una sola.
 
-La anticipación utiliza monitores pasivos de botón izquierdo/arrastre/soltar mientras el notch está visible. No escucha teclas, no cambia ni cancela eventos del usuario, no usa un event tap y no conserva un historial del cursor. Un sondeo temporal de 120 ms existe únicamente mientras el botón permanece pulsado para soportar fuentes que consumen eventos durante su arrastre. Se detiene al soltar, ocultar el notch, entrar en Standby, bloquear, dormir o salir de la app.
+El muestreador sigue siendo único y serializado. La superficie visible decide qué preferencia se consulta; el relevo cancela letras/portadas pendientes y descarta respuestas antiguas. La apertura del reproductor captura el destino antes de cerrar Standby. Automático consulta ambos proveedores compatibles que estén en ejecución, no solo el primero; prioriza una nueva reproducción observada y mantiene un desempate estable si ambas siguen sonando. Los controles resuelven otra vez al pulsar. No hay control universal de navegadores ni de todas las apps de audio.
 
-Solo cerca del notch, durante el gesto, se consultan el cambio y los tipos anunciados por NSPasteboard.Name.drag. No se lee NSPasteboard.general ni el contenido de los documentos. Las URLs se obtienen en el destino nativo del arrastre. La bandeja sigue siendo de referencias: no copia, mueve ni elimina originales ni sube archivos automáticamente. AirDrop conserva su selector nativo de destinatarios.
+## Verificación y límites
 
-## Verificación
+verify-player-hover.swift utiliza las mismas políticas de selección, preferencias y geometría del producto. verify-surfaces.swift ejecuta cambios de superficie sobre StandbyModel real, con preferencias aisladas y sin start(), ventanas, cuentas, permisos o red. Las comprobaciones previas de arrastre, archivos, temporizador, fuentes y actualizaciones se conservan.
 
-scripts/check.sh conserva las comprobaciones existentes y añade scripts/verify-notch-interaction.swift sobre las mismas políticas que utiliza el controlador: apertura independiente del reproductor, estabilidad del plazo, salida/reentrada, suspensión, cierre explícito, datos antiguos de arrastre, gesto nuevo y geometría de acercamiento en distintas posiciones de pantalla. También se comprueban el texto de propósito y el entitlement de Calendario, incluido ahora para compilaciones con Hardened Runtime.
+La compilación y las pruebas se realizan en GitHub; no equivalen a una prueba visual/operativa en cada recorte físico, con AirDrop real o todos los permisos de usuario. La licencia MIT se valida y se empaqueta con la app/DMG. La notarización de Apple sigue siendo un proceso independiente.
 
-La compilación completa y la verificación del DMG se ejecutan en GitHub. Las pruebas de política y compilación no equivalen a una sesión interactiva con Finder, todos los modelos de pantalla, AirDrop y cuentas reales de Calendario. No se opera la Mac personal para este desarrollo.
-
-Referencias técnicas: https://developer.apple.com/documentation/appkit/nstrackingarea ; https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html ; https://developer.apple.com/documentation/appkit/nspasteboard/name-swift.struct/drag
+Referencias: https://developer.apple.com/documentation/appkit/nsevent/mouselocation ; https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html ; https://developer.apple.com/documentation/appkit/nsworkspace/urlforapplication(withbundleidentifier:) ; https://opensource.org/license/mit

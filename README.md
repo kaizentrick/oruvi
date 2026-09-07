@@ -2,127 +2,111 @@
 
 Un compañero de música en el notch. Un Standby de pantalla completa cuando dejas de usar tu Mac.
 
+Copyright © 2026 KaizenTrick · [Licencia MIT](LICENSE)
+
 ## Descargar e instalar
 
 ### [Descargar Oruvi para Mac — Oruvi.dmg](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg)
 
-[Ver la última versión y sus notas](https://github.com/kaizentrick/oruvi/releases/latest)
+[Última versión y notas](https://github.com/kaizentrick/oruvi/releases/latest)
 
-**Requiere macOS 26 o posterior y un Mac con Apple Silicon — M1 o posterior.** Esta distribución no incluye soporte Intel. Funciona con las aplicaciones de escritorio **Apple Music y Spotify**. No necesitas Xcode, Terminal, Homebrew ni descargar el código fuente para instalar la app.
+**Requiere Apple Silicon (M1 o posterior) y macOS 26 o posterior.** No incluye soporte Intel. Funciona con las aplicaciones de escritorio Apple Music y Spotify. No necesitas Xcode, Terminal, Homebrew, el código fuente ni una cuenta de GitHub para instalarla.
 
-Abre **Oruvi.dmg**, arrastra **Oruvi.app** a **Applications** y ábrela desde Aplicaciones. El notch aparece en el escritorio; al pasar el puntero se amplía. Para escuchar música abre tu reproductor y concede el permiso específico de **Automatización** que macOS solicite. Oruvi no reproduce otro audio encima del reproductor.
+Abre el DMG, arrastra **Oruvi.app** a **Applications**, expulsa el disco y abre Oruvi desde Aplicaciones. Autoriza Automatización para el reproductor que utilices. No se reproduce otro audio encima del reproductor.
 
-**Aviso de seguridad:** la distribución actual está firmada localmente, pero no está notarizada por Apple. macOS puede advertirlo o bloquear el primer inicio. Comprueba el origen y, únicamente si confías en esta copia, autoriza esa aplicación desde **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. No desactives Gatekeeper ni SIP. Un Mac administrado puede impedir esta excepción. La firma de actualizaciones Ed25519 no sustituye Developer ID ni la notarización.
+**Sin notarización de Apple:** esta distribución está firmada localmente. macOS puede bloquear el primer inicio. Comprueba el origen y, únicamente si confías en esta copia, autoriza esa app desde **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. No desactives Gatekeeper ni SIP. Un Mac administrado puede impedir esta excepción. Ed25519 verifica las actualizaciones, pero no sustituye Developer ID ni notarización.
 
-El enlace directo requiere una release con el archivo **Oruvi.dmg**. El workflow publica ese nombre fijo además del DMG numerado; las releases antiguas pueden tener únicamente el archivo numerado. Ambos contienen exactamente la misma app. Los ZIP «Source code» que GitHub agrega son para desarrolladores, no son el instalador.
+Usa `Oruvi.dmg`, no los ZIP «Source code». Cada release publica ese alias junto a un DMG numerado de contenido idéntico y `SHA256SUMS.txt`.
 
-## Dos modos, una sola aplicación
+## Notch más ligero
 
-**Notch compacto:** panel negro integrado alrededor de la cámara, sin icono en el Dock. Su alto se limita a la franja que macOS informa mediante `NSScreen.safeAreaInsets.top`, alineada a píxeles: no añade cuatro puntos decorativos debajo. En pantallas sin recorte físico utiliza una pequeña isla superior. La portada queda a la izquierda cuando hay canción; a la derecha solo aparece una nota musical cuando está reproduciéndose. Al pausar o detener, el lado derecho queda vacío. No es un visualizador de audio y no hay un botón de pantalla completa permanente en el compacto.
+El compacto conserva exactamente la franja superior que macOS informa para la cámara, sin añadir altura debajo. Muestra portada a la izquierda cuando hay canción y una nota musical a la derecha solo mientras reproduce. En pausa, ese lado queda vacío. En monitores sin recorte aparece una pequeña isla superior.
 
-**Notch ampliado:** al pasar el puntero aparecen Música, Archivos, Agenda y Temporizador en una superficie negra común, con tipografía y controles del sistema. Las pestañas mantienen el mismo alto para evitar saltos. Pasar el puntero no activa la app ni captura el teclado; hacer clic en el compacto permite navegar el panel con teclado y cerrarlo con Esc. Los controles de Standby y Ajustes están en el pie del panel ampliado. Durante una selección de archivos, un envío de AirDrop o un permiso de Agenda no se cierra automáticamente al retirar el puntero. La activación automática de Standby espera mientras el notch está en uso.
+El panel ampliado tiene cuatro pestañas **solo con iconos**: Música, Archivos, Agenda y Temporizador. Las ayudas al detener el puntero y las etiquetas de VoiceOver conservan sus nombres. En Música se muestran una portada de 48 puntos, título, artista, selector de reproductor y anterior/pausa/siguiente. Se elimina la fila inferior de iconos sueltos: **Standby, Ajustes y Cerrar** se agrupan en el menú de tres puntos.
 
-**Standby:** reloj editorial, reproductor centrado o reloj con música a pantalla completa. Oculta el notch, el Dock y la barra de menús mientras está activo. Al salir con **Esc**, vuelve el notch y se restaura la interfaz del sistema. No reemplaza la pantalla de bloqueo ni se dibuja encima de las pantallas protegidas del sistema.
+El ancho ampliado base pasa a 360 puntos. Música utiliza 158 puntos de contenido bajo la cámara; los otros widgets disponen de 240. Se adapta dentro de los límites de la pantalla y conserva el borde superior al cambiar de vista. Los cambios de altura son suaves y respetan Reducir movimiento. El compacto no aumenta de tamaño por estos cambios.
 
-Oruvi inicia como complemento del escritorio. Standby se activa desde el notch, desde su menú o al cumplirse el intervalo de inactividad configurado. Ajustes no se abre automáticamente. El notch se puede desactivar desde la barra de menús o Ajustes. Esta es una implementación propia: no incluye código ni recursos de Boring Notch.
+### Apertura, también sobre la cámara
 
-## Widgets nativos del notch
+La zona de activación incluye toda la banda del notch, **12 puntos a cada lado y 10 debajo**, además del centro de la cámara y el borde superior exacto. Se comprueban coordenadas globales del puntero, sin depender exclusivamente de que una vista reciba un evento sobre píxeles visibles. Esto complementa el seguimiento nativo permanente y no depende de música, portada o conexión al reproductor.
 
-### Archivos y AirDrop
+La espera configurada para abrir es de **35 ms**, la transición de **160 ms** y la tolerancia de cierre de **220 ms**. Son parámetros de implementación, no mediciones de latencia en todos los equipos. Moverse dentro no reinicia el plazo. El clic habilita teclado; Esc, clic fuera o Cerrar cierran sin reabrir inmediatamente bajo un cursor inmóvil.
 
-Arrastra archivos o carpetas desde Finder hacia el notch: se abre la pestaña Archivos. También puedes usar **Elegir archivos**. La bandeja conserva hasta **20 referencias temporales**, evita rutas duplicadas y permite arrastrar los elementos a otras aplicaciones, seleccionarlos para AirDrop o mostrarlos en Finder. «Retirar» y «Vaciar» solo quitan referencias de Oruvi: **no borran, mueven ni copian los originales**. La bandeja se vacía al cerrar la app y no se guarda en disco ni se sincroniza.
+No hay una ventana transparente sobre el escritorio ni interceptación de clics ajenos. Los monitores de movimiento son pasivos; una comprobación de posición cada 60 ms se mantiene únicamente cerca del notch para recuperar eventos ausentes detrás de la cámara. Se detiene lejos de la zona, durante Standby, bloqueo, reposo y al salir. No se observan teclas globales ni se guarda historial del puntero. Detalles en [Resources/NOTCH.md](Resources/NOTCH.md).
 
-**AirDrop** abre el servicio nativo `NSSharingService.sendViaAirDrop`. Tú eliges el destinatario en el diálogo de macOS. Oruvi no envía archivos automáticamente, no inventa una lista de dispositivos ni cambia Bluetooth, Wi-Fi o la visibilidad de AirDrop. Si no seleccionas elementos, se ofrece la bandeja completa; si marcas algunos, solo esos. El resultado de la transferencia proviene del servicio del sistema, no de una simulación.
+## Reproductores independientes
 
-La bandeja acepta URLs de archivos locales explícitamente entregadas por el usuario. No lee continuamente el portapapeles, no descarga enlaces, no recibe promesas de archivos desde todas las apps y no hace búsquedas recursivas en carpetas. Un archivo movido o eliminado después de añadirlo puede dejar de estar disponible; el original debe seguir existiendo al utilizarlo.
+**Notch y Standby guardan selecciones separadas:** Automático, Apple Music o Spotify. Puedes usar, por ejemplo, Automático en el Notch y Apple Music en Standby. Cambiar uno no cambia el otro, ni siquiera desde Ajustes. Al actualizar, la preferencia anterior se copia una sola vez a ambos; las decisiones posteriores se conservan por separado.
 
-### Agenda
+El selector permanece visible incluso sin canción. Detecta aplicaciones mediante las API de macOS y solo ofrece opciones explícitas instaladas; **Automático siempre permanece disponible**. No instala ni inicia aplicaciones para detectarlas. Una preferencia guardada para una aplicación retirada se informa como no instalada, sin sustituirla silenciosamente. Las opciones se refrescan al abrir o acercarse al selector.
 
-Está **desconectada por defecto**. En Agenda, pulsa **Conectar Calendario** para autorizar EventKit. macOS requiere permiso completo para consultar eventos; la implementación de Oruvi es **de solo lectura**: no crea, edita ni elimina eventos. Muestra hasta seis próximos eventos dentro de los siguientes siete días, con fecha, hora y calendario de origen; los eventos de todo el día se identifican por separado. **Abrir Calendario** abre la aplicación de Apple, sin usar enlaces privados a eventos.
+**Automático** consulta las aplicaciones compatibles que están ejecutándose. Una aplicación pausada no oculta a otra que reproduce. Cuando se observa que otra empieza a reproducir, la prioriza; si ambas ya reproducen y no puede determinar un comienzo nuevo, mantiene una elección estable. Al pulsar un control vuelve a resolver el reproductor antes de enviar la acción, en vez de fiarse de metadatos anteriores. Un gesto de posición no se aplica a una grabación distinta de la mostrada.
 
-Las consultas solo se realizan con Agenda conectada y visible. Se actualiza ante cambios de EventKit y, mientras está abierta, como máximo con una comprobación periódica por minuto, además de la actualización de apertura. Al salir de la pestaña o cerrar el panel se detienen los temporizadores y se retiran los datos visibles. Los registros no se guardan en disco ni se envían a servidores. **Desconectar** detiene la función dentro de Oruvi; para revocar el permiso del sistema utiliza Privacidad y seguridad → Calendarios.
+**Alcance:** Automático controla Apple Music y Spotify de escritorio mediante sus diccionarios públicos Apple Events/ScriptingBridge. No significa control universal de YouTube, navegadores o todas las apps de audio. No utiliza MediaRemote privado, Spotify Web API, contraseñas ni tokens de cuenta; no controla una sesión que solo exista en el teléfono. Spotify ofrece repetición activada/desactivada en este puente, no se simula «repetir una».
 
-### Temporizador
+Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la preferencia de la superficie visible, cancela contenido pendiente y descarta respuestas antiguas. No se añaden dos bucles permanentes de consulta. El permiso o la desconexión de una superficie no modifica la selección guardada de la otra.
 
-Intervalos de **5, 15 y 25 minutos**, con iniciar, pausar, repetir y reiniciar. Utiliza `ContinuousClock`: incluye el reposo del equipo y no depende de cambios de fecha, hora o zona horaria. Mantiene un solo vencimiento pendiente, no un bucle de fondo cada segundo; el contador visual se actualiza únicamente mientras su pestaña está abierta. El sonido final es opcional y está apagado inicialmente. No crea alarmas en Reloj, notificaciones push ni sesiones de Concentración; al salir de Oruvi se cancela.
+## Widgets
 
-Se mantiene el estado real de alimentación en el pie del panel. No se añaden widgets de tiempo meteorológico, recordatorios ni controles de Concentración en esta versión: requerirían más permisos, fuentes de datos o interacciones. Ningún acceso se presenta como una integración funcional si solo es una maqueta.
+**Archivos y AirDrop.** Arrastra un archivo local desde Finder hacia el notch. La zona de acercamiento abre Archivos automáticamente y muestra «Suelta para añadir», incluso con elementos en la bandeja. Solo se añade al soltarlo; cancelar o retirarlo restaura la vista anterior. También hay selector de archivos, selección múltiple, arrastre hacia otras apps y Mostrar en Finder. Hasta 20 referencias temporales, sin duplicados. Vaciar o retirar **no borra, mueve ni copia los originales**. La bandeja se vacía al cerrar Oruvi y no se guarda en disco.
 
-## Apple Music y Spotify
+AirDrop utiliza el selector nativo de macOS mediante `NSSharingService.sendViaAirDrop`: tú eliges el destinatario. Sin selección se ofrece la bandeja completa; con elementos marcados solo esos. El resultado procede del sistema. Oruvi no simula dispositivos ni cambia Wi-Fi/Bluetooth ni envía archivos sin intervención. Se aceptan archivos locales, no promesas de archivos de cualquier app ni enlaces web; el original debe seguir existiendo. No se inspeccionan contenidos, carpetas recursivas ni el portapapeles general. La anticipación solo consulta tipos anunciados en el portapapeles de arrastre durante el gesto y cerca del notch.
 
-En **Ajustes → Notch y reproductor** elige Automático, Apple Music o Spotify. Automático conserva el reproductor preferido mientras siga reproduciendo; si está pausado y el otro reproduce, utiliza el otro. Cuando ambos suenan, puedes elegir explícitamente uno. Los controles se envían únicamente al reproductor seleccionado.
+**Agenda.** Está desconectada inicialmente. Conectar Calendario solicita autorización EventKit. macOS exige acceso completo para consultar eventos; Oruvi solo lee y no crea, edita ni elimina. Muestra hasta seis próximos eventos dentro de siete días. Las consultas se limitan a la pestaña visible, con cambios de EventKit y refresco periódico de un minuto. Al salir de Agenda se detienen los temporizadores y se retiran los datos visibles. No se persisten ni se envían a servidores. Desconectar detiene la función en Oruvi; para revocar el permiso del sistema usa Privacidad y seguridad → Calendarios.
 
-La integración utiliza Apple Events / ScriptingBridge de las aplicaciones de este Mac. No pide contraseñas, no usa tokens de Spotify Web API ni APIs privadas de MediaRemote. No controla directamente un reproductor web ni una sesión que exista únicamente en un teléfono. Spotify requiere su aplicación de escritorio. Su interfaz de automatización ofrece repetición activada/desactivada; Oruvi no simula un control de «repetir una» que ese puente no proporciona.
+**Temporizador.** Intervalos de 5, 15 y 25 minutos con pausa, reinicio y repetición. `ContinuousClock` incluye reposo y no depende de cambios de fecha/zona horaria. Hay un vencimiento de fondo, no un bucle por segundo; el contador visual solo se actualiza con su vista abierta. Sonido opcional, desactivado inicialmente. No crea alarmas en Reloj ni cambia Concentración y se cancela al cerrar Oruvi.
 
-Cada proveedor tiene identidad de pista y caché diferenciadas. Al cambiar de reproductor o de canción se descartan las letras anteriores. La portada de Spotify se obtiene desde la URL que proporciona su app, únicamente en dominios de imágenes permitidos. No se sustituye por otra portada del catálogo Apple, no se persiste en la caché de Oruvi y se conserva su proporción original.
+El cierre automático y Standby por inactividad esperan mientras se usan diálogos nativos o un arrastre.
 
-## Letras sin espacios vacíos
+## Standby, letras y malla
 
-Con letra disponible, el botón de comillas abre el panel y muestra su estado seleccionado. Sin letra, la portada, la información y los controles permanecen centrados. Pulsar el botón muestra **«Esta canción no tiene letra sincronizada disponible»** y el aviso desaparece solo, aproximadamente a los tres segundos.
+Standby conserva Reloj, Música y Reloj + música a pantalla completa. Oculta el notch, Dock y menú durante la presentación y los restaura al salir con Esc. No sustituye la pantalla de bloqueo ni se muestra sobre pantallas protegidas. Ajustes no se abre automáticamente al iniciar.
 
-Una búsqueda en curso, una desconexión del proveedor y las letras desactivadas tienen mensajes diferentes. No se afirma que una canción carezca de letra cuando solo falló la red. No hay un panel vacío reservado para contenido ausente. Las letras recuperadas son de **LRCLIB** o de tus archivos **LRC**, no las letras oficiales de Apple o Spotify; se sincronizan por línea, no por palabra. La cobertura y los tiempos dependen de cada grabación.
+El selector de Standby está en Música y en la barra superior de las otras dos vistas; Ajustes permite cambiar ambos selectores. La portada abre el reproductor mostrado: el destino se captura antes de abandonar la presentación y volver a la preferencia del notch.
 
-Cuando no hay una canción, el estado vacío del reproductor muestra un botón musical para abrir la app elegida. No incluye «Ver demostración» ni eslóganes de relleno.
+Las letras proceden de **LRCLIB o tus archivos LRC**, no son las letras oficiales de Apple o Spotify. Se sincronizan por línea; la disponibilidad depende de la grabación. Sin letra no se reserva un panel vacío y el botón informa del estado temporalmente. Carga, desconexión y letras desactivadas tienen estados distintos.
 
-## Malla, fuentes y movimiento
+La malla Aurora tiene alternativas Atardecer y Medianoche, con adaptación a la portada e interpolación de color independiente de los controles. Una respuesta de portada antigua no cambia la canción nueva. Las imágenes de Spotify se descargan únicamente desde dominios permitidos de la URL suministrada por la app, sin sustituirlas por otro catálogo ni guardarlas en la caché persistente.
 
-La malla predeterminada **Aurora** combina azules, índigos y tonos verde azulado. También están disponibles Atardecer y Medianoche. La adaptación a portada interpola los componentes de color en una capa independiente de la interfaz; no vuelve a animar el reloj o los controles completos. Mientras llega una imagen, una paleta provisional cambia también según el título de la canción. Una respuesta antigua de portada no puede recolorear la canción nueva.
-
-Se utilizan las tipografías nativas del sistema: SF Pro, SF Pro Rounded, monoespaciada, serif y otros estilos instalados. Reloj y contenido se configuran por separado. No se incluyen ni se descargan archivos de fuentes. Los controles siguen siendo accesibles y admiten el primer clic. Se respeta Reducir movimiento y Reducir transparencia.
+Se emplean fuentes nativas del sistema; no se incluyen ni descargan archivos de fuentes. Se respetan Reducir movimiento y Reducir transparencia.
 
 ## Energía y privacidad
 
-El notch no captura pantalla, cámara, micrófono, muestras de audio, historial ni pestañas. No ejecuta una animación continua ni un visualizador de audio. La nota musical es un estado visual, no un analizador de ritmo. La ampliación se anima solamente durante la interacción.
+No hay captura de pantalla, cámara, micrófono, audio, historial o pestañas; tampoco telemetría propia, Electron ni WebView. La nota musical es un estado, no un visualizador. Las letras no se consultan para el notch compacto.
 
-Fuera de Standby, solo se consultan metadatos musicales para el notch: aproximadamente cada **3 segundos con corriente y 5 en batería** mientras hay reproducción, con mayor espera al pausar. Las notificaciones de reproductor son pistas de mejor esfuerzo para actualizar antes. No se solicitan letras en segundo plano para el panel compacto. Al desactivar ambas superficies se detienen las consultas periódicas. El reposo y bloqueo ocultan el panel y suspenden el trabajo de reproducción y Agenda; un temporizador iniciado explícitamente conserva su vencimiento.
+Fuera de Standby, las consultas musicales se espacian aproximadamente 3 segundos con corriente y 5 en batería mientras reproduce, y más al pausar; las notificaciones pueden anticipar actualizaciones. En Automático se comprueban ambos proveedores en ejecución, a diferencia de las versiones anteriores que se detenían en el primero. La detección del puntero no ejecuta consultas de reproducción por movimiento.
 
-En Standby, Automático limita la malla a 24 fps con corriente y la deja estática en batería. Fluido permite hasta 30/12 fps; Ahorro, bajo consumo, calor y Reducir movimiento detienen su animación. Las portadas se decodifican fuera del hilo principal, con tamaño acotado. La sincronía usa reloj monotónico y temporizadores de cambio de línea, no consultas por fotograma.
+En Standby, Automático limita la malla a 24 fps con corriente y la deja estática en batería. Fluido permite hasta 30/12 fps; Ahorro, bajo consumo, calor y Reducir movimiento detienen la animación. El reposo y bloqueo suspenden reproducción y Agenda; un temporizador iniciado conserva su vencimiento. Son políticas de implementación, no cifras medidas de autonomía o memoria.
 
-La protección multimedia impide la activación automática cuando otras aplicaciones mantienen la pantalla despierta o tienen salida de audio activa; Apple Music y Spotify por sí solos están exceptuados. La protección conservadora adicional también espera mientras un navegador o reproductor de vídeo reconocido esté al frente, incluso pausado. Se puede desactivar. No se garantiza detección universal de todos los vídeos silenciosos.
+La protección multimedia y la opción conservadora de navegadores se mantienen. No se garantiza detección universal de vídeos silenciosos. Las búsquedas externas de letras y portada envían los metadatos necesarios a LRCLIB/Apple/servidores de imágenes de Spotify; esos servicios reciben la IP. No se envían documentos o eventos de Agenda a servidores propios.
 
-Las búsquedas externas opcionales envían los metadatos necesarios a LRCLIB o al catálogo Apple; la descarga de portada de Spotify contacta su servicio de imágenes. Esos servicios reciben la IP. No hay telemetría propia, Electron, servidor de audio ni WebView integrado. Las políticas de ahorro son decisiones de implementación, no cifras medidas de autonomía o RAM.
+## Actualizaciones y desarrollo
 
-## Actualizaciones y descargas de GitHub
+Usa **Buscar actualizaciones** en Oruvi. Sparkle comprueba el feed y el archivo con Ed25519. El enlace humano fijo descarga `Oruvi.dmg`; el feed usa el DMG numerado de una release concreta, no ese alias. No borres releases publicadas que puedan necesitar versiones anteriores.
 
-**Buscar actualizaciones** está en el menú superior y en Ajustes. Sparkle verifica el feed y el archivo con Ed25519. Las descargas automáticas se configuran por separado; instalar no equivale a ejecutar código arbitrario desde un commit.
+Los PR ejecutan comprobaciones y compilación completa en GitHub con `ORUVI_REPOSITORY=''`, sin secretos ni publicación. Solo `main` publica: valida, compila, verifica, firma y sube todos los recursos antes de hacer Latest. Un fallo no sustituye el instalador anterior. Los cambios de documentación no empaquetada no consumen una compilación.
 
-El workflow valida los cambios de código en `main`, compila, firma el DMG y el feed, sube todos los archivos a una release en borrador y solo entonces la publica como Latest. Cambios exclusivamente en la documentación no consumen una compilación de macOS. El enlace humano fijo es:
-
-```text
-https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg
-```
-
-Sparkle utiliza el archivo **numerado e inmutable** de cada release, no el alias fijo. `SHA256SUMS.txt` permite comprobar que el alias y el instalador numerado son idénticos. No borres releases publicadas que aún puedan ser necesarias para una actualización.
-
-### Publicar desde el Terminal del mantenedor
-
-Con el código revisado y guardado en un commit de `main`:
-
-```bash
-bash scripts/configure-downloads.sh
-```
-
-El script utiliza la sesión normal de `gh`, comprueba el remoto y el secreto de firma, configura descripción/enlace/temas del repositorio, hace el push y espera el workflow. No cambia la visibilidad de otros repositorios ni publica claves privadas. Si la sesión de herramientas no puede acceder a la configuración de GitHub CLI, este paso debe ejecutarse desde el Terminal del mantenedor. No se eluden restricciones de acceso.
-
-### Compilar y validar
+Para desarrollar con SDK macOS 26:
 
 ```bash
 bash scripts/check.sh
 bash scripts/build.sh
 ```
 
-Requiere herramientas con SDK macOS 26. El resultado es `dist/Oruvi-0.8.0-arm64.dmg`. El proyecto conserva un nombre de carpeta histórico y datos en `~/Library/Application Support/LumaStandby`; el producto y bundle son **Oruvi** / **com.kaizentrick.Oruvi**.
+Resultado: `dist/Oruvi-0.9.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
 
-Los pull requests ejecutan `Validate Oruvi` en un runner de GitHub: pruebas de regresión, compilación completa y verificación del DMG, sin utilizar una Mac personal ni abrir la interfaz. Utilizan `ORUVI_REPOSITORY=''` para crear únicamente una compilación de validación, **sin feed, clave privada ni publicación**. El flujo de `main` conserva la firma obligatoria y es el único que publica actualizaciones.
+`bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 
-**Conserva una copia cifrada de `.private/sparkle.key`.** Nunca se sube a Git; solo la clave pública se incorpora a la app. En CI de publicación se utiliza `ORUVI_SPARKLE_PRIVATE_KEY`. Una distribución sin advertencias por falta de notarización requiere un certificado propio Developer ID y credenciales de notarización; `SIGN_IDENTITY` y `NOTARY_PROFILE` están previstos en la compilación local. No se debe marcar una release como notarizada sin haber completado esa validación.
+**Conserva una copia cifrada de `.private/sparkle.key`.** Nunca se sube a Git; la app solo contiene la clave pública y CI utiliza `ORUVI_SPARKLE_PRIVATE_KEY`. Developer ID y las credenciales de notarización son independientes: la compilación local admite `SIGN_IDENTITY` y `NOTARY_PROFILE`. No marques una release como notarizada sin verificarlo.
 
-## Verificación y límites
+## Verificación
 
-Las comprobaciones automáticas del notch cubren geometría con diferentes escalas y orígenes de pantalla, límite inferior del panel compacto, estado del indicador musical, URLs permitidas, duplicados y capacidad de la bandeja, así como inicio, pausa, repetición y vencimiento del temporizador. La compilación valida las integraciones con AppKit y EventKit. Estas comprobaciones **no equivalen** a una inspección visual en todos los modelos de Mac, una transferencia real de AirDrop o una sesión real con permisos y cuentas de Calendario. Esas pruebas interactivas siguen siendo necesarias antes de afirmar compatibilidad completa con todos los entornos.
+Se conservan las pruebas de lógica existentes y se añaden matrices de selección automática, aplicaciones instaladas, preferencias separadas, migración, cámara/bordes y pantallas múltiples. La compilación ejecuta además pruebas sobre el modelo real de Oruvi con preferencias aisladas, sin arrancar la interfaz, abrir reproductores, solicitar permisos ni hacer búsquedas externas. El DMG se monta y se verifican firma, binario y copia de la licencia.
 
-También se conserva la verificación existente de lógica de reproducción y preferencias. La ausencia de Spotify se maneja sin abrir ni instalar otra app. Los tests sintéticos no equivalen a una prueba con una cuenta real de Spotify ni a un benchmark de batería.
+Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se ha utilizado la Mac personal para desarrollar esta actualización y no se afirman benchmarks nuevos.
 
-Referencias de implementación: [NSScreen safeAreaInsets](https://developer.apple.com/documentation/appkit/nsscreen/safeareainsets), [NSHostingView sizingOptions](https://developer.apple.com/documentation/swiftui/nshostingview/sizingoptions), [NSSharingService](https://developer.apple.com/documentation/appkit/nssharingservice), [AirDrop](https://developer.apple.com/documentation/appkit/nssharingservice/name/sendviaairdrop), [acceso a Calendario](https://developer.apple.com/documentation/eventkit/accessing-calendar-using-eventkit-and-eventkitui).
+## Licencia y atribución
 
-Apple y Spotify son marcas de sus titulares; Oruvi es independiente. La publicación de código no otorga derechos sobre letras, carátulas o tipografías de terceros. Consulta `THIRD_PARTY_NOTICES.md` y `SECURITY.md`.
+El código de Oruvi se distribuye bajo la **MIT estándar**, con copyright de KaizenTrick. Permite usar, copiar, modificar y redistribuir, incluso comercialmente, conservando el aviso de copyright y la licencia en copias o porciones sustanciales. No es una prohibición de reutilización del código. El archivo completo se incluye en el repositorio, dentro de la app y en el DMG.
+
+La licencia propia no transfiere derechos sobre letras, música, imágenes, tipografías o componentes de terceros. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) y [SECURITY.md](SECURITY.md). Oruvi es independiente de Apple y Spotify y no incorpora código ni recursos de Boring Notch.

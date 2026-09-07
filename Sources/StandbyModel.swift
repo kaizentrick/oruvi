@@ -42,8 +42,39 @@ final class StandbyModel {
     var lyricsAvailability: LyricsAvailability = .idle
     var toastMessage: String?
     var activePlayer: PlayerSource = .music
-    var playerPreference: PlayerPreference = .automatic {
-        didSet { prefs.set(playerPreference.rawValue, forKey: "playerPreference"); if started { connectMusic() } }
+    private var playerSelections = SurfacePlaybackPreferences(defaults: LumaEnvironment.preferences)
+    private(set) var playbackSurface: PlaybackSurface = .notch
+    @ObservationIgnored private var lastSurfacePlayers: [PlaybackSurface: PlayerSource] = [:]
+    /// Existing settings bind to Standby only. The notch has a separate persisted key.
+    var playerPreference: PlayerPreference {
+        get { playerSelections.standby }
+        set { setPlayerPreference(newValue, for: .standby) }
+    }
+    var notchPlayerPreference: PlayerPreference {
+        get { playerSelections.notch }
+        set { setPlayerPreference(newValue, for: .notch) }
+    }
+    var effectivePlayerPreference: PlayerPreference { playerSelections.preference(for: playbackSurface) }
+    private func setPlayerPreference(_ value: PlayerPreference, for surface: PlaybackSurface) {
+        guard playerSelections.preference(for: surface) != value else { return }
+        playerSelections.set(value, for: surface, defaults: prefs)
+        guard started, playbackSurface == surface else { return }
+        generation += 1; clearTrack()
+        activePlayer = value.source ?? lastSurfacePlayers[surface] ?? .music
+        connectMusic()
+    }
+    /// There is only one visible playback surface. Switch the sampler before its
+    /// next read and invalidate old callbacks; never run a second player polling loop.
+    private func updatePlaybackSurface() {
+        let next: PlaybackSurface = isVisible ? .standby : .notch
+        guard next != playbackSurface else { return }
+        lastSurfacePlayers[playbackSurface] = activePlayer
+        playbackSurface = next; generation += 1
+        guard !demoMode else { return }
+        clearTrack()
+        activePlayer = effectivePlayerPreference.source ?? lastSurfacePlayers[next] ?? .music
+        connected = prefs.bool(forKey: next.enabledKey)
+        connectionStatus = connected ? "Actualizando reproductor de " + next.title + "…" : "Conecta el reproductor de " + next.title
     }
     var notchEnabled = true {
         didSet { prefs.set(notchEnabled, forKey: "notchEnabled"); notch?.reconcile() }
@@ -67,8 +98,8 @@ final class StandbyModel {
     var reduceTransparency = false
     var screenSleeping = false
     var syncRoundTrip: Double = 0
-    var isResynchronizing = true
     var settingsOpen = false
+    var isResynchronizing = true
     var automaticActivationStatus = "En espera"
     var autoPausedUntil: Date?
     var shuffleEnabled = false
@@ -199,7 +230,6 @@ final class StandbyModel {
             defaults.set(2, forKey: "settingsSchema")
         }
         notchEnabled = defaults.bool(forKey: "notchEnabled")
-        playerPreference = PlayerPreference(rawValue: defaults.string(forKey: "playerPreference") ?? "") ?? .automatic
         meshTheme = MeshTheme(rawValue: defaults.string(forKey: "meshTheme") ?? "") ?? .aurora
         automaticLyrics = defaults.bool(forKey: "automaticLyrics")
         automaticArtwork = defaults.bool(forKey: "automaticArtwork")
@@ -225,7 +255,7 @@ final class StandbyModel {
         guard !started else { return }; started = true
         installObservers(); refreshPower()
         if ProcessInfo.processInfo.arguments.contains("--demo") || LumaEnvironment.isTesting { useDemo() }
-        else if prefs.bool(forKey: "musicEnabled") { connectMusic() }
+        else if prefs.bool(forKey: playbackSurface.enabledKey) { connectMusic() }
     }
     func attach(window: NSWindow) {
         guard mainWindow !== window else { return }
@@ -290,6 +320,7 @@ final class StandbyModel {
         policyChanged()
     }
     private func policyChanged() {
+        updatePlaybackSurface()
         pollTimer?.invalidate(); pollTimer = nil
         updateDisplayAssertion(); runtime?.refreshPhrases()
         if needsPlayback {
@@ -319,13 +350,13 @@ final class StandbyModel {
     }
     func connectMusic() {
         demoMode = false; connected = true
-        prefs.set(true, forKey: "musicEnabled")
+        prefs.set(true, forKey: playbackSurface.enabledKey)
         connectionStatus = "Conectando reproductor…"
         musicQueue.async { [playerRouter] in playerRouter.reset() }; refreshPlayback()
     }
     func disconnectMusic() {
         generation += 1; connected = false; demoMode = false
-        prefs.set(false, forKey: "musicEnabled")
+        prefs.set(false, forKey: playbackSurface.enabledKey)
         pollTimer?.invalidate(); pollTimer = nil
         clearTrack(); isResynchronizing = false; connectionStatus = "Música desconectada"
     }
@@ -342,7 +373,7 @@ final class StandbyModel {
     private func readMusic() {
         guard connected, needsPlayback, !reading, !demoMode else { return }
         reading = true; pollTimer?.invalidate(); pollTimer = nil
-        let session = generation, preference = playerPreference, preferred = activePlayer
+        let session = generation, preference = effectivePlayerPreference, preferred = activePlayer
         musicQueue.async { [weak self, playerRouter] in
             let snapshot = playerRouter.snapshot(preference: preference, preferred: preferred)
             DispatchQueue.main.async {
@@ -361,17 +392,19 @@ final class StandbyModel {
     func apply(_ snapshot: [String: Any]) {
         let status = snapshot["status"] as? String ?? "error"
         if status == "denied" {
-            connected = false; prefs.set(false, forKey: "musicEnabled"); clearTrack()
+            // A denied provider suspends this surface, not the independent preference
+            // or opt-in of the other surface. Only Disconnect persists an opt-out.
+            connected = false; clearTrack()
             connectionStatus = snapshot["message"] as? String ?? "Permiso de Automatización requerido."; return
         }
         if status == "notRunning" {
             clearTrack(); recovery.succeed(at: ProcessInfo.processInfo.systemUptime); isResynchronizing = false
-            connectionStatus = "Abre Música en este Mac"; return
+            connectionStatus = "Abre Apple Music o Spotify en este Mac"; return
         }
         if status == "stopped" {
             if recovery.observeStopped() {
                 clearTrack(); recovery.succeed(at: ProcessInfo.processInfo.systemUptime); isResynchronizing = false
-                connectionStatus = "Elige una canción en Música"
+                connectionStatus = "Elige una canción en tu reproductor"
             } else { isResynchronizing = true; updateCue() }
             return
         }
@@ -398,7 +431,7 @@ final class StandbyModel {
             recovery.fail(); isResynchronizing = true; updateCue(); return
         }
         // Never clear a valid song for a corrupt/incomplete playback sample.
-        activePlayer = source
+        activePlayer = source; lastSurfacePlayers[playbackSurface] = source
         playerArtworkURL = snapshot["artworkURL"] as? String ?? ""
         if changed {
             lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
@@ -442,13 +475,13 @@ final class StandbyModel {
         }
         guard connected, position.isFinite else { return }
         let session = generation, source = activePlayer, target = min(max(0, position), track.duration > 0 ? track.duration : max(0, position))
+        let preference = effectivePlayerPreference, expectedTrackID = track.id
         musicQueue.async { [weak self, playerRouter] in
-            let result = playerRouter.command(command, position: target, source: source)
+            let result = playerRouter.command(command, position: target, source: source, preference: preference, expectedTrackID: expectedTrackID)
             DispatchQueue.main.async {
                 guard let self, session == self.generation, self.connected else { return }
-                if result["status"] as? String == "ok" {
-                    if self.reading { self.pendingMusicHint = true } else { self.readMusic() }
-                } else { self.connectionStatus = result["message"] as? String ?? "Abre Música para usar los controles." }
+                if result["status"] as? String != "ok" { self.connectionStatus = result["message"] as? String ?? "Abre tu reproductor para usar los controles." }
+                if self.reading { self.pendingMusicHint = true } else { self.readMusic() }
             }
         }
     }
@@ -608,19 +641,17 @@ final class StandbyModel {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.7)) { phraseIndex = MotivationalPhrases.next(after: phraseIndex, random: Int.random(in: 0...Int.max)) }
     }
     func openMusic() {
-        // Activate Music without a content URL, so its current page/album/scroll position remain.
-        // Dismissing first restores normal system UI; it never navigates to the catalog link.
-        notch?.collapse()
-        runtime?.dismiss()
+        // Capture the source BEFORE dismissing Standby changes the active surface.
+        let source = effectivePlayerPreference.source ?? activePlayer
         if !connected && !demoMode { connectMusic() }
-        let source = playerPreference.source ?? activePlayer
+        notch?.collapse(); runtime?.dismiss()
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: source.rawValue) else {
             connectionStatus = source.name + " no está instalado."; return
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, error in
-            DispatchQueue.main.async { if error != nil { self?.connectionStatus = "No se pudo abrir Música." } }
+            DispatchQueue.main.async { if error != nil { self?.connectionStatus = "No se pudo abrir " + source.name + "." } }
         }
     }
     func useDemo() {

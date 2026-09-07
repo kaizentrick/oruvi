@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.0 — Notch ligero, reproductores separados y MIT
+
+Panel de música reducido: ancho base de 360 puntos y 158 puntos de contenido bajo la cámara, portada de 48 puntos y una sola fila de selector/transporte. Los otros widgets conservan 240 puntos de contenido. Se mantienen pestañas con iconos; Standby, Ajustes y Cerrar pasan al menú de tres puntos. Se elimina el pie de controles dispersos.
+
+Selectores independientes y persistentes de Notch y Standby, con migración de la preferencia anterior sin sobrescribir elecciones posteriores. Automático permanece visible y las opciones explícitas se filtran por aplicaciones instaladas. Automático consulta Apple Music y Spotify en ejecución, sigue la reproducción nueva observada y resuelve otra vez al pulsar controles. Una aplicación pausada no oculta a otra que reproduce. El relevo cancela metadatos/letras/portadas obsoletos, sin duplicar el muestreador de fondo. La portada abre el reproductor elegido antes de abandonar Standby.
+
+Detección de apertura por coordenadas de pantalla además de tracking nativo: cámara, borde superior inclusivo, 12 puntos laterales y 10 inferiores. Espera de apertura configurada en 35 ms, transición de 160 ms y cierre tolerante de 220 ms. Sondeo temporal solo cerca del notch, sin capturar teclas, modificar eventos o guardar historial. No aumenta la altura visual compacta. Se conserva el arrastre automático de archivos y los límites de sesión/Standby.
+
+Licencia MIT estándar confirmada por el titular, Copyright (c) 2026 KaizenTrick. Incluida en el repositorio, recursos de la aplicación y DMG; se verifica que las copias coincidan. No se añaden restricciones incompatibles con MIT y se conservan los avisos de terceros.
+
+Nuevas pruebas de selección, detección instalada, migración, bordes de cámara y modelo real de cambio de superficie. Se ejecutan en GitHub sin usar la Mac personal ni simular transferencias/permiso como verificación real. No hay nuevas mediciones de batería ni notarización de Apple.
+
+## 0.8.1 — Entrada nativa permanente
+
+Seguimiento AppKit independiente de música/portada, zona de acercamiento de archivos, protección ante datos de arrastres anteriores, navegación con iconos y recuperación de entrada al cambiar Space/despertar. Entitlement de Calendario para Hardened Runtime y comprobaciones de privacidad. La licencia quedaba pendiente en esta versión; se incorpora en 0.9.0 tras confirmación.
+
 ## 0.8.0 — Notch ajustado y widgets nativos
 
 ### Notch
