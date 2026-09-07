@@ -8,6 +8,8 @@ on:
       - 'Resources/**'
       - 'scripts/**'
       - '.github/workflows/**'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.md'
 
 permissions:
   contents: read
@@ -33,5 +35,5 @@ jobs:
           ORUVI_REPOSITORY: ''
         run: bash scripts/build.sh
 
-# No signing secrets, uploads, releases or execution of the GUI on a personal Mac.
+# No signing secrets, uploads, releases or personal Mac interaction.
 # The trusted main release workflow remains the only publisher.

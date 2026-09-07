@@ -80,6 +80,11 @@ struct StandbyView: View {
     }
     private var topBar: some View {
         HStack(spacing: 10) {
+            if model.layout != .listening {
+                PlayerSourcePicker(selection: $model.playerPreference, surface: .standby,
+                                   activePlayer: model.hasTrack ? model.activePlayer : nil)
+                    .padding(.horizontal, 14).padding(.vertical, 10).lumaGlass(model: model, radius: 20)
+            }
             Spacer()
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
@@ -371,12 +376,16 @@ private struct SettingsPanel: View {
             }.padding(26)
             Form {
                 UpdatesSettings()
-                Section("Notch y reproductor") {
+                Section("Notch y reproductores") {
                     Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
-                    Picker("Reproductor", selection: $model.playerPreference) {
-                        ForEach(PlayerPreference.allCases) { Text($0.name).tag($0) }
+                    LabeledContent("Reproductor del Notch") {
+                        PlayerSourcePicker(selection: $model.notchPlayerPreference, surface: .notch, activePlayer: nil)
                     }
-                    Text("El notch se amplía al pasar el puntero y se oculta durante Standby. En Automático se utiliza el reproductor que esté sonando. Música y Spotify requieren su permiso de Automatización.")
+                    LabeledContent("Reproductor de Standby") {
+                        PlayerSourcePicker(selection: $model.playerPreference, surface: .standby,
+                                           activePlayer: model.hasTrack ? model.activePlayer : nil)
+                    }
+                    Text("Selecciones independientes. Automático sigue Apple Music o Spotify de este Mac; solo se ofrecen las aplicaciones instaladas. Cambiar el Notch no cambia Standby. El notch también abre sobre el centro de la cámara y permanece disponible sin reproducción.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Activación automática") {
@@ -428,14 +437,14 @@ private struct SettingsPanel: View {
                     Text("24 frases originales, sin repetir la anterior. El temporizador se detiene cuando Oruvi está oculta o las frases están apagadas.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Reproducción en este Mac") {
+                Section("Reproducción de Standby") {
                     Text(model.connectionStatus).font(.callout)
                     HStack {
-                        Button(model.connected ? "Reconectar reproductores" : "Conectar reproductores") { model.connectMusic() }
-                        Button("Abrir reproductor") { model.openMusic() }
-                        if model.connected || model.demoMode { Button("Desconectar") { model.disconnectMusic() } }
+                        Button(model.connected ? "Reconectar Standby" : "Conectar Standby") { model.connectMusic() }
+                        Button("Abrir reproductor") { model.openInstalledPlayer() }
+                        if model.connected || model.demoMode { Button("Desconectar Standby") { model.disconnectMusic() } }
                     }
-                    Text("Requiere permiso de Automatización. No lee contraseñas, no modifica tu biblioteca y no detecta música reproducida únicamente en el iPhone o Apple TV.")
+                    Text("Requiere permiso de Automatización. La conexión del Notch se activa desde su propio reproductor. No lee contraseñas, no modifica tu biblioteca y no detecta música reproducida únicamente en el iPhone o Apple TV.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Portada y letras automáticas") {
@@ -478,6 +487,7 @@ private struct SettingsPanel: View {
                 Section("Acerca de esta versión") {
                     Text("Oruvi · reloj, música y ambiente. Aplicación independiente de Apple, nativa SwiftUI / AppKit, sin navegador integrado ni telemetría. Pantalla completa sin bordes; no sustituye la pantalla de bloqueo. Conserva los ajustes de las versiones anteriores de Luma.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Text("Copyright © 2026 KaizenTrick · Licencia MIT").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

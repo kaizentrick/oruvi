@@ -24,7 +24,7 @@ exec 3>&1
 cleanup() {
     result=$?
     if mount | grep -F " on $BUILD/mount " >/dev/null; then hdiutil detach "$BUILD/mount" || true; fi
-    if [[ $result -ne 0 ]]; then printf '\nERROR %s. No se reemplazó el DMG anterior.\n' "$result" >&3; tail -65 "$BUILD/build.log" >&3 || true; fi
+    if [[ $result -ne 0 ]]; then printf '\nERROR %s. No se reemplazó el DMG anterior.\n' "$result" >&3; tail -90 "$BUILD/build.log" >&3 || true; fi
     if [[ "${KEEP_BUILD_ARTIFACTS:-0}" == 1 ]]; then printf 'Diagnóstico: %s\n' "$BUILD" >&3; else rm -rf -- "$BUILD"; fi
     rmdir "$LOCK" 2>/dev/null || true
     exit "$result"
@@ -36,17 +36,15 @@ mkdir -p "$BUILD/tmp" "$ROOT/dist"; export TMPDIR="$BUILD/tmp/"
 export ORUVI_BUILD_NUMBER="${ORUVI_BUILD_NUMBER:-$(date +%s)}"
 [[ "$ORUVI_BUILD_NUMBER" =~ ^[0-9]{1,10}$ ]] || { echo 'Número de compilación no válido.'; exit 1; }
 # An explicitly empty repository is for secret-free CI validation, never publication.
-# Unset retains the normal signed-release behavior.
 REPOSITORY="${ORUVI_REPOSITORY-kaizentrick/oruvi}"
 if [[ -n "$REPOSITORY" ]]; then [[ "$REPOSITORY" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$ && "$REPOSITORY" != */.. && "$REPOSITORY" != */. ]] || exit 1; fi
-[[ -s Resources/UpdatePublicKey.pub && -s Resources/Luma.icns ]]
+[[ -s Resources/UpdatePublicKey.pub && -s Resources/Luma.icns && -s LICENSE ]]
 PUBLIC_KEY="$(tr -d '\r\n' < Resources/UpdatePublicKey.pub)"
 [[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo 'Clave pública no válida.'; exit 1; }
 DEPS="$BUILD/deps"; bash scripts/dependencies.sh "$DEPS"
 SIGN_OPTIONS=(--timestamp=none)
 if [[ "${SIGN_IDENTITY:--}" != - ]]; then SIGN_OPTIONS=(--options runtime --timestamp); fi
-# Ad-hoc local builds are not hardened: Sparkle cannot be loaded by a hardened app
-# without a shared Developer ID. No system security setting is changed.
+# Ad-hoc builds are not hardened. No system security setting is changed.
 FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework ScriptingBridge -framework IOKit -framework ImageIO -framework CoreText -framework CoreAudio -framework EventKit -framework Sparkle)
 BASE=(-j 1 -disable-bridging-pch -warnings-as-errors -swift-version 5 -parse-as-library -sdk "$SDK" -target arm64-apple-macos26.0 -import-objc-header Sources/MusicBridge.h -F "$DEPS" -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 printf '\n[1/5] Puente Apple Events\n'
@@ -61,6 +59,8 @@ prepare_app() {
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
     cp Resources/Info.plist "$app/Contents/Info.plist"
     cp Resources/Luma.icns "$app/Contents/Resources/Oruvi.icns"
+    cp LICENSE "$app/Contents/Resources/LICENSE.txt"
+    cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
     cp "$DEPS/LICENSE" "$app/Contents/Resources/Sparkle-LICENSE.txt"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $ORUVI_BUILD_NUMBER" "$app/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $PUBLIC_KEY" "$app/Contents/Info.plist"
@@ -75,10 +75,18 @@ prepare_app() {
     done
     codesign --force "${SIGN_OPTIONS[@]}" --sign "${SIGN_IDENTITY:--}" "$framework"
 }
-ALL=(); RELEASE=()
-for source in Sources/*.swift; do ALL+=("$source"); [[ "$source" == Sources/LumaQA.swift ]] || RELEASE+=("$source"); done
+ALL=(); RELEASE=(); MODEL_TEST=()
+for source in Sources/*.swift; do
+    ALL+=("$source")
+    if [[ "$source" != Sources/LumaQA.swift ]]; then
+        RELEASE+=("$source")
+        [[ "$source" == Sources/OruviApplication.swift ]] || MODEL_TEST+=("$source")
+    fi
+ done
+printf '\n[2/5] Modelo de reproducción aislado\n'
+xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${MODEL_TEST[@]}" scripts/verify-surfaces.swift "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$BUILD/verify-surfaces"
+DYLD_FRAMEWORK_PATH="$DEPS" "$BUILD/verify-surfaces" --smoke-test >&3
 if [[ -f Sources/LumaQA.swift && "${SKIP_VERIFICATION:-0}" != 1 ]]; then
-    printf '\n[2/5] Verificación de desarrollo\n'
     QA_APP="$BUILD/qa-app/Oruvi.app"; prepare_app "$QA_APP"
     xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${ALL[@]}" "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$QA_APP/Contents/MacOS/Oruvi"
     codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$QA_APP"
@@ -94,9 +102,8 @@ codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plis
 codesign --verify --deep --strict --verbose=2 "$APP"
 printf '\n[4/5] DMG\n'
 ln -sfn /Applications "$BUILD/stage/Applications"; cp Resources/LEEME.txt "$BUILD/stage/LEEME.txt"
+cp LICENSE "$BUILD/stage/LICENSE.txt"
 NAME="Oruvi-$VERSION-arm64.dmg"
-# Retry image creation only inside this isolated build directory. Every attempt
-# must pass hdiutil verification; a failed image never replaces dist or a release.
 DMG_VERIFIED=0
 for attempt in 1 2 3; do
     if hdiutil create -volname "Oruvi $VERSION" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"; then
@@ -119,6 +126,8 @@ mkdir -p "$BUILD/mount"
 hdiutil attach -readonly -nobrowse -mountpoint "$BUILD/mount" "$BUILD/$NAME"
 codesign --verify --deep --strict "$BUILD/mount/Oruvi.app"
 cmp -s "$APP/Contents/MacOS/Oruvi" "$BUILD/mount/Oruvi.app/Contents/MacOS/Oruvi"
+cmp -s LICENSE "$BUILD/mount/Oruvi.app/Contents/Resources/LICENSE.txt"
+cmp -s LICENSE "$BUILD/mount/LICENSE.txt"
 hdiutil detach "$BUILD/mount"
 # Updates require the maintainer key. Never publish a feed for an unsigned archive.
 KEY_FILE="${ORUVI_KEY_FILE:-$ROOT/.private/sparkle.key}"

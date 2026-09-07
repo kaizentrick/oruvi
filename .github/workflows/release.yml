@@ -8,6 +8,8 @@ on:
       - 'Resources/**'
       - 'scripts/**'
       - '.github/workflows/release.yml'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.md'
   workflow_dispatch:
 
 permissions:
@@ -49,5 +51,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/publish-release.sh
 
-# Never switch this workflow to pull_request_target or expose the signing key to PR code.
-# Documentation-only pushes do not start a macOS build. Only the trusted main branch publishes.
+# Never expose the signing key to PR code or use pull_request_target.
+# Non-packaged documentation-only pushes do not start a macOS build.

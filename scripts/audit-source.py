@@ -7,7 +7,7 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 allowed_dirs = {"Sources", "Resources", "scripts", ".github"}
-allowed_root = {".gitignore", "README.md", "CHANGELOG.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md"}
+allowed_root = {".gitignore", "README.md", "CHANGELOG.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE"}
 forbidden_suffixes = {".key", ".pem", ".p12", ".pfx", ".ttf", ".otf", ".ttc", ".lrc", ".dmg", ".zip", ".log"}
 patterns = [re.compile(rb"gh[pousr]_[A-Za-z0-9]{20,}"), re.compile(rb"github_pat_[A-Za-z0-9_]{30,}"),
             re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),

@@ -3,7 +3,7 @@ import SwiftUI
 struct EmptyPlayerButton: View {
     let model: StandbyModel
     var body: some View {
-        Button { model.openMusic() } label: {
+        Button { model.openInstalledPlayer() } label: {
             Image(systemName: "music.note").font(.system(size: 23, weight: .medium)).frame(width: 58, height: 58)
         }
         .buttonStyle(.plain).lumaGlass(model: model, radius: 30)
@@ -33,13 +33,16 @@ struct MusicPlayerView: View {
                             .allowsHitTesting(model.visibleLyrics).accessibilityHidden(!model.visibleLyrics)
                             .animation(model.reduceMotion ? nil : .easeInOut(duration: 0.24), value: model.visibleLyrics)
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                EmptyPlayerButton(model: model).frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 18) {
+                    EmptyPlayerButton(model: model)
+                    PlayerSourcePicker(selection: $model.playerPreference, surface: .standby, activePlayer: nil)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .foregroundStyle(scheme == .dark ? Color.white : Color.black)
+        .onAppear { InstalledPlayers.shared.refresh() }
     }
     private func player(metrics: MusicLayoutMetrics) -> some View {
         VStack(alignment: .leading, spacing: metrics.spacing) {
@@ -66,17 +69,14 @@ struct MusicPlayerView: View {
                         .lineLimit(1).minimumScaleFactor(0.72)
                     Text([model.track.artist, model.track.album].filter { !$0.isEmpty }.joined(separator: " — "))
                         .font(model.contentTypeface.font(size: metrics.compact ? 14 : 16)).opacity(0.66).lineLimit(2)
-                    if model.activePlayer == .spotify {
-                        Button("Spotify") { model.openMusic() }.font(.system(size: 10, weight: .medium)).buttonStyle(.plain).opacity(0.6)
-                    }
+                    PlayerSourcePicker(selection: $model.playerPreference, surface: .standby, activePlayer: model.activePlayer)
+                        .opacity(0.7)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 LyricsVisibilityButton(model: model)
                 Menu {
                     Button("Volver a " + model.activePlayer.name) { model.openMusic() }
-                    Menu("Reproductor") {
-                        ForEach(PlayerPreference.allCases) { preference in
-                            Button(preference.name) { model.playerPreference = preference }
-                        }
+                    Menu("Reproductor de Standby") {
+                        PlayerSourceMenuItems(selection: $model.playerPreference, surface: .standby, activePlayer: model.activePlayer)
                     }
                     Button("Actualizar sincronización") { model.refreshPlayback() }.disabled(!model.connected)
                     Button("Importar letra LRC…") { model.importLRC() }
