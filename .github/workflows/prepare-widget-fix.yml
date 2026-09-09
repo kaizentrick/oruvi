@@ -1,0 +1,32 @@
+name: Prepare widget visibility correction
+on:
+  push:
+    branches: [fix/widget-discovery-091]
+    paths: [scripts/prepare-widget-fix.py]
+permissions:
+  contents: write
+concurrency:
+  group: oruvi-prepare-widget-fix
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'kaizentrick/oruvi' && github.ref == 'refs/heads/fix/widget-discovery-091'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fix/widget-discovery-091
+          fetch-depth: 2
+      - name: Apply exact integration edits on the feature branch only
+        run: |
+          test "$(git rev-parse HEAD^)" = 7e2fa93f38c68e18d5c3dc4fc83199f699e72fb8
+          python3 scripts/prepare-widget-fix.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 scripts/audit-source.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Sources scripts Resources README.md CHANGELOG.md .github/workflows/prepare-widget-fix.yml
+          git commit -m 'fix: integrate visible desktop widget controls and release version 0.9.1'
+          git push origin HEAD:refs/heads/fix/widget-discovery-091

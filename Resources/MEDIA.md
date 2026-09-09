@@ -1,32 +1,31 @@
-# Reproducción del sistema y widget de escritorio
+# Ahora suena y widget de escritorio — 0.9.1
 
-## Uso
+## Añadir y recuperar la tarjeta
 
-1. En el selector del notch elige Automático y conecta los controles.
-2. Reproduce contenido en una app que publique Ahora suena de macOS.
-3. En el menú de Oruvi activa Mostrar widget de escritorio. Arrastra el fondo de la tarjeta para colocarla. El icono de pantalla abre StandBy; la X oculta la tarjeta.
+En la barra superior: icono de Oruvi → **Mostrar widget de escritorio**.
 
-La tarjeta es una ventana de escritorio propia de Oruvi, no un widget de la galería de WidgetKit. Comparte la selección del notch. StandBy mantiene su selector independiente. No hay cambio de reproducción al añadirla: los comandos solo se envían al pulsar controles.
+También: **Ajustes → Widget de escritorio → Mostrar ahora y recuperar posición**, o menú de tres puntos del notch → Mostrar widget de escritorio.
 
-## Arquitectura y límites
+Mostrar es idempotente: no oculta un widget ya activo. Sale de Standby y recoloca la tarjeta en la pantalla del puntero. La eleva durante 8 segundos sin activar otra app ni iniciar reproducción. La chincheta o Mantener widget al frente permite fijarla sobre las ventanas normales. Desfijada, vuelve al nivel del escritorio. Arrastra el asa de tres líneas; la X oculta la tarjeta.
 
-- Un solo modelo y muestreador de reproducción alimenta notch, escritorio y StandBy.
-- Un único stream de eventos del adaptador observa la sesión seleccionada por macOS. No se observa la app que tenga foco ni se recorren pestañas.
-- Automático consulta Ahora suena. Las opciones Music y Spotify fuerzan únicamente la app elegida por sus puentes públicos Apple Events.
-- MediaRemote es privado: puede cambiar o dejar de estar disponible. La ausencia de datos recupera los puentes nativos; nunca se modifica la seguridad de macOS.
-- Los procesos auxiliares tienen límites de tiempo, tamaño, terminación y memoria. Un stream fallido no entra en un bucle de reinicio. Reconectar o una nueva sesión de visibilidad permite reintentarlo.
-- El clic consulta el destino actual. Seek requiere la misma grabación y duración finita; streams en directo o proveedores que prohíben saltar no admiten seek. No se inventa shuffle/repeat para fuentes genéricas.
-- No hay promesa de que cada app soporte anterior/siguiente: los comandos se entregan al sistema; el estado mostrado siempre vuelve de la fuente.
-- Solo se procesa la portada entregada por la app, con límite de 8 MiB y miniatura de 960 píxeles. No se descarga otra portada para vídeos. No se guardan metadatos, letras de vídeos ni imágenes del sistema en disco.
-- La tarjeta usa material nativo, sigue claro/oscuro de macOS y respeta Reducir transparencia. Vive por debajo de ventanas normales; no es una superposición siempre visible.
-- El cierre, desconexión, bloqueo, reposo y ausencia de superficies detienen la observación; StandBy oculta la tarjeta. Oruvi debe seguir abierto para usarla.
+La tarjeta aparece inicialmente cuando no hay decisión guardada. Respeta un false explícito guardado por el usuario, incluso en 0.9.0. La introducción se consume una sola vez; no es una ventana de bienvenida repetitiva ni altera los permisos musicales.
 
-## Dependencia fijada
+**No es una extensión WidgetKit ni aparece en Editar widgets de macOS.** Esta implementación es un panel AppKit/SwiftUI propio de Oruvi. Requiere que Oruvi esté abierto. El repositorio no anuncia registro en una galería a la que no aporta una extensión.
 
-MediaRemote Adapter: 73f14ab1568371e6e3c44063f21c34c5e2712c4d (BSD-3-Clause). Se compila en CI; no se descarga código al ejecutarse la app. El binario, script y licencia se empaquetan y verifican dentro del DMG. El cliente de pruebas del proveedor no se ejecuta.
+## Música y privacidad
 
-## Verificación
+Automático sigue la sesión Ahora suena de macOS; cada proveedor debe publicarla y aceptar los comandos. No se promete controlar cualquier sonido o todas las webs. MediaRemote Adapter utiliza API privada que puede cambiar. Apple Music y Spotify manuales mantienen sus puentes Apple Events.
 
-Automatizadas: metadatos Unicode, posición/pausa, duración ausente, valores no finitos, identidad entre fuentes, portada inválida, framing NDJSON fragmentado y acotado; modelo real con preferencias aisladas, opt-in del widget, reposo, fuente genérica sin letras de red y selectores independientes. CI compila toda la app con warnings-as-errors y verifica firmas, dependencias y DMG.
+Notch y tarjeta comparten selección y un único muestreador. Standby guarda una preferencia independiente y oculta la tarjeta al presentarse. Reposo y bloqueo también la ocultan aun cuando esté fijada; salir detiene temporizadores y auxiliares.
 
-Pendiente de sesión interactiva antes de considerar una release lista: probar Music, Spotify, Safari y Chrome con vídeo/podcast compatible; cambiar de fuente y de pista durante un clic; permisos denegados; falta de portada; añadir/mover/ocultar la tarjeta; varios Spaces y monitores; suspensión/bloqueo; StandBy; instalación limpia y actualización. No se afirma compatibilidad universal ni se presentan esas pruebas manuales como realizadas por CI.
+Mostrar no conecta un reproductor desactivado. El botón Conectar controles conserva ese paso explícito. No se graba audio, pantalla ni historial de pestañas. Títulos de vídeos no se envían a servicios musicales externos; portadas genéricas permanecen en memoria y solo se aceptan las publicadas por la fuente.
+
+El adaptador está fijado a `73f14ab1568371e6e3c44063f21c34c5e2712c4d`, compilado en CI y empaquetado con licencia BSD-3-Clause. No se descarga código al ejecutar la app ni se modifica la seguridad de macOS. Los procesos y datos tienen límites de tiempo y tamaño.
+
+## Comprobaciones
+
+`scripts/verify-desktop-widget.swift` prueba migración, opt-out persistente, introducción única, visibilidad, monitores negativos/desconectados, recuperación de posición y normalización de tamaño.
+
+`scripts/verify-surfaces.swift` usa el modelo real y una ventana AppKit en el runner de GitHub: mostrar, mostrar repetidamente, ocultar, pin, retorno al escritorio, reposo, Standby y cierre. Las preferencias están aisladas; no inicia el modelo completo ni abre reproductores, cuentas o solicitudes de permisos. Las pruebas anteriores de playback, selección, notch, portadas y metadatos se conservan.
+
+CI compila la app completa con warnings-as-errors, verifica firmas y monta/verifica el DMG. La publicación en main verifica además el feed de actualización firmado y las descargas anónimas. Esto no sustituye pruebas interactivas con Music, Spotify, Safari/Chrome, Stage Manager, permisos reales o todos los modelos de pantalla. No se afirman realizadas esas pruebas manuales.
