@@ -51,7 +51,7 @@ bash scripts/system-media.sh "$DEPS"
 SIGN_OPTIONS=(--timestamp=none)
 if [[ "${SIGN_IDENTITY:--}" != - ]]; then SIGN_OPTIONS=(--options runtime --timestamp); fi
 # Ad-hoc builds are not hardened. No system security setting is changed.
-FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework ScriptingBridge -framework IOKit -framework ImageIO -framework CoreText -framework CoreAudio -framework EventKit -framework Sparkle)
+FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework ScriptingBridge -framework IOKit -framework ImageIO -framework CoreText -framework CoreAudio -framework EventKit -framework Sparkle -framework WidgetKit -framework AppIntents)
 BASE=(-j 1 -disable-bridging-pch -warnings-as-errors -swift-version 5 -parse-as-library -sdk "$SDK" -target arm64-apple-macos26.0 -import-objc-header Sources/MusicBridge.h -F "$DEPS" -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 printf '\n[1/5] Puente Apple Events\n'
 xcrun clang -fobjc-arc -fmodules -O2 -arch arm64 -isysroot "$SDK" -mmacosx-version-min=26.0 -c Sources/MusicBridge.m -o "$BUILD/MusicBridge.o"
@@ -63,7 +63,13 @@ xcrun libtool -static -o "$BUILD/libOruviPlayers.a" "$BUILD/MusicBridge.o" "$BUI
 prepare_app() {
     local app="$1"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
-    cp Resources/Info.plist "$app/Contents/Info.plist"
+    python3 - "$app/Contents/Info.plist" <<'PLIST'
+import pathlib, plistlib, sys
+path = pathlib.Path(sys.argv[1])
+info = plistlib.loads(path.read_bytes()) if path.exists() else {}
+info.update(plistlib.loads(pathlib.Path('Resources/Info.plist').read_bytes()))
+path.write_bytes(plistlib.dumps(info, sort_keys=False))
+PLIST
     cp Resources/OruviIcon.icns "$app/Contents/Resources/OruviIcon.icns"
     cp Resources/OruviIcon.json "$app/Contents/Resources/OruviIcon.json"
     cp LICENSE "$app/Contents/Resources/LICENSE.txt"
@@ -87,7 +93,7 @@ prepare_app() {
     codesign --force "${SIGN_OPTIONS[@]}" --sign "${SIGN_IDENTITY:--}" "$framework"
 }
 ALL=(); RELEASE=(); MODEL_TEST=()
-for source in Sources/*.swift; do
+for source in Sources/*.swift Sources/WidgetShared/*.swift; do
     ALL+=("$source")
     if [[ "$source" != Sources/LumaQA.swift ]]; then
         RELEASE+=("$source")
@@ -105,13 +111,17 @@ if [[ -f Sources/LumaQA.swift && "${SKIP_VERIFICATION:-0}" != 1 ]]; then
 fi
 if [[ "${QA_ONLY:-0}" == 1 ]]; then echo 'Verificación terminada.' >&3; exit 0; fi
 printf '\n[3/5] Aplicación optimizada\n'
+bash scripts/build-native-targets.sh "$BUILD" "$DEPS" "$VERSION" "$ORUVI_BUILD_NUMBER"
 APP="$BUILD/stage/Oruvi.app"; prepare_app "$APP"
-xcrun swiftc "${BASE[@]}" -O -whole-module-optimization "${RELEASE[@]}" "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$APP/Contents/MacOS/Oruvi"
+EXTENSION="$APP/Contents/PlugIns/OruviWidgets.appex"
+codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Widgets/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$EXTENSION"
 [[ -s "$APP/Contents/MacOS/Oruvi" ]]
 plutil -lint "$APP/Contents/Info.plist"
 python3 scripts/verify-icon.py --app "$APP" >&3
 codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
+python3 scripts/verify-native-bundle.py "$APP" >&3
+if [[ "${GITHUB_ACTIONS:-false}" == true ]]; then bash scripts/verify-widget-registration.sh "$APP" >&3; fi
 printf '\n[4/5] DMG\n'
 ln -sfn /Applications "$BUILD/stage/Applications"; cp Resources/LEEME.txt "$BUILD/stage/LEEME.txt"
 cp LICENSE "$BUILD/stage/LICENSE.txt"
@@ -137,6 +147,7 @@ fi
 mkdir -p "$BUILD/mount"
 hdiutil attach -readonly -nobrowse -mountpoint "$BUILD/mount" "$BUILD/$NAME"
 codesign --verify --deep --strict "$BUILD/mount/Oruvi.app"
+python3 scripts/verify-native-bundle.py "$BUILD/mount/Oruvi.app" >&3
 cmp -s "$APP/Contents/MacOS/Oruvi" "$BUILD/mount/Oruvi.app/Contents/MacOS/Oruvi"
 cmp -s LICENSE "$BUILD/mount/Oruvi.app/Contents/Resources/LICENSE.txt"
 cmp -s LICENSE "$BUILD/mount/LICENSE.txt"

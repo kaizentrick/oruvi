@@ -22,8 +22,9 @@ final class PlayerRouter: @unchecked Sendable {
         if value["status"] as? String == "denied" { denied.insert(source) }
         return value
     }
-    func snapshot(preference: PlayerPreference, preferred: PlayerSource) -> [String: Any] {
-        resolve(preference: preference, preferred: preferred, system: SystemMediaBridge.shared.current)
+    func snapshot(preference: PlayerPreference, preferred: PlayerSource, refreshSystem: Bool = false) -> [String: Any] {
+        let system = refreshSystem && preference == .automatic ? SystemMediaBridge.shared.readNow() : SystemMediaBridge.shared.current
+        return resolve(preference: preference, preferred: preferred, system: system)
     }
     private func resolve(preference: PlayerPreference, preferred: PlayerSource,
                          system: SystemMediaSnapshot?) -> [String: Any] {
@@ -60,7 +61,7 @@ final class PlayerRouter: @unchecked Sendable {
         return ["status": "notRunning"]
     }
     func command(_ command: String, position: Double, source: PlayerSource,
-                 preference: PlayerPreference, expectedTrackID: String) -> [String: Any] {
+                 preference: PlayerPreference, expectedTrackID: String, requireSameTrack: Bool = false) -> [String: Any] {
         let system = preference == .automatic ? SystemMediaBridge.shared.readNow() : nil
         // If a visible system session cannot be revalidated, fail rather than
         // accidentally pausing Music/Spotify behind a browser video.
@@ -70,7 +71,7 @@ final class PlayerRouter: @unchecked Sendable {
         let current = resolve(preference: preference, preferred: source, system: system)
         guard current["status"] as? String == "ok",
               let target = PlayerSource(rawValue: current["source"] as? String ?? "") else { return current }
-        if command == "seek" && (target != source || current["id"] as? String != expectedTrackID) {
+        if (command == "seek" || requireSameTrack) && (target != source || current["id"] as? String != expectedTrackID) {
             return ["status": "transition", "message": "El contenido cambió; vuelve a ajustar su posición."]
         }
         if target == .system, let system {

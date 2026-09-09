@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0 — WidgetKit nativo
+
+- Extensión de la galería de macOS, tamaños pequeño y mediano, portada, transporte y enlace a Standby.
+- Se retira la tarjeta AppKit y sus controles de posición/pin; macOS administra el widget.
+- Dos targets Xcode con App Intents metadata, extensión sandboxed y App Group compartido.
+- Actualizaciones por cambios, instantánea acotada/atómica y validación de comandos contra contenido atrasado.
+- El pipeline verifica que la extensión real, las firmas, las versiones y los metadatos estén dentro del DMG.
+
+
 ## 0.9.1 — widget visible y recuperable
 
 - El widget aparece inicialmente si no hay preferencia guardada; respeta ocultaciones explícitas.

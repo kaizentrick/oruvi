@@ -41,7 +41,9 @@ printf '%s  %s\n%s  Oruvi.dmg\n' "$DIGEST" "$NAME" "$DIGEST" > "$WORK/SHA256SUMS
   printf '3. Autoriza Automatización para el reproductor que utilices en este Mac.\n'
   printf '4. En Ajustes → Actualizaciones, deja activada la búsqueda automática. Las nuevas releases se verifican e instalan desde la propia app.\n\n'
   printf 'Incluye notch, Standby, Automático con Ahora suena, Apple Music y Spotify.\n\n'
-  printf '### Widget de escritorio\n\nEn el menú de Oruvi pulsa **Mostrar widget de escritorio**, o abre **Ajustes → Widget de escritorio → Mostrar ahora y recuperar posición**. La tarjeta tiene portada, controles, asa de arrastre, chincheta para mantenerla al frente y acceso a Standby. Mostrar siempre recupera la tarjeta; no la oculta si ya estaba activa.\n\nEs una tarjeta propia de Oruvi: **no aparece en Editar widgets de macOS**. Se muestra inicialmente si no hay preferencia guardada; una ocultación explícita se conserva. Automático depende de que la app publique una sesión compatible.\n\n'
+  printf '### Widget nativo de macOS\n\n'
+  printf 'Abre Oruvi desde Aplicaciones al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → Oruvi → Música y Standby**. Elige pequeño o mediano. Incluye portada, controles interactivos y enlace a Standby.\n\n'
+  printf 'La tarjeta flotante anterior se ha retirado. WidgetKit gestiona colocación y refrescos; no se simula un widget con otra ventana. Si tenías la build de prueba sin feed, reemplázala por este DMG público.\n\n'
   if [[ "${ORUVI_NOTARIZED:-0}" == 1 ]]; then
     printf 'Distribución firmada con Developer ID y notarizada.\n\n'
   else

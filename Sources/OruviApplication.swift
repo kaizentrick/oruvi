@@ -17,7 +17,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     private var window: StandbyWindow?
     private var runtime: AmbientRuntime?
     private var notch: NotchController?
-    private var desktopWidget: DesktopWidgetController?
+    private var didFinishLaunching = false
+    private var pendingWidgetRoute: OruviWidgetRoute?
     private var status: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -53,8 +54,9 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         let notchController = NotchController(model: model)
         notch = notchController
         notchController.start()
-        let widget = DesktopWidgetController(model: model)
-        desktopWidget = widget; widget.start()
+        NativeWidgetController.shared.start()
+        didFinishLaunching = true
+        if let route = pendingWidgetRoute { pendingWidgetRoute = nil; openWidgetRoute(route) }
         OruviUpdates.shared.startIfConfigured()
         if LumaEnvironment.isTesting {
             controller.activate()
@@ -88,8 +90,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
             return result
         }
         _ = item(OruviRelease.title + " · " + OruviRelease.build, nil, enabled: false)
-        _ = item("Mostrar widget de escritorio", #selector(showDesktopWidget))
-        _ = item("Ocultar widget de escritorio", #selector(hideDesktopWidget), enabled: model.desktopWidgetEnabled)
+        _ = item("Widgets de macOS…", #selector(showNativeWidgets))
         menu.addItem(.separator())
         _ = item("Activar pantalla completa", #selector(showPresentation))
         _ = item("Ocultar presentación", #selector(hidePresentation), enabled: model.isVisible)
@@ -132,14 +133,25 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         StandbyModel.shared.selectLayout(LayoutMode.allCases[sender.tag]); showPresentation()
     }
     @objc private func toggleNotch() { StandbyModel.shared.notchEnabled.toggle() }
-    @objc private func showDesktopWidget() { StandbyModel.shared.revealDesktopWidget() }
-    @objc private func hideDesktopWidget() { StandbyModel.shared.desktopWidgetEnabled = false }
+    @objc private func showNativeWidgets() { StandbyModel.shared.showNativeWidgetSettings() }
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let route = urls.compactMap(OruviWidgetRoute.init(url:)).last else { return }
+        guard didFinishLaunching else { pendingWidgetRoute = route; return }
+        openWidgetRoute(route)
+    }
+    private func openWidgetRoute(_ route: OruviWidgetRoute) {
+        guard !LumaEnvironment.isTesting else { return }
+        switch route {
+        case .standby: StandbyModel.shared.showWindow()
+        case .widgets: StandbyModel.shared.showNativeWidgetSettings()
+        }
+    }
     @objc private func toggleAutomatic() { StandbyModel.shared.idleEnabled.toggle() }
     @objc private func pauseAutomatic() { runtime?.pauseAutomatic(minutes: StandbyModel.shared.autoPausedUntil == nil ? 60 : nil) }
     @objc private func checkUpdates() { OruviUpdates.shared.checkNow() }
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {
-        desktopWidget?.stop()
+        NativeWidgetController.shared.stop()
         StandbyModel.shared.shutdown()
         // Complete child-process cleanup before the application run loop exits.
         SystemMediaBridge.shared.shutdown()

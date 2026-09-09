@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - name: Regression checks and public-source audit
         run: bash scripts/check.sh
-      - name: Compile and verify the complete application without release secrets
+      - name: Compile and verify app, WidgetKit extension and DMG without release secrets
         if: ${{ !cancelled() }}
         env:
           ORUVI_REPOSITORY: ''
@@ -48,9 +48,9 @@ jobs:
           Conserva tu instalador estable. Para volver al canal estable, reinstala la release publica.
           La firma es ad-hoc; no se ha notarizado ante Apple.
           No desactives Gatekeeper ni SIP. Verifica que el artefacto corresponde a tu PR y commit.
-          Para el widget: menu de Oruvi > Mostrar widget de escritorio.
-          Automático depende de que la app de origen publique Ahora suena y acepte los controles.
-          El widget es una tarjeta propia de Oruvi, no aparece en Editar widgets de macOS.
+          Para el widget: abre Oruvi desde Aplicaciones una vez > clic secundario en escritorio > Editar widgets > Oruvi.
+          Automatico depende de que la app de origen publique Ahora suena y acepte los controles.
+          Incluye extension WidgetKit nativa; macOS administra colocacion y refrescos.
           TXT
           printf '\nPR: %s\nCommit de la rama: %s\nCommit compilado: %s\n' "$PR_NUMBER" "$HEAD_SHA" "$(git rev-parse HEAD)" >> dist/PR-LEEME.txt
           (cd dist && shasum -a 256 ./*.dmg > SHA256SUMS.txt)

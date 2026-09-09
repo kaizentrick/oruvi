@@ -1,31 +1,49 @@
-# Ahora suena y widget de escritorio — 0.9.1
+# Oruvi: WidgetKit nativo y reproducción del sistema
 
-## Añadir y recuperar la tarjeta
+## Añadir el widget
 
-En la barra superior: icono de Oruvi → **Mostrar widget de escritorio**.
+Instala Oruvi en Aplicaciones y abre la app al menos una vez. Haz clic secundario en el escritorio, abre **Editar widgets** y busca **Oruvi**. El widget **Música y Standby** tiene tamaños pequeño y mediano. macOS gestiona posición, tamaño, estilo y eliminación. La extensión está en `Oruvi.app/Contents/PlugIns/OruviWidgets.appex`.
 
-También: **Ajustes → Widget de escritorio → Mostrar ahora y recuperar posición**, o menú de tres puntos del notch → Mostrar widget de escritorio.
+Desde 0.10.0 se elimina la tarjeta AppKit de 0.9.0/0.9.1. Sus opciones Mostrar, Mantener al frente y arrastre propio dejan de existir. No se intenta convertir la posición anterior en una colocación del sistema: añadir o quitar widgets siempre es decisión del usuario desde macOS.
 
-Mostrar es idempotente: no oculta un widget ya activo. Sale de Standby y recoloca la tarjeta en la pantalla del puntero. La eleva durante 8 segundos sin activar otra app ni iniciar reproducción. La chincheta o Mantener widget al frente permite fijarla sobre las ventanas normales. Desfijada, vuelve al nivel del escritorio. Arrastra el asa de tres líneas; la X oculta la tarjeta.
+## Arquitectura
 
-La tarjeta aparece inicialmente cuando no hay decisión guardada. Respeta un false explícito guardado por el usuario, incluso en 0.9.0. La introducción se consume una sola vez; no es una ventana de bienvenida repetitiva ni altera los permisos musicales.
+La extensión es un target WidgetKit real, sandboxed, con `NSExtensionPointIdentifier=com.apple.widgetkit-extension`. El pipeline genera un proyecto Xcode determinista en el directorio temporal de compilación. Xcode compila la app y la extensión, genera App Intents metadata en ambos targets y empotra la extensión. Las firmas se realizan desde los componentes internos hasta la app, antes del DMG.
 
-**No es una extensión WidgetKit ni aparece en Editar widgets de macOS.** Esta implementación es un panel AppKit/SwiftUI propio de Oruvi. Requiere que Oruvi esté abierto. El repositorio no anuncia registro en una galería a la que no aporta una extensión.
+`AudioPlaybackIntent` ejecuta los comandos en la aplicación contenedora, sobre el router y la cola de reproducción existentes. No se incluye ScriptingBridge, MediaRemote Adapter ni Sparkle en el widget. El enlace `oruvi://standby` abre la pantalla completa, mientras que los botones de transporte no la abren. Las rutas admitidas son solo navegación; no se aceptan comandos, rutas de archivos ni scripts desde URLs.
 
-## Música y privacidad
+El widget refleja la superficie de reproducción activa de Oruvi. Se conservan las preferencias independientes Notch y Standby y sus selectores Automático/Apple Music/Spotify. Un botón verifica sesión, pista y selección antes de actuar; un widget atrasado pide otro clic después de actualizar en vez de controlar contenido diferente por accidente.
 
-Automático sigue la sesión Ahora suena de macOS; cada proveedor debe publicarla y aceptar los comandos. No se promete controlar cualquier sonido o todas las webs. MediaRemote Adapter utiliza API privada que puede cambiar. Apple Music y Spotify manuales mantienen sus puentes Apple Events.
+## Optimización y ciclo de vida
 
-Notch y tarjeta comparten selección y un único muestreador. Standby guarda una preferencia independiente y oculta la tarjeta al presentarse. Reposo y bloqueo también la ocultan aun cuando esté fijada; salir detiene temporizadores y auxiliares.
+WidgetKit renderiza representaciones, no una ventana permanente de Oruvi. No hay `NSPanel`, animación de fondo, bucle por segundo ni consultas musicales en el proceso del widget. La app comprueba los widgets realmente añadidos mediante `WidgetCenter` y solo mantiene demanda de reproducción adicional mientras existe uno. La extensión lee una instantánea acotada; no arranca reproductores ni solicita autorización de Automatización.
 
-Mostrar no conecta un reproductor desactivado. El botón Conectar controles conserva ese paso explícito. No se graba audio, pantalla ni historial de pestañas. Títulos de vídeos no se envían a servicios musicales externos; portadas genéricas permanecen en memoria y solo se aceptan las publicadas por la fuente.
+La app agrupa cambios durante 250 ms, evita reescribir estados iguales y separa recargas solicitadas al sistema al menos 5 segundos. Esas son políticas, no una garantía de latencia. WidgetKit conserva el control del presupuesto y puede demorar portadas, sobre todo cuando la app no está al frente. No se reproduce audio silencioso ni se simula una sesión de audio para evadir ese presupuesto.
 
-El adaptador está fijado a `73f14ab1568371e6e3c44063f21c34c5e2712c4d`, compilado en CI y empaquetado con licencia BSD-3-Clause. No se descarga código al ejecutar la app ni se modifica la seguridad de macOS. Los procesos y datos tienen límites de tiempo y tamaño.
+Los controles interactivos esperan a escribir el nuevo estado observado antes de terminar el App Intent, tras lo cual WidgetKit solicita su propia actualización. Una sesión reiniciada invalida los botones antiguos. Bloqueo, reposo y desconexión producen estados sin contenido privado y sin transporte habilitado.
 
-## Comprobaciones
+## Datos compartidos y privacidad
 
-`scripts/verify-desktop-widget.swift` prueba migración, opt-out persistente, introducción única, visibilidad, monitores negativos/desconectados, recuperación de posición y normalización de tamaño.
+App Group: `group.com.kaizentrick.Oruvi`, declarado en los entitlements y plists de los dos targets. Se accede por `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`, nunca construyendo una ruta a otros contenedores ni usando excepciones de sandbox.
 
-`scripts/verify-surfaces.swift` usa el modelo real y una ventana AppKit en el runner de GitHub: mostrar, mostrar repetidamente, ocultar, pin, retorno al escritorio, reposo, Standby y cierre. Las preferencias están aisladas; no inicia el modelo completo ni abre reproductores, cuentas o solicitudes de permisos. Las pruebas anteriores de playback, selección, notch, portadas y metadatos se conservan.
+Una sola instantánea JSON contiene los metadatos actuales y su miniatura JPEG (hasta 192 píxeles, 256 KiB). Límite de archivo: 512 KiB. Escritura atómica, permisos privados, exclusión de copias de seguridad, caducidad de una hora y eliminación al cerrar Oruvi o detectar que se retiró el último widget. No hay historial. WidgetKit conserva sus propias representaciones del widget bajo control del sistema, por lo que Oruvi no puede prometer borrado instantáneo de cada representación mostrada.
 
-CI compila la app completa con warnings-as-errors, verifica firmas y monta/verifica el DMG. La publicación en main verifica además el feed de actualización firmado y las descargas anónimas. Esto no sustituye pruebas interactivas con Music, Spotify, Safari/Chrome, Stage Manager, permisos reales o todos los modelos de pantalla. No se afirman realizadas esas pruebas manuales.
+La extensión no tiene acceso de red, Apple Events, cámara o micrófono. No se envían títulos de vídeos/navegadores a LRCLIB o catálogos de música. Los controles y la reproducción genérica conservan los límites documentados de MediaRemote: el proveedor debe publicar Ahora suena y aceptar comandos. No se garantiza control de cada sonido del Mac.
+
+## Firma y distribución
+
+El repositorio conserva la distribución ad-hoc existente, sin Developer ID ni notarización configurados. Ed25519 firma la actualización de Sparkle, no convierte el binario en notarizado ni registra un equipo de Apple. macOS puede solicitar permiso para datos compartidos o rechazar componentes conforme a las políticas del equipo. No se modifica Gatekeeper, SIP, TCC ni la validación de bibliotecas.
+
+Para distribución identificada de producción se debe usar una identidad Developer ID real del titular y configurar el App Group y perfiles correspondientes en Apple Developer. No se incluyen claves privadas, equipos ficticios ni perfiles fabricados. El pipeline admite la identidad de firma existente; cualquier incorporación de perfiles debe conservar los identificadores de app y extensión.
+
+## Verificación
+
+Se comprueban contenido nativo del bundle, versión común, arquitectura, entitlements, metadata del App Intent en ambos targets, firma y copia dentro del DMG. En el runner de GitHub se registra temporalmente la extensión con LaunchServices/PlugInKit y se comprueba que el sistema la reconozca. Estas herramientas NO se invocan en la Mac del usuario ni forman parte del inicio normal de Oruvi.
+
+Se mantienen las pruebas de reproducción, preferencias, notch, letras y seguridad existentes; se sustituyen las pruebas de la tarjeta retirada por instantáneas, límites, persistencia atómica, caducidad y demanda del widget nativo. Los ensayos de grupo y registro en GitHub no demuestran una sesión interactiva en cada Mac: los runners pueden tener configuraciones de seguridad distintas de un equipo personal. Se debe verificar instalación/reapertura, galería, permisos y botones con reproductores reales. No se afirman benchmarks de energía ni latencias medidas.
+
+Referencias primarias:
+- https://developer.apple.com/documentation/widgetkit/creating-a-widget-extension
+- https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities
+- https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date
+- https://developer.apple.com/documentation/appintents/audioplaybackintent

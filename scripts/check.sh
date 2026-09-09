@@ -20,8 +20,8 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
     Sources/SystemMediaCore.swift scripts/verify-system-media.swift -o "$WORK/verify-system-media"
 "$WORK/verify-system-media"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
-    Sources/DesktopWidgetPolicy.swift scripts/verify-desktop-widget.swift -o "$WORK/verify-desktop-widget"
-"$WORK/verify-desktop-widget"
+    Sources/WidgetShared/WidgetSnapshot.swift scripts/verify-widgetkit.swift -o "$WORK/verify-widgetkit"
+"$WORK/verify-widgetkit"
 python3 - <<'PY'
 import pathlib
 import plistlib
