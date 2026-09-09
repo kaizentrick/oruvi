@@ -10,20 +10,13 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 5
     steps:
-      - name: SDK integration and signing diagnostics (no personal data)
+      - name: Validate App Group access from signed bundles
         run: |
-          SDK="$(xcrun --sdk macosx --show-sdk-path)"
-          echo '=== App Intents metadata tool ==='
-          xcrun appintentsmetadataprocessor --help || true
-          echo '=== WidgetKit extension template ==='
-          find "$(xcode-select -p)/Library/Xcode/Templates" -iname '*widget*' -maxdepth 8 -print || true
-          echo '=== AppIntent host protocols ==='
-          grep -A18 -B3 'protocol AudioPlaybackIntent\|protocol ForegroundContinuableIntent' "$SDK/System/Library/Frameworks/AppIntents.framework/Modules/AppIntents.swiftmodule/arm64e-apple-macos.swiftinterface" || true
-          echo '=== Ad-hoc sandbox App Group probe ==='
-          WORK="$(mktemp -d)"
+          WORK="$(mktemp -d)"; export WORK
           trap 'rm -rf "$WORK"' EXIT
           cat > "$WORK/Probe.swift" <<'SWIFT'
           import Foundation
+          print("START", Bundle.main.bundleIdentifier ?? "nil")
           let group = "group.com.kaizentrick.Oruvi.WidgetProbe"
           if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) {
               let file = url.appendingPathComponent("probe.txt")
@@ -40,18 +33,27 @@ jobs:
               } catch { print("PROBE ERROR", error.localizedDescription) }
           } else { print("PROBE NIL CONTAINER") }
           SWIFT
-          xcrun swiftc "$WORK/Probe.swift" -o "$WORK/Writer"
-          cp "$WORK/Writer" "$WORK/Reader"
-          cat > "$WORK/Entitlements.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><true/><key>com.apple.security.application-groups</key><array><string>group.com.kaizentrick.Oruvi.WidgetProbe</string></array></dict></plist>
-          PLIST
-          codesign --force --sign - --identifier com.kaizentrick.Oruvi.WidgetProbe.Writer --entitlements "$WORK/Entitlements.plist" "$WORK/Writer"
-          codesign --force --sign - --identifier com.kaizentrick.Oruvi.WidgetProbe.Reader --entitlements "$WORK/Entitlements.plist" "$WORK/Reader"
-          "$WORK/Writer" write & PID=$!; (sleep 8; kill "$PID" 2>/dev/null || true) & WATCH=$!; wait "$PID" || true; kill "$WATCH" 2>/dev/null || true
-          "$WORK/Reader" & PID=$!; (sleep 8; kill "$PID" 2>/dev/null || true) & WATCH=$!; wait "$PID" || true; kill "$WATCH" 2>/dev/null || true
-      - name: Read official interactivity and lifecycle documentation
-        run: |
-          for page in creating-a-widget-extension adding-interactivity-to-widgets-and-live-activities keeping-a-widget-up-to-date; do
-            echo "=== $page ==="
-            curl --fail --silent --location --max-time 15 "https://developer.apple.com/tutorials/data/documentation/widgetkit/$page.md" | head -200 || true
-          done
+          xcrun swiftc "$WORK/Probe.swift" -o "$WORK/Probe"
+          python3 - <<'PY'
+          import os, pathlib, plistlib, shutil, subprocess
+          root = pathlib.Path(os.environ['WORK'])
+          for name in ['Writer', 'Reader']:
+              app = root / (name + '.app')
+              (app/'Contents/MacOS').mkdir(parents=True)
+              shutil.copy(root/'Probe', app/'Contents/MacOS/Probe')
+              info = {'CFBundleIdentifier':'com.kaizentrick.Oruvi.WidgetProbe.'+name, 'CFBundleName':name, 'CFBundleExecutable':'Probe', 'CFBundlePackageType':'APPL', 'CFBundleVersion':'1', 'LSUIElement':True}
+              (app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+              ent = {'com.apple.security.application-groups':['group.com.kaizentrick.Oruvi.WidgetProbe']}
+              if name == 'Reader': ent['com.apple.security.app-sandbox'] = True
+              path = root/(name+'.plist'); path.write_bytes(plistlib.dumps(ent))
+              subprocess.run(['codesign','--force','--sign','-','--entitlements',str(path),str(app)],check=True)
+              try:
+                  r = subprocess.run([str(app/'Contents/MacOS/Probe')] + (['write'] if name == 'Writer' else []), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+                  print(name, 'exit', r.returncode, r.stdout, flush=True)
+              except subprocess.TimeoutExpired: print(name,'TIMED OUT',flush=True)
+          PY
+          echo '=== Local sandbox failure reasons ==='
+          log show --last 1m --style compact --predicate 'process == "Probe" OR process == "secinitd"' 2>/dev/null | tail -35 || true
+          echo '=== Official extension template ==='
+          TEMPLATE="$(xcode-select -p)/Library/Xcode/Templates/Project Templates/MultiPlatform/Application Extension/Widget Extension.xctemplate"
+          /usr/bin/plutil -p "$TEMPLATE/TemplateInfo.plist" | head -180
