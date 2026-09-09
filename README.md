@@ -10,7 +10,7 @@ Copyright © 2026 KaizenTrick · [Licencia MIT](LICENSE)
 
 [Última versión y notas](https://github.com/kaizentrick/oruvi/releases/latest)
 
-**Requiere Apple Silicon (M1 o posterior) y macOS 26 o posterior.** No incluye soporte Intel. Funciona con las aplicaciones de escritorio Apple Music y Spotify. No necesitas Xcode, Terminal, Homebrew, el código fuente ni una cuenta de GitHub para instalarla.
+**Requiere Apple Silicon (M1 o posterior) y macOS 26 o posterior.** No incluye soporte Intel. En Automático sigue la sesión Ahora suena que publica macOS; mantiene controles directos para Apple Music y Spotify de escritorio. No necesitas Xcode, Terminal, Homebrew, el código fuente ni una cuenta de GitHub para instalarla.
 
 Abre el DMG, arrastra **Oruvi.app** a **Applications**, expulsa el disco y abre Oruvi desde Aplicaciones. Autoriza Automatización para el reproductor que utilices. No se reproduce otro audio encima del reproductor.
 
@@ -40,13 +40,21 @@ No hay una ventana transparente sobre el escritorio ni interceptación de clics 
 
 El selector permanece visible incluso sin canción. Detecta aplicaciones mediante las API de macOS y solo ofrece opciones explícitas instaladas; **Automático siempre permanece disponible**. No instala ni inicia aplicaciones para detectarlas. Una preferencia guardada para una aplicación retirada se informa como no instalada, sin sustituirla silenciosamente. Las opciones se refrescan al abrir o acercarse al selector.
 
-**Automático** consulta las aplicaciones compatibles que están ejecutándose. Una aplicación pausada no oculta a otra que reproduce. Cuando se observa que otra empieza a reproducir, la prioriza; si ambas ya reproducen y no puede determinar un comienzo nuevo, mantiene una elección estable. Al pulsar un control vuelve a resolver el reproductor antes de enviar la acción, en vez de fiarse de metadatos anteriores. Un gesto de posición no se aplica a una grabación distinta de la mostrada.
+**Automático** sigue la sesión activa de «Ahora suena» de macOS, no la ventana que tenga el foco. Puede mostrar y controlar música, vídeo, podcasts y contenido de navegadores cuando el reproductor publique una sesión compatible. Apple Music y Spotify conservan sus puentes nativos, portadas y opciones propias. Sin datos del sistema se recupera la selección nativa anterior. Las opciones manuales siguen limitándose a aplicaciones instaladas y no cambian la preferencia de la otra superficie.
 
-**Alcance:** Automático controla Apple Music y Spotify de escritorio mediante sus diccionarios públicos Apple Events/ScriptingBridge. No significa control universal de YouTube, navegadores o todas las apps de audio. No utiliza MediaRemote privado, Spotify Web API, contraseñas ni tokens de cuenta; no controla una sesión que solo exista en el teléfono. Spotify ofrece repetición activada/desactivada en este puente, no se simula «repetir una».
+**Alcance y dependencia:** no significa controlar literalmente todo sonido ni garantiza compatibilidad con todos los sitios o versiones de macOS. Se integra MediaRemote Adapter, compilado de una revisión fija con licencia BSD-3-Clause. Usa una API privada que Apple puede cambiar; si falla, las integraciones nativas siguen disponibles. No se desactiva SIP, Gatekeeper ni la validación de bibliotecas. No hay captura de audio, pantalla, micrófono, historial o pestañas. Los controles vuelven a consultar el destino antes de actuar y se rechaza un cambio de posición si el contenido cambió. La portada depende de los datos publicados por cada app; no se inventa cuando falta.
 
 Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la preferencia de la superficie visible, cancela contenido pendiente y descarta respuestas antiguas. No se añaden dos bucles permanentes de consulta. El permiso o la desconexión de una superficie no modifica la selección guardada de la otra.
 
-## Widgets
+## Widget de escritorio
+
+Desde el icono de Oruvi en la barra de menús activa **Mostrar widget de escritorio**. La tarjeta incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un icono para abrir StandBy. Arrástrala desde el fondo para colocarla; su posición se conserva. Puedes ocultarla con la X o desde el mismo menú.
+
+Es una **tarjeta de escritorio de Oruvi**, no una extensión de la galería «Editar widgets» de macOS. Está debajo de las ventanas normales, comparte el selector del Notch y no añade otro muestreador. Permanece disponible aunque ocultes el notch; se oculta durante StandBy, bloqueo y reposo. Requiere que Oruvi siga abierto. Las selecciones Notch/escritorio y StandBy permanecen independientes.
+
+No se guardan títulos o portadas del sistema en disco ni se envían los títulos de vídeos/navegadores a LRCLIB o al catálogo de Apple. Detalles y matriz de pruebas en [Resources/MEDIA.md](Resources/MEDIA.md).
+
+## Widgets del notch
 
 **Archivos y AirDrop.** Arrastra un archivo local desde Finder hacia el notch. La zona de acercamiento abre Archivos automáticamente y muestra «Suelta para añadir», incluso con elementos en la bandeja. Solo se añade al soltarlo; cancelar o retirarlo restaura la vista anterior. También hay selector de archivos, selección múltiple, arrastre hacia otras apps y Mostrar en Finder. Hasta 20 referencias temporales, sin duplicados. Vaciar o retirar **no borra, mueve ni copia los originales**. La bandeja se vacía al cerrar Oruvi y no se guarda en disco.
 

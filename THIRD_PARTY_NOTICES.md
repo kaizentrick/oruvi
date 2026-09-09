@@ -31,3 +31,11 @@ Referencia de diseño: https://developer.spotify.com/documentation/design
 El código puede consultar LRCLIB y, opcionalmente, el catálogo de Apple. Esto no transfiere derechos sobre letras, música ni imágenes. No se incluye contenido comercial de estos proveedores en el repositorio. La demostración utiliza texto original y un gráfico de sustitución creado por la aplicación.
 
 La disponibilidad, las condiciones de uso y la autorización necesaria para distribuir contenido deben revisarse por separado antes de una explotación pública/comercial del producto.
+
+## MediaRemote Adapter
+
+Origen: https://github.com/ungive/mediaremote-adapter
+
+Revisión fijada: `73f14ab1568371e6e3c44063f21c34c5e2712c4d`.
+
+Licencia BSD-3-Clause. Se compila el framework desde esa revisión; el script Perl y la licencia completa se copian a `Oruvi.app/Contents/Resources/`. El aviso completo queda en `MediaRemoteAdapter-LICENSE.txt`. No se incorpora el reproductor de pruebas. Esta integración utiliza MediaRemote privado y no implica respaldo de Apple ni garantía de compatibilidad futura.

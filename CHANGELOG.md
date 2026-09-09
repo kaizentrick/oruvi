@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — reproducción del sistema y escritorio
+
+- Automático sigue Ahora suena; Apple Music y Spotify manuales se conservan.
+- Tarjeta propia de escritorio con portada, controles y acceso a StandBy.
+- Procesos acotados, portada local sin historial, suspensión y pruebas de regresión.
+
+
 ## 0.9.0 — Notch ligero, reproductores separados y MIT
 
 Panel de música reducido: ancho base de 360 puntos y 158 puntos de contenido bajo la cámara, portada de 48 puntos y una sola fila de selector/transporte. Los otros widgets conservan 240 puntos de contenido. Se mantienen pestañas con iconos; Standby, Ajustes y Cerrar pasan al menú de tres puntos. Se elimina el pie de controles dispersos.

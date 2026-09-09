@@ -42,6 +42,7 @@ if [[ -n "$REPOSITORY" ]]; then [[ "$REPOSITORY" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9_.-
 PUBLIC_KEY="$(tr -d '\r\n' < Resources/UpdatePublicKey.pub)"
 [[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo 'Clave pública no válida.'; exit 1; }
 DEPS="$BUILD/deps"; bash scripts/dependencies.sh "$DEPS"
+bash scripts/system-media.sh "$DEPS"
 SIGN_OPTIONS=(--timestamp=none)
 if [[ "${SIGN_IDENTITY:--}" != - ]]; then SIGN_OPTIONS=(--options runtime --timestamp); fi
 # Ad-hoc builds are not hardened. No system security setting is changed.
@@ -62,6 +63,10 @@ prepare_app() {
     cp LICENSE "$app/Contents/Resources/LICENSE.txt"
     cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
     cp "$DEPS/LICENSE" "$app/Contents/Resources/Sparkle-LICENSE.txt"
+    cp "$DEPS/mediaremote-adapter.pl" "$app/Contents/Resources/mediaremote-adapter.pl"
+    cp "$DEPS/MediaRemoteAdapter-LICENSE.txt" "$app/Contents/Resources/MediaRemoteAdapter-LICENSE.txt"
+    ditto "$DEPS/MediaRemoteAdapter.framework" "$app/Contents/Frameworks/MediaRemoteAdapter.framework"
+    codesign --force "${SIGN_OPTIONS[@]}" --sign "${SIGN_IDENTITY:--}" "$app/Contents/Frameworks/MediaRemoteAdapter.framework"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $ORUVI_BUILD_NUMBER" "$app/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $PUBLIC_KEY" "$app/Contents/Info.plist"
     if [[ -n "$REPOSITORY" ]]; then
@@ -128,6 +133,9 @@ codesign --verify --deep --strict "$BUILD/mount/Oruvi.app"
 cmp -s "$APP/Contents/MacOS/Oruvi" "$BUILD/mount/Oruvi.app/Contents/MacOS/Oruvi"
 cmp -s LICENSE "$BUILD/mount/Oruvi.app/Contents/Resources/LICENSE.txt"
 cmp -s LICENSE "$BUILD/mount/LICENSE.txt"
+cmp -s "$DEPS/mediaremote-adapter.pl" "$BUILD/mount/Oruvi.app/Contents/Resources/mediaremote-adapter.pl"
+[[ -s "$BUILD/mount/Oruvi.app/Contents/Resources/MediaRemoteAdapter-LICENSE.txt" ]]
+codesign --verify --strict "$BUILD/mount/Oruvi.app/Contents/Frameworks/MediaRemoteAdapter.framework"
 hdiutil detach "$BUILD/mount"
 # Updates require the maintainer key. Never publish a feed for an unsigned archive.
 KEY_FILE="${ORUVI_KEY_FILE:-$ROOT/.private/sparkle.key}"

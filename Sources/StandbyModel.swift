@@ -79,6 +79,14 @@ final class StandbyModel {
     var notchEnabled = true {
         didSet { prefs.set(notchEnabled, forKey: "notchEnabled"); notch?.reconcile() }
     }
+    var desktopWidgetEnabled = false {
+        didSet {
+            prefs.set(desktopWidgetEnabled, forKey: "desktopWidgetEnabled")
+            if started { policyChanged() }
+        }
+    }
+    private var activeSystemBundleID = ""
+    @ObservationIgnored private var systemArtworkData: Data?
     var notchVisible = false
     var notchExpanded = false
     var playerArtworkURL = ""
@@ -86,7 +94,7 @@ final class StandbyModel {
         didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
     }
     var visibleLyrics: Bool { musicShowsLyrics && !lines.isEmpty }
-    var needsPlayback: Bool { (isVisible || notchVisible) && !screenSleeping }
+    var needsPlayback: Bool { (isVisible || notchVisible || desktopWidgetEnabled) && !screenSleeping }
     var connectionStatus = "Conecta Música de este Mac"
     var connected = false
     var demoMode = false
@@ -96,7 +104,9 @@ final class StandbyModel {
     var hot = false
     var reduceMotion = false
     var reduceTransparency = false
-    var screenSleeping = false
+    var screenSleeping = false {
+        didSet { if started && oldValue != screenSleeping { policyChanged() } }
+    }
     var syncRoundTrip: Double = 0
     var settingsOpen = false
     var isResynchronizing = true
@@ -230,6 +240,7 @@ final class StandbyModel {
             defaults.set(2, forKey: "settingsSchema")
         }
         notchEnabled = defaults.bool(forKey: "notchEnabled")
+        desktopWidgetEnabled = defaults.bool(forKey: "desktopWidgetEnabled")
         meshTheme = MeshTheme(rawValue: defaults.string(forKey: "meshTheme") ?? "") ?? .aurora
         automaticLyrics = defaults.bool(forKey: "automaticLyrics")
         automaticArtwork = defaults.bool(forKey: "automaticArtwork")
@@ -275,6 +286,11 @@ final class StandbyModel {
     }
     private func installObservers() {
         let workspace = NSWorkspace.shared.notificationCenter, standard = NotificationCenter.default
+        observe(standard, .oruviSystemMediaChanged) { [weak self] in
+            guard let self, self.connected, self.needsPlayback, !self.demoMode,
+                  self.effectivePlayerPreference == .automatic else { return }
+            if self.reading { self.pendingMusicHint = true } else { self.readMusic() }
+        }
         for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
             observe(standard, name) { [weak self] in self?.refreshVisibility() }
         }
@@ -321,6 +337,7 @@ final class StandbyModel {
     }
     private func policyChanged() {
         updatePlaybackSurface()
+        SystemMediaBridge.shared.setEnabled(connected && needsPlayback && !demoMode && !LumaEnvironment.isTesting && effectivePlayerPreference == .automatic)
         pollTimer?.invalidate(); pollTimer = nil
         updateDisplayAssertion(); runtime?.refreshPhrases()
         if needsPlayback {
@@ -342,6 +359,7 @@ final class StandbyModel {
     /// Every reveal, wake and explicit reconnect requests fresh metadata AND position.
     func refreshPlayback() {
         guard connected, !demoMode, needsPlayback else { return }
+        SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic)
         generation += 1
         lyricsRetryAt = 0; artworkRetryAt = 0
         recovery.invalidate(); isResynchronizing = true
@@ -352,9 +370,12 @@ final class StandbyModel {
         demoMode = false; connected = true
         prefs.set(true, forKey: playbackSurface.enabledKey)
         connectionStatus = "Conectando reproductor…"
-        musicQueue.async { [playerRouter] in playerRouter.reset() }; refreshPlayback()
+        musicQueue.async { [playerRouter] in playerRouter.reset() }
+        refreshPlayback()
+        if !LumaEnvironment.isTesting { SystemMediaBridge.shared.reconnect() }
     }
     func disconnectMusic() {
+        SystemMediaBridge.shared.setEnabled(false)
         generation += 1; connected = false; demoMode = false
         prefs.set(false, forKey: playbackSurface.enabledKey)
         pollTimer?.invalidate(); pollTimer = nil
@@ -363,7 +384,8 @@ final class StandbyModel {
     private func clearTrack() {
         lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = .empty; anchor = PlaybackAnchor(); artwork = nil; artworkLink = nil; palette = RGB.aurora
-        playerArtworkURL = ""; lyricsAvailability = .idle; toastMessage = nil
+        playerArtworkURL = ""; activeSystemBundleID = ""; systemArtworkData = nil
+        lyricsAvailability = .idle; toastMessage = nil
         lyricsRetryAt = 0; artworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
         playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
@@ -399,7 +421,7 @@ final class StandbyModel {
         }
         if status == "notRunning" {
             clearTrack(); recovery.succeed(at: ProcessInfo.processInfo.systemUptime); isResynchronizing = false
-            connectionStatus = "Abre Apple Music o Spotify en este Mac"; return
+            connectionStatus = effectivePlayerPreference == .automatic ? "Reproduce contenido compatible con Ahora suena en este Mac" : "Abre " + activePlayer.name + " en este Mac"; return
         }
         if status == "stopped" {
             if recovery.observeStopped() {
@@ -441,6 +463,12 @@ final class StandbyModel {
             setPalette(RGB.fallback(for: next)); lines = []; activeLine = nil; lyricSource = ""
             playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
         }
+        activeSystemBundleID = snapshot["systemBundleID"] as? String ?? ""
+        let nextSystemArtwork = snapshot["systemArtwork"] as? Data
+        if source == .system && systemArtworkData != nextSystemArtwork {
+            artworkTask?.cancel(); artworkTask = nil; artwork = nil; artworkRetryAt = 0
+        }
+        systemArtworkData = nextSystemArtwork
         if let shuffle = snapshot["shuffle"] as? NSNumber, let repeated = snapshot["repeatMode"] as? NSNumber {
             shuffleEnabled = shuffle.boolValue; repeatMode = min(2, max(0, repeated.intValue)); playbackOptionsAvailable = true
         }
@@ -487,6 +515,11 @@ final class StandbyModel {
     }
     func fetchLyrics() {
         lyricsTask?.cancel(); lyricsTask = nil
+        // Browser/video titles must never be sent to a music-lyrics service.
+        guard activePlayer != .system else {
+            lyricsAvailability = .unavailable; lyricsRetryAt = .greatestFiniteMagnitude
+            lyricStatus = "Letras automáticas no disponibles para esta fuente."; return
+        }
         guard !demoMode, hasTrack, policy.visible, !isResynchronizing else { return }
         lines = []; activeLine = nil; lyricSource = ""
         lyricsAvailability = .loading
@@ -516,6 +549,18 @@ final class StandbyModel {
     func fetchArtwork() {
         artworkTask?.cancel(); artworkTask = nil
         guard !demoMode, hasTrack, connected, needsPlayback, !isResynchronizing else { return }
+        if activePlayer == .system {
+            let identity = track
+            artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
+            guard let data = systemArtworkData else { artworkStatus = "Esta app no publica portada"; return }
+            artworkTask = Task { [weak self] in
+                let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(data) }.value
+                guard !Task.isCancelled, let self, self.track == identity, self.needsPlayback else { return }
+                if let decoded { self.artwork = decoded.0; self.setPalette(decoded.1); self.artworkStatus = "Portada del reproductor" }
+                self.artworkTask = nil
+            }
+            return
+        }
         let identity = track, source = activePlayer, artworkURL = playerArtworkURL, allowNetwork = automaticArtwork
         artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
         artworkStatus = "Recuperando portada…"
@@ -643,9 +688,10 @@ final class StandbyModel {
     func openMusic() {
         // Capture the source BEFORE dismissing Standby changes the active surface.
         let source = effectivePlayerPreference.source ?? activePlayer
+        let bundleID = source == .system ? activeSystemBundleID : source.rawValue
         if !connected && !demoMode { connectMusic() }
         notch?.collapse(); runtime?.dismiss()
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: source.rawValue) else {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             connectionStatus = source.name + " no está instalado."; return
         }
         let configuration = NSWorkspace.OpenConfiguration()
@@ -655,6 +701,7 @@ final class StandbyModel {
         }
     }
     func useDemo() {
+        SystemMediaBridge.shared.setEnabled(false)
         generation += 1; connected = false; demoMode = true; isResynchronizing = false
         playbackOptionsAvailable = true; shuffleEnabled = false; repeatMode = 0
         pollTimer?.invalidate(); pollTimer = nil; lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
@@ -666,6 +713,7 @@ final class StandbyModel {
         lyricSource = "Demostración · texto original, sin audio"; lyricStatus = ""; connectionStatus = "Vista de demostración · sin audio"; updateCue()
     }
     func shutdown() {
+        SystemMediaBridge.shared.setEnabled(false)
         generation += 1; pollTimer?.invalidate(); cueTimer?.invalidate(); lyricsTask?.cancel(); artworkTask?.cancel(); toastTask?.cancel(); runtime?.stop(); notch?.stop()
         for (center, token) in notificationTokens { center.removeObserver(token) }; notificationTokens.removeAll()
         if let powerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes) }
