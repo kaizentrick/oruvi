@@ -369,13 +369,23 @@ private struct SettingsPanel: View {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Ajustes").font(.system(size: 26, weight: .semibold))
-                    Text(OruviRelease.title).font(.caption).foregroundStyle(.secondary)
+                    Text(OruviRelease.title + " · Compilación " + OruviRelease.build).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Listo") { dismiss() }.buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
             }.padding(26)
             Form {
                 UpdatesSettings()
+                Section("Widget de escritorio") {
+                    Toggle("Mostrar widget de escritorio", isOn: $model.desktopWidgetEnabled)
+                    Toggle("Mantener widget al frente", isOn: $model.desktopWidgetAlwaysOnTop)
+                        .disabled(!model.desktopWidgetEnabled)
+                    Button("Mostrar ahora y recuperar posición") { model.revealDesktopWidget() }
+                    Text("Portada, controles y acceso a Standby. Mostrar ahora cierra esta presentación, coloca la tarjeta en la pantalla del puntero y la muestra al frente brevemente. Activa Mantener al frente para que no quede detrás de otras ventanas.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Es una tarjeta propia de Oruvi: se añade desde aquí o desde el menú de la barra superior, no desde Editar widgets de macOS. Comparte el reproductor del Notch; Standby conserva su selección independiente.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Notch y reproductores") {
                     Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
                     LabeledContent("Reproductor del Notch") {
@@ -385,7 +395,7 @@ private struct SettingsPanel: View {
                         PlayerSourcePicker(selection: $model.playerPreference, surface: .standby,
                                            activePlayer: model.hasTrack ? model.activePlayer : nil)
                     }
-                    Text("Selecciones independientes. Automático sigue Apple Music o Spotify de este Mac; solo se ofrecen las aplicaciones instaladas. Cambiar el Notch no cambia Standby. El notch también abre sobre el centro de la cámara y permanece disponible sin reproducción.")
+                    Text("Selecciones independientes. Automático sigue Ahora suena de macOS para apps y navegadores compatibles; Apple Music y Spotify permanecen como opciones manuales cuando están instaladas. Cambiar el Notch no cambia Standby. El notch también abre sobre el centro de la cámara y permanece disponible sin reproducción.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Activación automática") {

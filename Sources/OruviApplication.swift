@@ -28,6 +28,9 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
             NSApp.terminate(nil)
             return
         }
+        if let image = ApplicationIcon.image() {
+            NSApp.applicationIconImage = image
+        }
         NSWindow.allowsAutomaticWindowTabbing = false
         installMainMenu()
         let model = StandbyModel.shared
@@ -84,7 +87,10 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
             menu.addItem(result)
             return result
         }
-        _ = item(OruviRelease.title, nil, enabled: false)
+        _ = item(OruviRelease.title + " · " + OruviRelease.build, nil, enabled: false)
+        _ = item("Mostrar widget de escritorio", #selector(showDesktopWidget))
+        _ = item("Ocultar widget de escritorio", #selector(hideDesktopWidget), enabled: model.desktopWidgetEnabled)
+        menu.addItem(.separator())
         _ = item("Activar pantalla completa", #selector(showPresentation))
         _ = item("Ocultar presentación", #selector(hidePresentation), enabled: model.isVisible)
         menu.addItem(.separator())
@@ -95,8 +101,6 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         menu.addItem(.separator())
         let notchItem = item("Mostrar notch", #selector(toggleNotch))
         notchItem.state = model.notchEnabled ? .on : .off
-        let widgetItem = item("Mostrar widget de escritorio", #selector(toggleDesktopWidget))
-        widgetItem.state = model.desktopWidgetEnabled ? .on : .off
         let automatic = item("Activación por inactividad", #selector(toggleAutomatic))
         automatic.state = model.idleEnabled ? .on : .off
         _ = item(model.automaticActivationStatus, nil, enabled: false)
@@ -128,11 +132,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         StandbyModel.shared.selectLayout(LayoutMode.allCases[sender.tag]); showPresentation()
     }
     @objc private func toggleNotch() { StandbyModel.shared.notchEnabled.toggle() }
-    @objc private func toggleDesktopWidget() {
-        let model = StandbyModel.shared
-        model.desktopWidgetEnabled.toggle()
-        if model.desktopWidgetEnabled && model.playbackSurface == .notch && !model.connected { model.connectMusic() }
-    }
+    @objc private func showDesktopWidget() { StandbyModel.shared.revealDesktopWidget() }
+    @objc private func hideDesktopWidget() { StandbyModel.shared.desktopWidgetEnabled = false }
     @objc private func toggleAutomatic() { StandbyModel.shared.idleEnabled.toggle() }
     @objc private func pauseAutomatic() { runtime?.pauseAutomatic(minutes: StandbyModel.shared.autoPausedUntil == nil ? 60 : nil) }
     @objc private func checkUpdates() { OruviUpdates.shared.checkNow() }

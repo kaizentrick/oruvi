@@ -10,6 +10,7 @@ struct VerifySurfaces {
         defaults.set("music", forKey: "playerPreference")
         defaults.set(false, forKey: "musicEnabled")
         defaults.set(false, forKey: "notchMusicEnabled")
+        defaults.set(false, forKey: "desktopWidgetEnabled")
         let model = StandbyModel.shared
         defer { model.shutdown(); LumaEnvironment.cleanTestingData() }
         var count = 0
@@ -53,6 +54,46 @@ struct VerifySurfaces {
         model.fetchLyrics()
         expect(model.lyricsAvailability == .unavailable, "video metadata never requests music lyrics")
         expect(model.playerPreference == .spotify && model.notchPlayerPreference == .automatic, "system playback preserves independent selectors")
-        print("PASS: \(count) real-model surface handoff checks, no GUI or player launched.")
+        // Exercise the real AppKit card on the CI runner, not just a mock state.
+        // No application delegate/model.start(), permissions, playback or network.
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let widget = DesktopWidgetController(model: model)
+        defer { widget.stop() }
+        model.isVisible = false; model.screenSleeping = false
+        model.desktopWidgetEnabled = false; model.desktopWidgetAlwaysOnTop = false
+        widget.reconcile()
+        expect(!widget.isVisible, "hidden card creates no visible window")
+        model.desktopWidgetEnabled = true; widget.reconcile()
+        expect(widget.isVisible, "enabled card actually orders a panel on screen")
+        expect(widget.currentFrame?.size == DesktopWidgetPolicy.size, "real panel has current dimensions")
+        expect(!widget.isInFront, "desktop mode stays below normal windows")
+        model.isVisible = true; widget.reconcile()
+        expect(!widget.isVisible, "Standby hides the real panel")
+        model.isVisible = false; widget.reconcile()
+        expect(widget.isVisible, "return from Standby restores real panel")
+        model.screenSleeping = true; widget.reconcile()
+        expect(!widget.isVisible, "sleep hides real panel")
+        model.desktopWidgetEnabled = false; model.revealDesktopWidget()
+        expect(!model.desktopWidgetEnabled, "reveal cannot show UI while locked/asleep")
+        model.screenSleeping = false
+        let savedNotch = model.notchPlayerPreference, savedStandby = model.playerPreference
+        model.revealDesktopWidget(); model.revealDesktopWidget(); widget.reveal()
+        expect(model.desktopWidgetEnabled && widget.isVisible, "repeated Show never toggles the widget off")
+        expect(widget.isInFront, "explicit reveal is visible above normal windows")
+        expect(!model.connected, "Show does not silently connect playback")
+        expect(model.notchPlayerPreference == savedNotch && model.playerPreference == savedStandby, "Show preserves independent players")
+        widget.endReveal()
+        expect(!widget.isInFront, "temporary reveal returns to desktop level")
+        model.desktopWidgetAlwaysOnTop = true; widget.reconcile()
+        expect(widget.isInFront, "explicit pin keeps card in front")
+        expect(defaults.bool(forKey: DesktopWidgetPolicy.pinnedKey), "pin preference persists")
+        model.desktopWidgetAlwaysOnTop = false; widget.reconcile()
+        expect(!widget.isInFront, "unpin returns to desktop")
+        model.desktopWidgetEnabled = false; widget.reconcile()
+        expect(!widget.isVisible, "Hide really hides the panel")
+        widget.stop(); widget.stop(); widget.reveal()
+        expect(!widget.isVisible && widget.currentFrame == nil, "shutdown is idempotent and cannot reopen")
+        print("PASS: \(count) real-model surface/widget checks; AppKit panel exercised, no player launched.")
     }
 }
