@@ -20,19 +20,29 @@ Usa `Oruvi.dmg`, no los ZIP «Source code». Cada release publica ese alias junt
 
 ## Notch más ligero
 
-El compacto conserva exactamente la franja superior que macOS informa para la cámara, sin añadir altura debajo. Muestra portada a la izquierda cuando hay canción y una nota musical a la derecha solo mientras reproduce. En pausa, ese lado queda vacío. En monitores sin recorte aparece una pequeña isla superior.
+El compacto en reposo conserva exactamente la franja superior que macOS informa para la cámara, sin añadir altura debajo. Muestra portada a la izquierda cuando hay canción y una nota musical a la derecha solo mientras reproduce. En pausa, ese lado queda vacío. En monitores sin recorte aparece una pequeña isla superior.
 
-El panel ampliado tiene cuatro pestañas **solo con iconos**: Música, Archivos, Agenda y Temporizador. Las ayudas al detener el puntero y las etiquetas de VoiceOver conservan sus nombres. En Música se muestran una portada de 48 puntos, título, artista, selector de reproductor y anterior/pausa/siguiente. Se elimina la fila inferior de iconos sueltos: **Standby, Ajustes y Cerrar** se agrupan en el menú de tres puntos.
+El panel ampliado tiene cuatro pestañas **solo con iconos**: Música, Archivos, Agenda y Temporizador. Las ayudas al detener el puntero y las etiquetas de VoiceOver conservan sus nombres. En Música se muestran una portada de 48 puntos, título, artista, selector de reproductor y anterior/pausa/siguiente. **Standby, Ajustes y Cerrar** se agrupan en el menú de tres puntos, sin fila inferior de iconos sueltos.
 
-El ancho ampliado base pasa a 360 puntos. Música utiliza 158 puntos de contenido bajo la cámara; los otros widgets disponen de 240. Se adapta dentro de los límites de la pantalla y conserva el borde superior al cambiar de vista. Los cambios de altura son suaves y respetan Reducir movimiento. El compacto no aumenta de tamaño por estos cambios.
+El ancho ampliado base es de 360 puntos. Música utiliza 158 puntos de contenido bajo la cámara; los otros widgets disponen de 240. Se adapta dentro de los límites de la pantalla y conserva el borde superior al cambiar de vista. En 0.11.0 la unión superior es cóncava en pantallas con recorte; las demás conservan una isla redondeada. Se anima la superficie dentro de una ventana acotada de tamaño estable, no la ventana completa. Una transición interrumpida continúa desde el estado visible. Reducir movimiento y bajo consumo evitan esta animación.
 
 ### Apertura, también sobre la cámara
 
 La zona de activación incluye toda la banda del notch, **12 puntos a cada lado y 10 debajo**, además del centro de la cámara y el borde superior exacto. Se comprueban coordenadas globales del puntero, sin depender exclusivamente de que una vista reciba un evento sobre píxeles visibles. Esto complementa el seguimiento nativo permanente y no depende de música, portada o conexión al reproductor.
 
-La espera configurada para abrir es de **35 ms**, la transición de **160 ms** y la tolerancia de cierre de **220 ms**. Son parámetros de implementación, no mediciones de latencia en todos los equipos. Moverse dentro no reinicia el plazo. El clic habilita teclado; Esc, clic fuera o Cerrar cierran sin reabrir inmediatamente bajo un cursor inmóvil.
+La espera configurada para abrir es de **35 ms**, la expansión de **220 ms**, la contracción de **180 ms** y la tolerancia antes de cerrar de **220 ms**. Son parámetros de implementación, no mediciones de latencia en todos los equipos. Moverse dentro no reinicia el plazo. El clic habilita teclado; Esc, clic fuera o Cerrar cierran sin reabrir inmediatamente bajo un cursor inmóvil.
 
-No hay una ventana transparente sobre el escritorio ni interceptación de clics ajenos. Los monitores de movimiento son pasivos; una comprobación de posición cada 60 ms se mantiene únicamente cerca del notch para recuperar eventos ausentes detrás de la cámara. Se detiene lejos de la zona, durante Standby, bloqueo, reposo y al salir. No se observan teclas globales ni se guarda historial del puntero. Detalles en [Resources/NOTCH.md](Resources/NOTCH.md).
+La zona interactiva sigue la forma visible, no el rectángulo completo del contenedor. Los márgenes transparentes se excluyen del hit testing y la entrada de la ventana se actualiza durante movimiento, animación y arrastre. Los monitores de movimiento son pasivos; una comprobación de posición cada 60 ms se mantiene únicamente cerca del notch para recuperar eventos ausentes detrás de la cámara. Se detiene lejos de la zona, durante Standby, bloqueo, reposo y al salir. No se observan teclas globales ni se guarda historial del puntero. Las pruebas geométricas no sustituyen una prueba física de entrega de clics entre ventanas. Detalles en [Resources/NOTCH.md](Resources/NOTCH.md).
+
+### Personalizar el notch (0.11.0)
+
+Abre **Notch → … → Personalizar notch**. **Avisos breves** muestra una franja de tres segundos al añadir archivos reales a la bandeja o terminar un temporizador. Pulsar el aviso abre su pestaña; también se puede descartar o desactivar. No se anuncia una transferencia de AirDrop por el mero hecho de añadir un archivo y no se reproducen avisos ocurridos con el notch oculto.
+
+**Respuesta háptica** está desactivada inicialmente. Actívala para recibir respuesta nativa al abrir o cambiar de pestaña, según el dispositivo y las preferencias de macOS. No se dispara por cada movimiento del puntero ni por temporizadores y avisos.
+
+**Pantalla del notch** permite elegir Automática o una pantalla detectada. La elección explícita se conserva aunque se desconecte la pantalla: se usa una alternativa y se recupera la preferida cuando vuelve. No modifica la pantalla ni el reproductor de Standby. **Guía del notch…** explica las funciones a petición, sin abrirse al iniciar.
+
+Esta primera integración toma como referencia la presentación notch/isla de Glance, con implementación propia. No incorpora sus modelos, imágenes, videos ni código de credenciales. **No añade cámara, reconocimiento facial ni desbloqueo de macOS.**
 
 ## Reproductores independientes
 
@@ -48,7 +58,7 @@ Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la
 
 ## Widgets nativos de macOS
 
-Oruvi incorpora una extensión **WidgetKit** real, `OruviWidgets.appex`, dentro de la app. Se elimina la tarjeta flotante de 0.9.1: no hay otra ventana, chincheta ni temporizador gráfico de escritorio.
+Oruvi incorpora una extensión **WidgetKit** real, `OruviWidgets.appex`, dentro de la app. Se elimina la tarjeta flotante de 0.9.1: no hay otra ventana, chincheta ni temporizador gráfico de escritorio como sustituto del widget.
 
 Instala la versión 0.10.0 o posterior en Aplicaciones y abre Oruvi al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → busca Oruvi → Música y Standby**. Puedes elegir tamaño pequeño o mediano y colocarlo como cualquier widget del sistema. macOS administra posición, tamaño, apariencia y eliminación.
 
@@ -107,7 +117,7 @@ bash scripts/check.sh
 bash scripts/build.sh
 ```
 
-Resultado: `dist/Oruvi-0.10.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
+Resultado: `dist/Oruvi-0.11.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
 
 `bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 
@@ -115,15 +125,15 @@ Resultado: `dist/Oruvi-0.10.0-arm64.dmg`. El bundle sigue siendo `com.kaizentric
 
 ## Verificación
 
-Se conservan las pruebas de lógica existentes y se añaden matrices de selección automática, aplicaciones instaladas, preferencias separadas, migración, cámara/bordes y pantallas múltiples. La compilación ejecuta además pruebas sobre el modelo real de Oruvi con preferencias aisladas, sin arrancar la interfaz, abrir reproductores, solicitar permisos ni hacer búsquedas externas. El DMG se monta y se verifican firma, binario y copia de la licencia.
+Se conservan las pruebas de lógica existentes y las matrices de selección automática, aplicaciones instaladas, preferencias separadas, migración, cámara/bordes y pantallas múltiples. En 0.11.0 se añaden comprobaciones parametrizadas de silueta, límites de entrada, coordenadas de pantalla, avisos y antirrebote, además de pruebas del animador real y su cancelación. La compilación ejecuta además pruebas sobre el modelo real de Oruvi con preferencias aisladas, sin abrir reproductores, solicitar permisos ni hacer búsquedas externas. Se verifican el flujo asíncrono del widget, su lectura entre procesos, la extensión nativa, la firma y el icono. El DMG se monta y se verifican firma, binario y copia de la licencia.
 
-Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se ha utilizado la Mac personal para desarrollar esta actualización y no se afirman benchmarks nuevos.
+Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop, la sensación física del trackpad ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se ha utilizado la Mac personal para desarrollar esta actualización y no se afirman benchmarks nuevos.
 
 ## Licencia y atribución
 
 El código de Oruvi se distribuye bajo la **MIT estándar**, con copyright de KaizenTrick. Permite usar, copiar, modificar y redistribuir, incluso comercialmente, conservando el aviso de copyright y la licencia en copias o porciones sustanciales. No es una prohibición de reutilización del código. El archivo completo se incluye en el repositorio, dentro de la app y en el DMG.
 
-La licencia propia no transfiere derechos sobre letras, música, imágenes, tipografías o componentes de terceros. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) y [SECURITY.md](SECURITY.md). Oruvi es independiente de Apple y Spotify y no incorpora código ni recursos de Boring Notch.
+La licencia propia no transfiere derechos sobre letras, música, imágenes, tipografías o componentes de terceros. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) y [SECURITY.md](SECURITY.md). Oruvi es independiente de Apple y Spotify y no incorpora código ni recursos de Boring Notch. La referencia de diseño de Glance y los límites de esta adaptación están documentados en [Resources/NOTCH.md](Resources/NOTCH.md).
 
 ### Recuperación de widgets (0.10.1)
 
