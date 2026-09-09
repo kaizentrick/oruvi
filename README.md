@@ -48,11 +48,15 @@ Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la
 
 ## Widget de escritorio
 
-Desde el icono de Oruvi en la barra de menús activa **Mostrar widget de escritorio**. La tarjeta incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un icono para abrir StandBy. Arrástrala desde el fondo para colocarla; su posición se conserva. Puedes ocultarla con la X o desde el mismo menú.
+**Oruvi 0.9.1:** el widget aparece por defecto cuando todavía no has elegido mostrarlo u ocultarlo. Una decisión de ocultarlo se conserva, también al actualizar. Al descubrirlo por primera vez se muestra brevemente al frente sin iniciar reproducción ni cambiar tu reproductor.
 
-Es una **tarjeta de escritorio de Oruvi**, no una extensión de la galería «Editar widgets» de macOS. Está debajo de las ventanas normales, comparte el selector del Notch y no añade otro muestreador. Permanece disponible aunque ocultes el notch; se oculta durante StandBy, bloqueo y reposo. Requiere que Oruvi siga abierto. Las selecciones Notch/escritorio y StandBy permanecen independientes.
+Para recuperarlo, abre el icono de Oruvi en la barra superior y pulsa **Mostrar widget de escritorio**. Esta acción siempre muestra la tarjeta, incluso si ya estaba activada: sale de Standby, la coloca en la pantalla del puntero y la eleva durante 8 segundos. **Ajustes → Widget de escritorio → Mostrar ahora y recuperar posición** y el menú de tres puntos del notch hacen lo mismo.
 
-No se guardan títulos o portadas del sistema en disco ni se envían los títulos de vídeos/navegadores a LRCLIB o al catálogo de Apple. Detalles y matriz de pruebas en [Resources/MEDIA.md](Resources/MEDIA.md).
+La tarjeta incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un icono para abrir Standby. Arrastra el asa de tres líneas para moverla. El botón de chincheta o **Mantener widget al frente** permite dejarla sobre las ventanas normales; desactivado, permanece en el escritorio. La X y **Ocultar widget de escritorio** la ocultan. Las posiciones de monitores desconectados y tamaños antiguos se corrigen.
+
+Es una **tarjeta propia de Oruvi**, no una extensión de WidgetKit: **no aparece en Editar widgets de macOS**. Oruvi debe seguir abierto. Comparte el selector del Notch y un único muestreador; Standby conserva su selección independiente. Bloqueo, reposo y Standby la ocultan, incluso cuando está fijada al frente. Mostrarla no concede permisos ni reproduce música: utiliza **Conectar controles** cuando corresponda.
+
+No se guardan títulos o portadas del sistema en disco ni se envían títulos de vídeos/navegadores a LRCLIB o al catálogo de Apple. [Detalles y pruebas](Resources/MEDIA.md).
 
 ## Widgets del notch
 
@@ -101,7 +105,7 @@ bash scripts/check.sh
 bash scripts/build.sh
 ```
 
-Resultado: `dist/Oruvi-0.9.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
+Resultado: `dist/Oruvi-0.9.1-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
 
 `bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 
