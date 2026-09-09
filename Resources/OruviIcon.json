@@ -1,0 +1,26 @@
+{
+  "design": "Frosted Window",
+  "source_file": "OruviIcon.png",
+  "source_sha256": "1f7dfcb44abb0957fab1ea5414cb9db2f565a2594e9b6e3c78ba4d97425c459f",
+  "icns_file": "OruviIcon.icns",
+  "icns_sha256": "f8d92730d942de3f9a18426855045c07cd176463386bbf06b86e6183b9bf3ca5",
+  "source_pixels": [
+    1024,
+    1024
+  ],
+  "transport_sha256": "a94835b7bd3d6f3b3e391846af6b100030d50a7ec064cd16187c52fa31816f96",
+  "export_note": "Approved artwork; high-quality image export with opaque interior and transparent exterior. Native iconutil output.",
+  "icns_chunks": [
+    "ic12",
+    "ic07",
+    "ic13",
+    "ic08",
+    "ic04",
+    "ic14",
+    "ic09",
+    "ic05",
+    "ic10",
+    "ic11",
+    "info"
+  ]
+}

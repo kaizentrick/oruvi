@@ -2,6 +2,7 @@
 """Fail closed before uploading source to a PUBLIC repository. Prints filenames, never secrets."""
 import pathlib
 import re
+import struct
 import subprocess
 import sys
 
@@ -27,10 +28,13 @@ for rel in paths:
     path = root / rel
     if (rel.parts[0] not in allowed_dirs and str(rel) not in allowed_root) or rel.suffix.lower() in forbidden_suffixes or path.is_symlink() or rel.name.startswith(".env"):
         errors.append(str(rel)); continue
-    if rel.suffix == ".icns":
-        if str(rel) != "Resources/Luma.icns": errors.append(str(rel))
-        continue
     data = subprocess.check_output(["git", "show", ":" + str(rel)], cwd=root) if staged else path.read_bytes()
+    if rel.suffix == ".icns":
+        if (str(rel) != "Resources/OruviIcon.icns" or len(data) < 8 or data[:4] != b"icns"
+                or struct.unpack(">I", data[4:8])[0] != len(data)):
+            errors.append(str(rel))
+        # Full chunk, pixel and manifest validation is required by build.sh.
+        continue
     if any(p.search(data) for p in patterns) or (secret and secret in data): errors.append(str(rel))
 if errors:
     print("Public-source audit blocked these files:\n" + "\n".join(sorted(set(errors))), file=sys.stderr)
