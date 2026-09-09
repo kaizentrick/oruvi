@@ -85,6 +85,9 @@ final class StandbyModel {
             if started { policyChanged() }
         }
     }
+    var desktopWidgetAlwaysOnTop = false {
+        didSet { prefs.set(desktopWidgetAlwaysOnTop, forKey: DesktopWidgetPolicy.pinnedKey) }
+    }
     private var activeSystemBundleID = ""
     @ObservationIgnored private var systemArtworkData: Data?
     var notchVisible = false
@@ -240,7 +243,8 @@ final class StandbyModel {
             defaults.set(2, forKey: "settingsSchema")
         }
         notchEnabled = defaults.bool(forKey: "notchEnabled")
-        desktopWidgetEnabled = defaults.bool(forKey: "desktopWidgetEnabled")
+        desktopWidgetEnabled = DesktopWidgetPolicy.initialVisibility(defaults: defaults)
+        desktopWidgetAlwaysOnTop = defaults.bool(forKey: DesktopWidgetPolicy.pinnedKey)
         meshTheme = MeshTheme(rawValue: defaults.string(forKey: "meshTheme") ?? "") ?? .aurora
         automaticLyrics = defaults.bool(forKey: "automaticLyrics")
         automaticArtwork = defaults.bool(forKey: "automaticArtwork")

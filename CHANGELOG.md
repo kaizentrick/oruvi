@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased — reproducción del sistema y escritorio
+## 0.9.1 — widget visible y recuperable
+
+- El widget aparece inicialmente si no hay preferencia guardada; respeta ocultaciones explícitas.
+- Mostrar es una acción idempotente disponible en menú, Ajustes y notch; recupera posición y se eleva temporalmente.
+- Fijación opcional al frente y asa real de arrastre sin interceptar los controles.
+- Posiciones y tamaños antiguos se normalizan; reposo, bloqueo y Standby conservan su prioridad.
+- Número de versión diferenciado, compilación visible, pruebas de preferencias/geometría y ventana AppKit real en CI.
+- Sigue siendo una tarjeta propia de Oruvi, no un widget de la galería WidgetKit.
+
+Reproducción del sistema incorporada desde el PR #4:
 
 - Automático sigue Ahora suena; Apple Music y Spotify manuales se conservan.
 - Tarjeta propia de escritorio con portada, controles y acceso a StandBy.
