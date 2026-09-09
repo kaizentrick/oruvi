@@ -16,6 +16,9 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     Sources/PlaybackSelection.swift Sources/NotchLayout.swift Sources/NotchHoverGeometry.swift scripts/verify-player-hover.swift -o "$WORK/verify-player-hover"
 "$WORK/verify-player-hover"
+xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
+    Sources/SystemMediaCore.swift scripts/verify-system-media.swift -o "$WORK/verify-system-media"
+"$WORK/verify-system-media"
 python3 - <<'PY'
 import pathlib
 import plistlib

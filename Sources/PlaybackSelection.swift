@@ -2,10 +2,10 @@
 import Foundation
 
 enum PlayerSource: String, CaseIterable, Identifiable, Sendable {
-    case music = "com.apple.Music", spotify = "com.spotify.client"
+    case music = "com.apple.Music", spotify = "com.spotify.client", system = "oruvi.system"
     var id: String { rawValue }
-    var name: String { self == .music ? "Apple Music" : "Spotify" }
-    var symbol: String { self == .music ? "music.note" : "waveform" }
+    var name: String { self == .system ? "Ahora suena" : (self == .music ? "Apple Music" : "Spotify") }
+    var symbol: String { self == .system ? "play.rectangle" : (self == .music ? "music.note" : "waveform") }
 }
 enum PlayerPreference: String, CaseIterable, Identifiable, Sendable {
     case automatic, music, spotify

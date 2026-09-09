@@ -17,6 +17,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     private var window: StandbyWindow?
     private var runtime: AmbientRuntime?
     private var notch: NotchController?
+    private var desktopWidget: DesktopWidgetController?
     private var status: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -49,6 +50,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         let notchController = NotchController(model: model)
         notch = notchController
         notchController.start()
+        let widget = DesktopWidgetController(model: model)
+        desktopWidget = widget; widget.start()
         OruviUpdates.shared.startIfConfigured()
         if LumaEnvironment.isTesting {
             controller.activate()
@@ -92,6 +95,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         menu.addItem(.separator())
         let notchItem = item("Mostrar notch", #selector(toggleNotch))
         notchItem.state = model.notchEnabled ? .on : .off
+        let widgetItem = item("Mostrar widget de escritorio", #selector(toggleDesktopWidget))
+        widgetItem.state = model.desktopWidgetEnabled ? .on : .off
         let automatic = item("Activación por inactividad", #selector(toggleAutomatic))
         automatic.state = model.idleEnabled ? .on : .off
         _ = item(model.automaticActivationStatus, nil, enabled: false)
@@ -123,12 +128,21 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         StandbyModel.shared.selectLayout(LayoutMode.allCases[sender.tag]); showPresentation()
     }
     @objc private func toggleNotch() { StandbyModel.shared.notchEnabled.toggle() }
+    @objc private func toggleDesktopWidget() {
+        let model = StandbyModel.shared
+        model.desktopWidgetEnabled.toggle()
+        if model.desktopWidgetEnabled && model.playbackSurface == .notch && !model.connected { model.connectMusic() }
+    }
     @objc private func toggleAutomatic() { StandbyModel.shared.idleEnabled.toggle() }
     @objc private func pauseAutomatic() { runtime?.pauseAutomatic(minutes: StandbyModel.shared.autoPausedUntil == nil ? 60 : nil) }
     @objc private func checkUpdates() { OruviUpdates.shared.checkNow() }
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {
-        StandbyModel.shared.shutdown(); LumaEnvironment.cleanTestingData()
+        desktopWidget?.stop()
+        StandbyModel.shared.shutdown()
+        // Complete child-process cleanup before the application run loop exits.
+        SystemMediaBridge.shared.shutdown()
+        LumaEnvironment.cleanTestingData()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
