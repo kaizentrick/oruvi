@@ -47,3 +47,22 @@ Referencias primarias:
 - https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities
 - https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date
 - https://developer.apple.com/documentation/appintents/audioplaybackintent
+
+## Corrección de sincronización 0.10.1
+
+La publicación ya no depende de que WidgetCenter enumere primero el widget: se escribe una sola instantánea actual al iniciar y al cambiar reproducción, portada o estado. Una respuesta vacía o retrasada no borra la instantánea. Los avisos del proveedor no envían metadatos ni acciones; mantienen temporalmente elegible el muestreador existente. La revisión de presencia es de baja frecuencia; no hay otro bucle de lectura musical. Los cambios se agrupan y las recargas se limitan; macOS conserva su presupuesto de actualización.
+
+Si falta estado, el widget ofrece **Conectar** en lugar de tres botones bloqueados. Esa acción conecta la selección actual y espera la lectura antes de terminar el App Intent, pero no reproduce/pausa/salta contenido. La flecha circular permite recuperar datos sin quitar los widgets. Un clic de transporte con una sesión obsoleta actualiza primero la representación; no actúa sobre otra canción.
+
+Se muestran errores distintos para ausencia, caducidad, corrupción y acceso al contenedor. Ajustes → Widgets nativos de macOS presenta la última escritura verificada. La miniatura y el título comparten un archivo atómico de acceso privado; cierre, desconexión y reposo eliminan el contenido reproducible.
+
+### Permisos de distribución
+
+La build sigue firmada ad-hoc. Los App Groups no quedan autorizados permanentemente por esa firma. macOS puede pedir consentimiento para la app/extensión; una denegación no se puede resolver fingiendo un resultado ni desactivando seguridad. Para distribución sin estas solicitudes se requiere Developer ID y el perfil que autorice `group.com.kaizentrick.Oruvi` en ambos targets, o un grupo autorizado por Team ID. No se añade Full Disk Access, excepciones de sandbox, lectura de otro contenedor, servidor local ni cambios de SIP/Gatekeeper.
+
+El runner valida datos sintéticos entre procesos firmados y sandbox, pero puede tener una política SIP distinta. El éxito de CI no se presenta como una prueba del consentimiento o de música real en todos los Mac.
+
+Referencias primarias:
+- https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities
+- https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date
+- https://developer.apple.com/forums/thread/721701
