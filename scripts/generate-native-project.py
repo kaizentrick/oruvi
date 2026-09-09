@@ -1,38 +1,46 @@
 #!/usr/bin/env python3
 """Create deterministic Xcode targets in the ephemeral build directory.
-Xcode, not a hand-built executable, owns extension linking and App Intents metadata.
-No Xcode project/user state is written to the checkout or to a personal machine.
+Xcode owns extension linking and App Intents metadata. No project/user state is
+written to the checkout or to a personal machine by the GitHub workflow.
 """
 import hashlib
 import pathlib
 import plistlib
+import re
 import sys
 
+if len(sys.argv) != 5:
+    raise SystemExit('Usage: generate-native-project.py BUILD DEPS VERSION NUMBER')
 root = pathlib.Path(__file__).resolve().parent.parent
 build = pathlib.Path(sys.argv[1]).resolve()
 deps = pathlib.Path(sys.argv[2]).resolve()
 version, number = sys.argv[3:5]
+assert re.fullmatch(r'\d+\.\d+\.\d+', version)
+assert re.fullmatch(r'\d{1,10}', number)
 objects = {}
-def oid(name): return hashlib.sha256(name.encode()).hexdigest()[:24].upper()
-def obj(name, **values):
-    key = oid(name); objects[key] = values; return key
+def oid(identifier): return hashlib.sha256(identifier.encode()).hexdigest()[:24].upper()
+def obj(identifier, **values):
+    key = oid(identifier); objects[key] = values; return key
 
 def source(path):
+    assert (root/path).is_file(), path
     return obj('file:' + path, isa='PBXFileReference', lastKnownFileType='sourcecode.swift' if path.endswith('.swift') else 'sourcecode.c.objc', path=str(root/path), sourceTree='<absolute>')
-def phase(name, files):
-    entries = [obj(name+':'+p, isa='PBXBuildFile', fileRef=source(p)) for p in files]
-    return obj(name, isa='PBXSourcesBuildPhase', buildActionMask=2147483647, files=entries, runOnlyForDeploymentPostprocessing=0)
+def phase(identifier, files):
+    entries = [obj(identifier+':'+p, isa='PBXBuildFile', fileRef=source(p)) for p in files]
+    return obj(identifier, isa='PBXSourcesBuildPhase', buildActionMask=2147483647, files=entries, runOnlyForDeploymentPostprocessing=0)
 
 host = sorted(str(p.relative_to(root)) for p in (root/'Sources').glob('*.swift') if p.name != 'LumaQA.swift')
 shared = sorted(str(p.relative_to(root)) for p in (root/'Sources/WidgetShared').glob('*.swift'))
 widget = sorted(str(p.relative_to(root)) for p in (root/'Sources/Widgets').glob('*.swift')) + shared
 host += shared + ['Sources/MusicBridge.m', 'Sources/SpotifyBridge.m']
+assert shared and widget and 'Sources/OruviApplication.swift' in host
+assert 'Sources/WidgetShared/WidgetIntents.swift' in shared
 common = dict(SDKROOT='macosx', MACOSX_DEPLOYMENT_TARGET='26.0', ARCHS='arm64', ONLY_ACTIVE_ARCH='YES', SWIFT_VERSION='5.0', SWIFT_COMPILATION_MODE='wholemodule', SWIFT_OPTIMIZATION_LEVEL='-O', SWIFT_TREAT_WARNINGS_AS_ERRORS='YES', CLANG_ENABLE_MODULES='YES', CLANG_ENABLE_OBJC_ARC='YES', CODE_SIGNING_ALLOWED='NO', GENERATE_INFOPLIST_FILE='NO', CURRENT_PROJECT_VERSION=number, MARKETING_VERSION=version, SWIFT_EMIT_LOC_STRINGS='YES', ENABLE_HARDENED_RUNTIME='NO', ENABLE_USER_SCRIPT_SANDBOXING='YES', DEBUG_INFORMATION_FORMAT='dwarf-with-dsym', DEAD_CODE_STRIPPING='YES')
 
-def config(name, **extra):
+def config(identifier, **extra):
     values = dict(common); values.update(extra)
-    release = obj(name+':release', isa='XCBuildConfiguration', name='Release', buildSettings=values)
-    return obj(name+':configs', isa='XCConfigurationList', buildConfigurations=[release], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
+    release = obj(identifier+':release', isa='XCBuildConfiguration', name='Release', buildSettings=values)
+    return obj(identifier+':configs', isa='XCConfigurationList', buildConfigurations=[release], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
 
 app_product = obj('app-product', isa='PBXFileReference', explicitFileType='wrapper.application', path='Oruvi.app', sourceTree='BUILT_PRODUCTS_DIR')
 widget_product = obj('widget-product', isa='PBXFileReference', explicitFileType='wrapper.app-extension', path='OruviWidgets.appex', sourceTree='BUILT_PRODUCTS_DIR')
@@ -51,5 +59,8 @@ files = [key for key,value in objects.items() if value.get('isa')=='PBXFileRefer
 group = obj('root-group', isa='PBXGroup', children=files+[products], sourceTree='<group>')
 project = obj('project', isa='PBXProject', attributes={'LastUpgradeCheck':'2600'}, buildConfigurationList=config('project'), compatibilityVersion='Xcode 14.0', developmentRegion='es', knownRegions=['es','en','Base'], mainGroup=group, productRefGroup=products, projectDirPath='', projectRoot='', targets=[app_target,widget_target])
 output = build/'OruviNative.xcodeproj'; output.mkdir(parents=True, exist_ok=True)
-(output/'project.pbxproj').write_bytes(plistlib.dumps({'archiveVersion':'1','classes':{},'objectVersion':'56','objects':objects,'rootObject':project},sort_keys=False))
+project_data = {'archiveVersion':'1','classes':{},'objectVersion':'56','objects':objects,'rootObject':project}
+encoded = plistlib.dumps(project_data,sort_keys=False)
+assert plistlib.loads(encoded) == project_data
+(output/'project.pbxproj').write_bytes(encoded)
 print(output)
