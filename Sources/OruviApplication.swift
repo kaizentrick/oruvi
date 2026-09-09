@@ -29,6 +29,9 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
             NSApp.terminate(nil)
             return
         }
+        if let image = ApplicationIcon.image() {
+            NSApp.applicationIconImage = image
+        }
         NSWindow.allowsAutomaticWindowTabbing = false
         installMainMenu()
         let model = StandbyModel.shared

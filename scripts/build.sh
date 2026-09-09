@@ -38,7 +38,12 @@ export ORUVI_BUILD_NUMBER="${ORUVI_BUILD_NUMBER:-$(date +%s)}"
 # An explicitly empty repository is for secret-free CI validation, never publication.
 REPOSITORY="${ORUVI_REPOSITORY-kaizentrick/oruvi}"
 if [[ -n "$REPOSITORY" ]]; then [[ "$REPOSITORY" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$ && "$REPOSITORY" != */.. && "$REPOSITORY" != */. ]] || exit 1; fi
-[[ -s Resources/UpdatePublicKey.pub && -s Resources/Luma.icns && -s LICENSE ]]
+[[ -s Resources/UpdatePublicKey.pub && -s Resources/OruviIcon.icns && -s LICENSE ]]
+# Fail before expensive compilation if an upload is truncated, renamed or not the approved art.
+python3 scripts/verify-icon.py --self-test >&3
+xcrun swiftc -warnings-as-errors -swift-version 5 -parse-as-library Sources/ApplicationIcon.swift scripts/verify-icon.swift -framework AppKit -framework ImageIO -o "$BUILD/verify-icon"
+iconutil -c iconset -o "$BUILD/source.iconset" Resources/OruviIcon.icns
+"$BUILD/verify-icon" Resources/OruviIcon.png Resources/OruviIcon.icns "$BUILD/source.iconset" >&3
 PUBLIC_KEY="$(tr -d '\r\n' < Resources/UpdatePublicKey.pub)"
 [[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo 'Clave pública no válida.'; exit 1; }
 DEPS="$BUILD/deps"; bash scripts/dependencies.sh "$DEPS"
@@ -58,14 +63,15 @@ xcrun libtool -static -o "$BUILD/libOruviPlayers.a" "$BUILD/MusicBridge.o" "$BUI
 prepare_app() {
     local app="$1"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
-    python3 - "$app/Contents/Info.plist" <<'PY'
+    python3 - "$app/Contents/Info.plist" <<'PLIST'
 import pathlib, plistlib, sys
 path = pathlib.Path(sys.argv[1])
 info = plistlib.loads(path.read_bytes()) if path.exists() else {}
 info.update(plistlib.loads(pathlib.Path('Resources/Info.plist').read_bytes()))
 path.write_bytes(plistlib.dumps(info, sort_keys=False))
-PY
-    cp Resources/Luma.icns "$app/Contents/Resources/Oruvi.icns"
+PLIST
+    cp Resources/OruviIcon.icns "$app/Contents/Resources/OruviIcon.icns"
+    cp Resources/OruviIcon.json "$app/Contents/Resources/OruviIcon.json"
     cp LICENSE "$app/Contents/Resources/LICENSE.txt"
     cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
     cp "$DEPS/LICENSE" "$app/Contents/Resources/Sparkle-LICENSE.txt"
@@ -111,6 +117,7 @@ EXTENSION="$APP/Contents/PlugIns/OruviWidgets.appex"
 codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Widgets/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$EXTENSION"
 [[ -s "$APP/Contents/MacOS/Oruvi" ]]
 plutil -lint "$APP/Contents/Info.plist"
+python3 scripts/verify-icon.py --app "$APP" >&3
 codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 python3 scripts/verify-native-bundle.py "$APP" >&3
@@ -147,6 +154,10 @@ cmp -s LICENSE "$BUILD/mount/LICENSE.txt"
 cmp -s "$DEPS/mediaremote-adapter.pl" "$BUILD/mount/Oruvi.app/Contents/Resources/mediaremote-adapter.pl"
 [[ -s "$BUILD/mount/Oruvi.app/Contents/Resources/MediaRemoteAdapter-LICENSE.txt" ]]
 codesign --verify --strict "$BUILD/mount/Oruvi.app/Contents/Frameworks/MediaRemoteAdapter.framework"
+# Verify the actual read-only installer, not just a source preview or a nonempty file.
+python3 scripts/verify-icon.py --app "$BUILD/mount/Oruvi.app" >&3
+iconutil -c iconset -o "$BUILD/installer.iconset" "$BUILD/mount/Oruvi.app/Contents/Resources/OruviIcon.icns"
+"$BUILD/verify-icon" Resources/OruviIcon.png "$BUILD/mount/Oruvi.app/Contents/Resources/OruviIcon.icns" "$BUILD/installer.iconset" "$BUILD/mount/Oruvi.app" >&3
 hdiutil detach "$BUILD/mount"
 # Updates require the maintainer key. Never publish a feed for an unsigned archive.
 KEY_FILE="${ORUVI_KEY_FILE:-$ROOT/.private/sparkle.key}"
@@ -169,3 +180,10 @@ printf '\n[5/5] Integridad\n'
 shasum -a 256 "$ROOT/dist/$NAME"
 printf 'DMG comprobado: %s/dist/%s\n' "$ROOT" "$NAME" >&3
 printf 'Build: %s. La publicación en GitHub es un paso separado.\n' "$ORUVI_BUILD_NUMBER" >&3
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+        printf '## Icono de Oruvi verificado dentro del instalador\n\n'
+        printf 'Versión %s · compilación %s. Diez representaciones nativas/Retina decodificadas, transparencia y píxeles del maestro comprobados. El cargador real resuelve el recurso del bundle montado.\n\n' "$VERSION" "$ORUVI_BUILD_NUMBER"
+        printf 'ICNS SHA-256: `%s`\n' "$(shasum -a 256 Resources/OruviIcon.icns | awk '{print $1}')"
+    } >> "$GITHUB_STEP_SUMMARY"
+fi
