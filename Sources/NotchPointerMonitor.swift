@@ -13,7 +13,7 @@ final class NotchPointerMonitor {
     init(controller: NotchController) { self.controller = controller }
     func start() {
         if global == nil && local == nil {
-            let mask: NSEvent.EventTypeMask = [.mouseMoved]
+            let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
             global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
             }
@@ -27,12 +27,10 @@ final class NotchPointerMonitor {
     private func sample() {
         guard let controller, controller.acceptsFileDrop else { stop(); return }
         let near = controller.pointerWatchFrame.map { NotchHoverGeometry.contains(NSEvent.mouseLocation, in: $0) } ?? false
-        // Far-away pointer movement does not mutate observable UI state.
-        if near || wasNear || controller.expanded { controller.refreshPointer() }
+        if near || wasNear || controller.expanded || controller.notice != nil { controller.refreshPointer() }
         wasNear = near
         if near && nearCameraTimer == nil {
-            // This local probe recovers missing/stationary events behind the camera.
-            // It exists only near the notch, never as an idle-wide polling loop.
+            // Only near the camera; no permanent idle-wide animation/input loop.
             let timer = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
             }

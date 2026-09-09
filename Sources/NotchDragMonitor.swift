@@ -35,7 +35,7 @@ final class NotchDragMonitor {
             releaseTask?.cancel(); releaseTask = nil
             freshness.end(changeCount: pasteboard.changeCount); controller.endFileDrag()
             freshness.begin(changeCount: pasteboard.changeCount)
-            startedInShelf = controller.expanded && controller.tab == .files && controller.frame.contains(NSEvent.mouseLocation)
+            startedInShelf = controller.expanded && controller.tab == .files && controller.containsSurface(NSEvent.mouseLocation)
             controller.clickedOutside(); watchDrag()
         case .leftMouseDragged: sampleGesture()
         case .leftMouseUp: finishGestureAfterDrop()
@@ -44,6 +44,9 @@ final class NotchDragMonitor {
     }
     private func sampleGesture() {
         guard let controller, controller.acceptsFileDrop else { stop(); return }
+        // Native drag loops may swallow movement events. Reuse this existing,
+        // gesture-scoped probe to recover input targeting without another timer.
+        controller.refreshPointer()
         guard NSEvent.pressedMouseButtons & 1 != 0 else { finishGestureAfterDrop(); return }
         if controller.draggingFiles {
             if !controller.dragRetentionFrame.contains(NSEvent.mouseLocation) { controller.endFileDrag() }
@@ -54,15 +57,11 @@ final class NotchDragMonitor {
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastSample >= 0.04 else { return }; lastSample = now
         let count = pasteboard.changeCount
-        // Count and advertised types only; URLs are read at the native drop target.
         guard freshness.accepts(changeCount: count, advertisesFiles: pasteboard.availableType(from: [.fileURL]) != nil) else { return }
         controller.beginFileDrag()
     }
     func watchDrag() {
         guard gestureTimer == nil else { return }
-        // Runs only while the left button is held, not at idle. Native dragging
-        // loops can consume mouseDragged events; this short-lived probe still sees
-        // approach, cancellation and release. It never reads pasteboard types far away.
         let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sampleGesture() }
         }
@@ -73,7 +72,7 @@ final class NotchDragMonitor {
         gestureTimer?.invalidate(); gestureTimer = nil
         guard controller?.draggingFiles == true, releaseTask == nil else { return }
         releaseTask = Task { [weak self] in
-            // Let AppKit deliver performDragOperation before cleaning up a cancelled drag.
+            // Let AppKit deliver performDragOperation before cancelled-drag cleanup.
             do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             guard !Task.isCancelled, let self else { return }
             self.controller?.endFileDrag(); self.releaseTask = nil
@@ -81,7 +80,6 @@ final class NotchDragMonitor {
     }
     func stopWatchingDrag() {
         releaseTask?.cancel(); releaseTask = nil
-        // An ongoing gesture can leave the notch then approach it again.
         if !freshness.pressed { gestureTimer?.invalidate(); gestureTimer = nil }
     }
     func stop() {

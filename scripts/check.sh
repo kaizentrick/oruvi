@@ -11,6 +11,10 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
     Sources/NotchLayout.swift Sources/NotchTimerState.swift scripts/verify-notch.swift -o "$WORK/verify-notch"
 "$WORK/verify-notch"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
+    -target arm64-apple-macos26.0 Sources/NotchLayout.swift Sources/NotchPresentation.swift Sources/NotchSurfaceUI.swift \
+    scripts/verify-notch-presentation.swift -framework AppKit -framework SwiftUI -framework ColorSync -o "$WORK/verify-notch-presentation"
+"$WORK/verify-notch-presentation"
+xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     Sources/NotchInteraction.swift scripts/verify-notch-interaction.swift -o "$WORK/verify-notch-input"
 "$WORK/verify-notch-input"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \

@@ -4,29 +4,43 @@ import SwiftUI
 
 struct NotchView: View {
     @Bindable var model: StandbyModel
-    let controller: NotchController
-    private var shape: UnevenRoundedRectangle {
-        let top: CGFloat = controller.cameraWidth > 0 ? 0 : 12
-        let bottom: CGFloat = controller.expanded ? 22 : min(12, controller.topInset / 2)
-        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
-                                      bottomTrailingRadius: bottom, topTrailingRadius: top)
-    }
+    @Bindable var controller: NotchController
     var body: some View {
         GeometryReader { geometry in
+            let state = controller.surface.state
+            let shape = NotchSurfaceShape(flare: state.flare, radius: state.radius)
+            let expandedWidth = min(max(360, controller.compactWidth), max(1, geometry.size.width - NotchPresentation.shadowMargin * 2))
+            let expandedHeight = min(controller.tab.contentHeight + (controller.notice == nil ? 0 : NotchPresentation.noticeHeight),
+                                     max(0, geometry.size.height - controller.topInset - NotchPresentation.shadowMargin))
             ZStack(alignment: .top) {
                 shape.fill(.black)
-                if controller.expanded {
-                    workspace.frame(height: max(0, geometry.size.height - controller.topInset))
-                        .padding(.top, controller.topInset).transition(.opacity)
-                } else {
-                    compact.frame(width: geometry.size.width, height: controller.topInset).transition(.opacity)
-                }
-            }.frame(width: geometry.size.width, height: geometry.size.height)
-                .clipShape(shape).contentShape(Rectangle())
+                    .shadow(color: .black.opacity(Double(state.expansion) * 0.22), radius: 6, y: 3)
+                ZStack(alignment: .top) {
+                    if controller.expanded || state.expansion > 0 {
+                        workspace.frame(width: max(1, expandedWidth - state.flare * 2), height: expandedHeight)
+                            .padding(.top, controller.topInset)
+                            .opacity(Double(state.expansion))
+                            .allowsHitTesting(controller.expanded && state.expansion > 0.95)
+                            .accessibilityHidden(!controller.expanded)
+                    }
+                    VStack(spacing: 0) {
+                        compact.frame(height: controller.topInset)
+                        if let notice = controller.notice {
+                            noticeRow(notice).padding(.horizontal, 14).frame(height: NotchPresentation.noticeHeight)
+                        }
+                    }.frame(width: max(1, state.width - state.flare * 2))
+                        .opacity(Double(1 - state.expansion))
+                        .allowsHitTesting(!controller.expanded)
+                        .accessibilityHidden(controller.expanded)
+                }.frame(width: state.width, height: state.height, alignment: .top).clipShape(shape)
+            }.frame(width: state.width, height: state.height, alignment: .top)
+                .contentShape(shape)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
         .ignoresSafeArea().foregroundStyle(.white).preferredColorScheme(.dark)
         .onExitCommand { controller.collapse() }
-        .animation(model.reduceMotion ? nil : .easeOut(duration: 0.12), value: controller.expanded)
+        // Surface geometry is animated once by NotchSurfaceAnimator. Do not add
+        // another implicit size animation: the input outline must use the same sample.
     }
     private var compact: some View {
         HStack(spacing: 0) {
@@ -48,6 +62,18 @@ struct NotchView: View {
             .accessibilityLabel(model.hasTrack ? "Oruvi. \(model.track.title). Abrir widgets." : "Oruvi. Abrir widgets.")
             .accessibilityAddTraits(.isButton).accessibilityAction { controller.openForKeyboard() }
     }
+    private func noticeRow(_ notice: NotchNotice) -> some View {
+        HStack(spacing: 6) {
+            Button { controller.openNotice() } label: {
+                Label(notice.title, systemImage: notice.symbol).font(.system(size: 11, weight: .medium))
+                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).help(notice.title).accessibilityLabel(notice.title)
+            Button { controller.dismissNotice() } label: {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .medium)).frame(width: 24, height: 24)
+            }.buttonStyle(.plain).help("Descartar aviso").accessibilityLabel("Descartar aviso")
+        }
+    }
     private var workspace: some View {
         VStack(spacing: 10) {
             HStack(spacing: 4) {
@@ -67,10 +93,25 @@ struct NotchView: View {
                     Button("Widgets de macOS…") { controller.afterMenu { model.showNativeWidgetSettings() } }
                     Button("Ajustes…") { controller.afterMenu { model.showWindow(); model.settingsOpen = true } }
                     Divider()
+                    Menu("Personalizar notch") {
+                        Toggle("Respuesta háptica", isOn: $controller.hapticsEnabled)
+                        Toggle("Avisos breves", isOn: $controller.noticesEnabled)
+                        Menu("Pantalla del notch") {
+                            displayOption("Automática · preferir cámara", id: "automatic")
+                            ForEach(controller.displayChoices) { option in
+                                displayOption(option.name, id: option.id)
+                            }
+                            if controller.selectedDisplayID != "automatic" && !controller.displayChoices.contains(where: { $0.id == controller.selectedDisplayID }) {
+                                Text("Pantalla guardada no disponible · usando alternativa")
+                            }
+                        }
+                    }
+                    Button("Guía del notch…") { controller.afterMenu { controller.showGuide() } }
+                    Divider()
                     Button("Cerrar panel") { controller.afterMenu { controller.collapse() } }
                 } label: { Image(systemName: "ellipsis").font(.system(size: 15)).frame(width: 32, height: 32) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("Standby, widgets de macOS, ajustes y cerrar").accessibilityLabel("Más opciones del notch")
+                .help("Standby, widgets, personalización y ajustes").accessibilityLabel("Más opciones del notch")
             }.frame(height: 32)
             Group {
                 switch controller.tab {
@@ -92,7 +133,16 @@ struct NotchView: View {
                             }.allowsHitTesting(false)
                     }
                 }
+            if let notice = controller.notice { noticeRow(notice).frame(height: 22) }
         }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
+    }
+    private func displayOption(_ title: String, id: String) -> some View {
+        Button {
+            controller.afterMenu { controller.chooseDisplay(id) }
+        } label: {
+            if controller.selectedDisplayID == id { Label(title, systemImage: "checkmark") }
+            else { Text(title) }
+        }
     }
     private var music: some View {
         VStack(spacing: 10) {
