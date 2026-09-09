@@ -18,6 +18,7 @@ final class SystemMediaBridge: @unchecked Sendable {
     private let lock = NSLock()
     private var cached: SystemMediaSnapshot?
     private var enabled = false
+    private var shuttingDown = false
     private var process: Process?
     private var pipe: Pipe?
     private var generation = 0
@@ -34,14 +35,23 @@ final class SystemMediaBridge: @unchecked Sendable {
     }
     func setEnabled(_ value: Bool) {
         queue.async { [self] in
-            guard enabled != value else { return }
+            guard !shuttingDown, enabled != value else { return }
             enabled = value
             if value { start() } else { stop() }
         }
     }
     /// Explicit reconnect is the only immediate retry after a helper failure.
     func reconnect() {
-        queue.async { [self] in guard enabled else { return }; stop(); start() }
+        queue.async { [self] in guard enabled && !shuttingDown else { return }; stop(); start() }
+    }
+    /// App termination must not leave a persistent child alive after its parent.
+    /// Called from the application delegate, outside the bridge queue.
+    func shutdown() {
+        queue.sync { [self] in
+            shuttingDown = true; enabled = false
+            if let task = process, task.isRunning { _ = kill(task.processIdentifier, SIGKILL) }
+            stop()
+        }
     }
     private static func makeProcess(_ arguments: [String]) -> Process? {
         guard let resources = Bundle.main.resourceURL,
@@ -68,7 +78,8 @@ final class SystemMediaBridge: @unchecked Sendable {
         task.standardOutput = output
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let bytes = handle.availableData
-            self?.queue.async { [weak self] in
+            // Apply pipe backpressure instead of enqueueing unbounded data chunks.
+            self?.queue.sync { [weak self] in
                 guard let self, self.generation == session else { return }
                 if bytes.isEmpty { self.stop(); return }
                 do {

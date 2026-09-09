@@ -34,6 +34,38 @@ jobs:
         env:
           ORUVI_REPOSITORY: ''
         run: bash scripts/build.sh
+      - name: Describe the isolated test installer
+        if: ${{ success() && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat > dist/PR-LEEME.txt <<'TXT'
+          ORUVI - COMPILACION DE PRUEBA
+          No es una release estable ni una actualizacion publicada por Sparkle.
+          Requiere macOS 26 o posterior y Apple Silicon.
+          Esta compilacion de CI no incluye un feed de actualizaciones.
+          Conserva tu instalador estable. Para volver al canal estable, reinstala la release publica.
+          La firma es ad-hoc; no se ha notarizado ante Apple.
+          No desactives Gatekeeper ni SIP. Verifica que el artefacto corresponde a tu PR y commit.
+          Para el widget: menu de Oruvi > Mostrar widget de escritorio.
+          Automático depende de que la app de origen publique Ahora suena y acepte los controles.
+          El widget es una tarjeta propia de Oruvi, no aparece en Editar widgets de macOS.
+          TXT
+          printf '\nPR: %s\nCommit de la rama: %s\nCommit compilado: %s\n' "$PR_NUMBER" "$HEAD_SHA" "$(git rev-parse HEAD)" >> dist/PR-LEEME.txt
+          (cd dist && shasum -a 256 ./*.dmg > SHA256SUMS.txt)
+      - name: Upload verified test installer (not a public release)
+        if: ${{ success() && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Oruvi-PR-${{ github.event.pull_request.number }}
+          path: |
+            dist/*.dmg
+            dist/PR-LEEME.txt
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
-# No signing secrets, uploads, releases or personal Mac interaction.
-# The trusted main release workflow remains the only publisher.
+# No signing secrets, public releases or personal Mac interaction.
+# Test artifacts expire after 7 days; the trusted main workflow is the only publisher.

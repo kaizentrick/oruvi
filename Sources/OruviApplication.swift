@@ -139,7 +139,10 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {
         desktopWidget?.stop()
-        StandbyModel.shared.shutdown(); LumaEnvironment.cleanTestingData()
+        StandbyModel.shared.shutdown()
+        // Complete child-process cleanup before the application run loop exits.
+        SystemMediaBridge.shared.shutdown()
+        LumaEnvironment.cleanTestingData()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
