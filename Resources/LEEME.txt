@@ -56,3 +56,6 @@ Esc: volver al escritorio. 1 / 2 / 3: cambiar vista. Flechas: anterior/siguiente
 Espacio: reproducir/pausar. Cmd+,: Ajustes. Cmd+Q: salir.
 
 Oruvi es una aplicación independiente de Apple y Spotify.
+
+WIDGET NATIVO (0.10.0+)
+Abre Oruvi desde Aplicaciones al menos una vez. Clic secundario en el escritorio > Editar widgets > Oruvi > Musica y Standby. Elige pequeno o mediano. La tarjeta flotante antigua ya no existe. macOS administra actualizaciones y puede solicitar acceso a datos compartidos; no desactives protecciones del sistema.

@@ -46,17 +46,19 @@ El selector permanece visible incluso sin canción. Detecta aplicaciones mediant
 
 Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la preferencia de la superficie visible, cancela contenido pendiente y descarta respuestas antiguas. No se añaden dos bucles permanentes de consulta. El permiso o la desconexión de una superficie no modifica la selección guardada de la otra.
 
-## Widget de escritorio
+## Widgets nativos de macOS
 
-**Oruvi 0.9.1:** el widget aparece por defecto cuando todavía no has elegido mostrarlo u ocultarlo. Una decisión de ocultarlo se conserva, también al actualizar. Al descubrirlo por primera vez se muestra brevemente al frente sin iniciar reproducción ni cambiar tu reproductor.
+Oruvi incorpora una extensión **WidgetKit** real, `OruviWidgets.appex`, dentro de la app. Se elimina la tarjeta flotante de 0.9.1: no hay otra ventana, chincheta ni temporizador gráfico de escritorio.
 
-Para recuperarlo, abre el icono de Oruvi en la barra superior y pulsa **Mostrar widget de escritorio**. Esta acción siempre muestra la tarjeta, incluso si ya estaba activada: sale de Standby, la coloca en la pantalla del puntero y la eleva durante 8 segundos. **Ajustes → Widget de escritorio → Mostrar ahora y recuperar posición** y el menú de tres puntos del notch hacen lo mismo.
+Instala la versión 0.10.0 o posterior en Aplicaciones y abre Oruvi al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → busca Oruvi → Música y Standby**. Puedes elegir tamaño pequeño o mediano y colocarlo como cualquier widget del sistema. macOS administra posición, tamaño, apariencia y eliminación.
 
-La tarjeta incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un icono para abrir Standby. Arrastra el asa de tres líneas para moverla. El botón de chincheta o **Mantener widget al frente** permite dejarla sobre las ventanas normales; desactivado, permanece en el escritorio. La X y **Ocultar widget de escritorio** la ocultan. Las posiciones de monitores desconectados y tamaños antiguos se corrigen.
+Incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un icono para abrir Standby. Los controles utilizan App Intents en el proceso de Oruvi y no abren otra pantalla. El icono de Standby usa un enlace específico. El widget refleja el reproductor activo de Oruvi; las selecciones Notch y Standby siguen siendo independientes, con Automático, Apple Music y Spotify.
 
-Es una **tarjeta propia de Oruvi**, no una extensión de WidgetKit: **no aparece en Editar widgets de macOS**. Oruvi debe seguir abierto. Comparte el selector del Notch y un único muestreador; Standby conserva su selección independiente. Bloqueo, reposo y Standby la ocultan, incluso cuando está fijada al frente. Mostrarla no concede permisos ni reproduce música: utiliza **Conectar controles** cuando corresponda.
+El widget no está ejecutándose continuamente: WidgetKit representa instantáneas y decide sus refrescos. Oruvi solicita actualización al cambiar el contenido, agrupa ráfagas y no escribe por cada segundo de progreso. No se garantiza portada instantánea en cada cambio; los controles validan sesión, pista y selección antes de actuar sobre un estado atrasado.
 
-No se guardan títulos o portadas del sistema en disco ni se envían títulos de vídeos/navegadores a LRCLIB o al catálogo de Apple. [Detalles y pruebas](Resources/MEDIA.md).
+Para compartir datos entre procesos se conserva **una instantánea local**, sin historial, en la caché del App Group: estado, metadatos actuales y miniatura JPEG de hasta 192 píxeles. Se sobrescribe de forma atómica, se elimina al cerrar Oruvi o retirar el último widget y tiene caducidad. WidgetKit también administra sus propias representaciones. No se envían los títulos de vídeos/navegadores a catálogos de música ni servicios de letras. La extensión no tiene permisos de red, Apple Events, cámara o micrófono.
+
+En **Ajustes → Widgets nativos de macOS** se muestran instrucciones y detección de widgets añadidos. La distribución actual sigue siendo ad-hoc, no notarizada: macOS puede solicitar acceso a datos compartidos o bloquear componentes según sus políticas. La validación del runner no reemplaza comprobar la galería en una instalación normal. No desactives SIP o Gatekeeper. Detalles de firma y diagnóstico en [Resources/MEDIA.md](Resources/MEDIA.md).
 
 ## Widgets del notch
 
@@ -105,7 +107,7 @@ bash scripts/check.sh
 bash scripts/build.sh
 ```
 
-Resultado: `dist/Oruvi-0.9.1-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
+Resultado: `dist/Oruvi-0.10.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
 
 `bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 

@@ -64,13 +64,13 @@ struct NotchView: View {
                 Spacer(minLength: 8)
                 Menu {
                     Button("Abrir Standby") { controller.afterMenu { model.showWindow() } }
-                    Button("Mostrar widget de escritorio") { controller.afterMenu { model.revealDesktopWidget() } }
+                    Button("Widgets de macOS…") { controller.afterMenu { model.showNativeWidgetSettings() } }
                     Button("Ajustes…") { controller.afterMenu { model.showWindow(); model.settingsOpen = true } }
                     Divider()
                     Button("Cerrar panel") { controller.afterMenu { controller.collapse() } }
                 } label: { Image(systemName: "ellipsis").font(.system(size: 15)).frame(width: 32, height: 32) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("Standby, widget de escritorio, ajustes y cerrar").accessibilityLabel("Más opciones del notch")
+                .help("Standby, widgets de macOS, ajustes y cerrar").accessibilityLabel("Más opciones del notch")
             }.frame(height: 32)
             Group {
                 switch controller.tab {

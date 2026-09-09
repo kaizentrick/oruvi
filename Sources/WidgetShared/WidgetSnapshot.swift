@@ -101,7 +101,7 @@ struct WidgetPublicationPolicy {
         if reload { lastReload = value.generatedAt }
     }
     func needsWrite(_ value: WidgetSnapshot, force: Bool = false) -> Bool {
-        force || previous.map { !value.samePresentation(as: $0) } ?? true ||
+        force || (previous.map { !value.samePresentation(as: $0) } ?? true) ||
         value.generatedAt.timeIntervalSince(lastWrite ?? .distantPast) >= 600
     }
     func reloadDelay(at now: Date) -> TimeInterval {

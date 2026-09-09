@@ -1,8 +1,8 @@
 import Foundation
 
 enum OruviRelease {
-    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.9.1"
-    static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "10"
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.10.0"
+    static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "11"
     static let bundleID = "com.kaizentrick.Oruvi"
     static let legacyBundleID = "com.kaizentrick.LumaStandby"
     static let title = "Oruvi \(version)"

@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.9.1</string>
+	<string>0.10.0</string>
 	<key>CFBundleVersion</key>
-	<string>10</string>
+	<string>11</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUAutomaticallyUpdate</key>
@@ -48,5 +48,20 @@
 	<string>Solo si conectas Agenda, Oruvi lee tus próximos eventos para mostrarlos en el notch. macOS solicita acceso completo, pero Oruvi no crea, edita ni elimina eventos y no los envía a servidores.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 KaizenTrick. Oruvi se distribuye bajo licencia MIT.</string>
+	<key>OruviWidgetAppGroup</key>
+	<string>group.com.kaizentrick.Oruvi</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.kaizentrick.Oruvi.widget-links</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>oruvi</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

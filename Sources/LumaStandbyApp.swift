@@ -376,16 +376,7 @@ private struct SettingsPanel: View {
             }.padding(26)
             Form {
                 UpdatesSettings()
-                Section("Widget de escritorio") {
-                    Toggle("Mostrar widget de escritorio", isOn: $model.desktopWidgetEnabled)
-                    Toggle("Mantener widget al frente", isOn: $model.desktopWidgetAlwaysOnTop)
-                        .disabled(!model.desktopWidgetEnabled)
-                    Button("Mostrar ahora y recuperar posición") { model.revealDesktopWidget() }
-                    Text("Portada, controles y acceso a Standby. Mostrar ahora cierra esta presentación, coloca la tarjeta en la pantalla del puntero y la muestra al frente brevemente. Activa Mantener al frente para que no quede detrás de otras ventanas.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("Es una tarjeta propia de Oruvi: se añade desde aquí o desde el menú de la barra superior, no desde Editar widgets de macOS. Comparte el reproductor del Notch; Standby conserva su selección independiente.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                NativeWidgetSettings()
                 Section("Notch y reproductores") {
                     Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
                     LabeledContent("Reproductor del Notch") {

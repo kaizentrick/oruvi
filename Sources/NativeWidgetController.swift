@@ -39,7 +39,7 @@ final class NativeWidgetController {
         observe(DistributedNotificationCenter.default(), Notification.Name(OruviWidgetIdentity.requested)) { [weak self] in
             guard let self else { return }
             self.refreshConfigurations(force: true)
-            self.requestPublication(force: true)
+            self.requestPublication()
         }
         refreshConfigurations(force: true)
         trackChanges()
@@ -60,7 +60,7 @@ final class NativeWidgetController {
         requestPublication()
     }
     func refreshConfigurations(force: Bool = false) {
-        guard started, !stopped, !querying, force || Date().timeIntervalSince(lastQuery) >= 15 else { return }
+        guard started, !stopped, !querying, Date().timeIntervalSince(lastQuery) >= (force ? 1 : 15) else { return }
         querying = true; lastQuery = Date()
         WidgetCenter.shared.getCurrentConfigurations { [weak self] result in
             Task { @MainActor [weak self] in
@@ -68,10 +68,11 @@ final class NativeWidgetController {
                 self.querying = false
                 if case .success(let widgets) = result {
                     let count = widgets.filter { $0.kind == OruviWidgetIdentity.kind }.count
+                    let changed = self.installedCount != count
                     self.installedCount = count
                     self.model.setNativeWidgetPresence(count > 0)
                     self.status = count > 0 ? "Widget nativo añadido · \(count)" : "Clic secundario en el escritorio → Editar widgets → Oruvi."
-                    if count > 0 { self.requestPublication(force: true) }
+                    if count > 0 { self.requestPublication(force: changed) }
                     else { self.clearSharedPresentation() }
                 } else { self.status = "macOS aún no ha informado de los widgets. Abre Editar widgets y busca Oruvi." }
             }
@@ -114,10 +115,11 @@ final class NativeWidgetController {
         var value = makeSnapshot(); value.message = message
         if value.state == .ready, let image = model.artwork {
             if lastImage !== image {
-                lastImage = image
                 var rect = NSRect(origin: .zero, size: image.size)
                 let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
-                thumbnail = await Task.detached(priority: .utility) { cgImage.flatMap(Self.jpegThumbnail) }.value
+                let decoded = await Task.detached(priority: .utility) { cgImage.flatMap(Self.jpegThumbnail) }.value
+                guard !Task.isCancelled, !stopped, work == serial else { return }
+                lastImage = image; thumbnail = decoded
             }
             value.artwork = thumbnail
         } else { lastImage = nil; thumbnail = nil }

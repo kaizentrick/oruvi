@@ -79,14 +79,12 @@ final class StandbyModel {
     var notchEnabled = true {
         didSet { prefs.set(notchEnabled, forKey: "notchEnabled"); notch?.reconcile() }
     }
-    var desktopWidgetEnabled = false {
-        didSet {
-            prefs.set(desktopWidgetEnabled, forKey: "desktopWidgetEnabled")
-            if started { policyChanged() }
-        }
-    }
-    var desktopWidgetAlwaysOnTop = false {
-        didSet { prefs.set(desktopWidgetAlwaysOnTop, forKey: DesktopWidgetPolicy.pinnedKey) }
+    private(set) var nativeWidgetInUse = false
+    var systemProhibitsSkip = false
+    func setNativeWidgetPresence(_ present: Bool) {
+        guard nativeWidgetInUse != present else { return }
+        nativeWidgetInUse = present
+        if started { policyChanged() }
     }
     private var activeSystemBundleID = ""
     @ObservationIgnored private var systemArtworkData: Data?
@@ -97,7 +95,7 @@ final class StandbyModel {
         didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
     }
     var visibleLyrics: Bool { musicShowsLyrics && !lines.isEmpty }
-    var needsPlayback: Bool { (isVisible || notchVisible || desktopWidgetEnabled) && !screenSleeping }
+    var needsPlayback: Bool { (isVisible || notchVisible || nativeWidgetInUse) && !screenSleeping }
     var connectionStatus = "Conecta Música de este Mac"
     var connected = false
     var demoMode = false
@@ -243,8 +241,6 @@ final class StandbyModel {
             defaults.set(2, forKey: "settingsSchema")
         }
         notchEnabled = defaults.bool(forKey: "notchEnabled")
-        desktopWidgetEnabled = DesktopWidgetPolicy.initialVisibility(defaults: defaults)
-        desktopWidgetAlwaysOnTop = defaults.bool(forKey: DesktopWidgetPolicy.pinnedKey)
         meshTheme = MeshTheme(rawValue: defaults.string(forKey: "meshTheme") ?? "") ?? .aurora
         automaticLyrics = defaults.bool(forKey: "automaticLyrics")
         automaticArtwork = defaults.bool(forKey: "automaticArtwork")
@@ -388,7 +384,7 @@ final class StandbyModel {
     private func clearTrack() {
         lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = .empty; anchor = PlaybackAnchor(); artwork = nil; artworkLink = nil; palette = RGB.aurora
-        playerArtworkURL = ""; activeSystemBundleID = ""; systemArtworkData = nil
+        playerArtworkURL = ""; activeSystemBundleID = ""; systemArtworkData = nil; systemProhibitsSkip = false
         lyricsAvailability = .idle; toastMessage = nil
         lyricsRetryAt = 0; artworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
@@ -468,6 +464,7 @@ final class StandbyModel {
             playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
         }
         activeSystemBundleID = snapshot["systemBundleID"] as? String ?? ""
+        systemProhibitsSkip = source == .system && ((snapshot["systemProhibitsSkip"] as? NSNumber)?.boolValue ?? false)
         let nextSystemArtwork = snapshot["systemArtwork"] as? Data
         if source == .system && systemArtworkData != nextSystemArtwork {
             artworkTask?.cancel(); artworkTask = nil; artwork = nil; artworkRetryAt = 0
@@ -516,6 +513,34 @@ final class StandbyModel {
                 if self.reading { self.pendingMusicHint = true } else { self.readMusic() }
             }
         }
+    }
+    /// Native widget buttons execute inside the containing app. Validate the
+    /// displayed session before dispatch and finish reading the real state before
+    /// the App Intent's automatic timeline reload. Never change either selector.
+    func controlFromNativeWidget(_ command: String, expectedTrackID: String,
+                                 sourceID: String, preference: String) async -> String {
+        guard ["previous", "toggle", "next"].contains(command), !LumaEnvironment.isTesting,
+              connected, !demoMode, !screenSleeping else { return "Conecta los controles en Oruvi." }
+        guard expectedTrackID == track.id, sourceID == activePlayer.rawValue,
+              preference == effectivePlayerPreference.rawValue else {
+            refreshPlayback(); return "El contenido cambió. Vuelve a pulsar el control."
+        }
+        let session = generation, source = activePlayer, selection = effectivePlayerPreference
+        let result: ([String: Any], [String: Any]) = await withCheckedContinuation { continuation in
+            musicQueue.async { [playerRouter] in
+                let commandResult = playerRouter.command(command, position: 0, source: source,
+                    preference: selection, expectedTrackID: expectedTrackID, requireSameTrack: true)
+                if commandResult["status"] as? String == "ok" { Thread.sleep(forTimeInterval: 0.15) }
+                let value = playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true)
+                continuation.resume(returning: (commandResult, value))
+            }
+        }
+        guard session == generation, connected, !screenSleeping else { return "La sesión de Oruvi cambió." }
+        apply(result.1)
+        if result.0["status"] as? String != "ok" {
+            return result.0["message"] as? String ?? "El reproductor no aceptó el control."
+        }
+        return ""
     }
     func fetchLyrics() {
         lyricsTask?.cancel(); lyricsTask = nil
