@@ -523,7 +523,8 @@ final class StandbyModel {
               connected, !demoMode, !screenSleeping else { return "Conecta los controles en Oruvi." }
         guard expectedTrackID == track.id, sourceID == activePlayer.rawValue,
               preference == effectivePlayerPreference.rawValue else {
-            refreshPlayback(); return "El contenido cambió. Vuelve a pulsar el control."
+            _ = await synchronizeNativeWidget(connectIfNeeded: false)
+            return "El contenido cambió. Vuelve a pulsar el control."
         }
         let session = generation, source = activePlayer, selection = effectivePlayerPreference
         let result: ([String: Any], [String: Any]) = await withCheckedContinuation { continuation in
@@ -541,6 +542,28 @@ final class StandbyModel {
             return result.0["message"] as? String ?? "El reproductor no aceptó el control."
         }
         return ""
+    }
+    /// Explicit widget recovery awaits a fresh read before WidgetKit reloads.
+    /// No transport command is sent here and neither source selector is edited.
+    func synchronizeNativeWidget(connectIfNeeded: Bool) async -> String {
+        guard !LumaEnvironment.isTesting, !screenSleeping else { return "Oruvi está en reposo." }
+        if !connected || demoMode {
+            guard connectIfNeeded else { return "Pulsa Conectar en el widget." }
+            connectMusic()
+        }
+        guard connected, !demoMode else { return "Conecta el reproductor en Oruvi." }
+        // Reject outstanding older callbacks without creating a second sampler.
+        generation += 1
+        let session = generation, selection = effectivePlayerPreference, source = activePlayer
+        let snapshot: [String: Any] = await withCheckedContinuation { continuation in
+            musicQueue.async { [playerRouter] in
+                continuation.resume(returning: playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true))
+            }
+        }
+        guard session == generation, connected, !screenSleeping else { return "La sesión cambió. Actualiza el widget." }
+        apply(snapshot)
+        schedulePoll()
+        return snapshot["status"] as? String == "ok" ? "" : connectionStatus
     }
     func fetchLyrics() {
         lyricsTask?.cancel(); lyricsTask = nil

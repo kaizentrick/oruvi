@@ -22,6 +22,9 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     Sources/WidgetShared/WidgetSnapshot.swift scripts/verify-widgetkit.swift -o "$WORK/verify-widgetkit"
 "$WORK/verify-widgetkit"
+xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
+    Sources/WidgetShared/WidgetSnapshot.swift scripts/verify-widget-recovery.swift -o "$WORK/verify-widget-recovery"
+"$WORK/verify-widget-recovery"
 python3 - <<'PY'
 import pathlib
 import plistlib

@@ -103,6 +103,9 @@ for source in Sources/*.swift Sources/WidgetShared/*.swift; do
 printf '\n[2/5] Modelo de reproducción aislado\n'
 xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${MODEL_TEST[@]}" scripts/verify-surfaces.swift "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$BUILD/verify-surfaces"
 DYLD_FRAMEWORK_PATH="$DEPS" "$BUILD/verify-surfaces" --smoke-test >&3
+xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${MODEL_TEST[@]}" scripts/verify-widget-pipeline.swift "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$BUILD/verify-widget-pipeline"
+DYLD_FRAMEWORK_PATH="$DEPS" "$BUILD/verify-widget-pipeline" --smoke-test >&3
+if [[ "${GITHUB_ACTIONS:-false}" == true ]]; then bash scripts/verify-widget-sharing.sh >&3; fi
 if [[ -f Sources/LumaQA.swift && "${SKIP_VERIFICATION:-0}" != 1 ]]; then
     QA_APP="$BUILD/qa-app/Oruvi.app"; prepare_app "$QA_APP"
     xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${ALL[@]}" "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$QA_APP/Contents/MacOS/Oruvi"

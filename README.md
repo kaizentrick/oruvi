@@ -124,3 +124,7 @@ Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de M
 El código de Oruvi se distribuye bajo la **MIT estándar**, con copyright de KaizenTrick. Permite usar, copiar, modificar y redistribuir, incluso comercialmente, conservando el aviso de copyright y la licencia en copias o porciones sustanciales. No es una prohibición de reutilización del código. El archivo completo se incluye en el repositorio, dentro de la app y en el DMG.
 
 La licencia propia no transfiere derechos sobre letras, música, imágenes, tipografías o componentes de terceros. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) y [SECURITY.md](SECURITY.md). Oruvi es independiente de Apple y Spotify y no incorpora código ni recursos de Boring Notch.
+
+### Recuperación de widgets (0.10.1)
+
+Si el widget no recibe datos, pulsa **Conectar** o la **flecha circular**: recupera la selección actual sin iniciar reproducción. También está en **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. No es necesario eliminar y volver a añadir los widgets. Si aparece un aviso de datos compartidos, autoriza Oruvi; una denegación se informa, no se oculta como si la app estuviera cerrada. La firma ad-hoc conserva las limitaciones de autorización de App Groups descritas en `Resources/MEDIA.md`.

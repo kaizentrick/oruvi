@@ -13,21 +13,29 @@ struct OruviWidgetProvider: TimelineProvider {
         OruviWidgetEntry(date: Date(), snapshot: .placeholder())
     }
     func getSnapshot(in context: Context, completion: @escaping (OruviWidgetEntry) -> Void) {
-        let value = context.isPreview ? WidgetSnapshot.placeholder() : current()
-        completion(OruviWidgetEntry(date: Date(), snapshot: value))
+        let now = Date()
+        completion(OruviWidgetEntry(date: now, snapshot: context.isPreview ? .placeholder(at: now) : current(at: now)))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<OruviWidgetEntry>) -> Void) {
-        let now = Date(), value = current()
-        // Hint only, without metadata. The host checks WidgetCenter membership;
-        // opening the gallery must not silently connect or launch a player.
+        if context.isPreview {
+            completion(Timeline(entries: [placeholder(in: context)], policy: .never)); return
+        }
+        // Hint is metadata-free and never sends a playback command or opts in.
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name(OruviWidgetIdentity.requested), object: nil, userInfo: nil, deliverImmediately: true)
-        let expiry = max(now.addingTimeInterval(300), value.generatedAt.addingTimeInterval(WidgetSnapshot.maximumAge))
-        let entries = [OruviWidgetEntry(date: now, snapshot: value),
-                       OruviWidgetEntry(date: expiry, snapshot: WidgetSnapshot())]
-        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(900))))
+        // Give the running host one bounded, asynchronous opportunity to publish.
+        // Reading before the hint used to archive the empty state for 15 minutes.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.6) {
+            let now = Date(), value = current()
+            let expiry = max(now.addingTimeInterval(300), value.generatedAt.addingTimeInterval(WidgetSnapshot.maximumAge))
+            let expired = WidgetSnapshotRead.expired.presentation(at: expiry)
+            let entries = [OruviWidgetEntry(date: now, snapshot: value), OruviWidgetEntry(date: expiry, snapshot: expired)]
+            completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(900))))
+        }
     }
-    private func current() -> WidgetSnapshot { WidgetSnapshotStore.shared().read() ?? WidgetSnapshot() }
+    private func current(at date: Date = Date()) -> WidgetSnapshot {
+        WidgetSnapshotStore.shared().load(at: date).presentation(at: date)
+    }
 }
 
 @main
@@ -47,18 +55,16 @@ struct OruviWidgetView: View {
     @Environment(\.widgetFamily) private var family
     private var small: Bool { family == .systemSmall }
     var body: some View {
-        Group {
-            if small { compact }
-            else { regular }
-        }
-        .containerBackground(for: .widget) { Color(nsColor: .windowBackgroundColor) }
-        .widgetURL(OruviWidgetIdentity.standbyURL)
+        Group { if small { compact } else { regular } }
+            .containerBackground(for: .widget) { Color(nsColor: .windowBackgroundColor) }
+            .widgetURL(snapshot.canControl ? OruviWidgetIdentity.standbyURL : OruviWidgetIdentity.settingsURL)
     }
     private var compact: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 cover.frame(width: 46, height: 46)
                 Spacer(minLength: 4)
+                refreshButton
                 standbyLink
             }
             heading
@@ -70,9 +76,10 @@ struct OruviWidgetView: View {
         HStack(spacing: 15) {
             cover.frame(width: 94, height: 94)
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
+                HStack(spacing: 5) {
                     Text(snapshot.sourceName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 4)
+                    refreshButton
                     standbyLink
                 }
                 heading
@@ -86,7 +93,7 @@ struct OruviWidgetView: View {
             Text(snapshot.title).font(.system(size: small ? 13 : 15, weight: .semibold))
                 .lineLimit(small ? 1 : 2).minimumScaleFactor(0.85)
             Text(snapshot.message.isEmpty ? snapshot.artist : snapshot.message)
-                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(small ? 1 : 2)
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .privacySensitive(snapshot.state == .ready)
@@ -105,30 +112,39 @@ struct OruviWidgetView: View {
         .accessibilityLabel("Portada de " + snapshot.title)
         .privacySensitive(snapshot.state == .ready)
     }
+    private var refreshButton: some View {
+        Button(intent: OruviWidgetPlaybackIntent(.refresh, snapshot: snapshot)) {
+            Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)).frame(width: 24, height: 28)
+        }.buttonStyle(.plain).disabled(!snapshot.canRefresh)
+            .accessibilityLabel("Conectar y actualizar reproducción sin reproducir ni pausar")
+    }
     private var standbyLink: some View {
         Link(destination: OruviWidgetIdentity.standbyURL) {
-            Image(systemName: "rectangle.inset.filled").font(.system(size: 14, weight: .medium))
-                .frame(width: 28, height: 28)
-        }
-        .buttonStyle(.plain).accessibilityLabel("Abrir Standby")
+            Image(systemName: "rectangle.inset.filled").font(.system(size: 14, weight: .medium)).frame(width: 24, height: 28)
+        }.buttonStyle(.plain).accessibilityLabel("Abrir Standby")
     }
-    private var transport: some View {
-        HStack(spacing: small ? 9 : 14) {
-            control(.previous, symbol: "backward.end.fill", title: "Anterior")
-            control(.toggle, symbol: snapshot.playing ? "pause.fill" : "play.fill", title: snapshot.playing ? "Pausar" : "Reproducir")
-            control(.next, symbol: "forward.end.fill", title: "Siguiente")
+    @ViewBuilder private var transport: some View {
+        if snapshot.canControl {
+            HStack(spacing: small ? 9 : 14) {
+                control(.previous, symbol: "backward.end.fill", title: "Anterior")
+                control(.toggle, symbol: snapshot.playing ? "pause.fill" : "play.fill", title: snapshot.playing ? "Pausar" : "Reproducir")
+                control(.next, symbol: "forward.end.fill", title: "Siguiente")
+            }.frame(maxWidth: .infinity)
+        } else {
+            Button(intent: OruviWidgetPlaybackIntent(.refresh, snapshot: snapshot)) {
+                Label(snapshot.state == .closed || snapshot.state == .disconnected ? "Conectar" : "Actualizar", systemImage: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity, minHeight: 30)
+            }.buttonStyle(.bordered).disabled(!snapshot.canRefresh)
+                .accessibilityLabel("Conectar y actualizar Oruvi")
         }
-        .frame(maxWidth: .infinity)
     }
     private func control(_ action: OruviWidgetCommand, symbol: String, title: String) -> some View {
         Button(intent: OruviWidgetPlaybackIntent(action, snapshot: snapshot)) {
             Image(systemName: symbol).font(.system(size: action == .toggle ? 17 : 13, weight: .semibold))
                 .frame(width: 30, height: 30)
                 .background(.primary.opacity(action == .toggle ? 0.07 : 0), in: Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!snapshot.canControl || (action != .toggle && !snapshot.canSkip))
-        .accessibilityLabel(title)
-        .invalidatableContent()
+        }.buttonStyle(.plain)
+            .disabled(!snapshot.canControl || (action != .toggle && !snapshot.canSkip))
+            .accessibilityLabel(title).invalidatableContent()
     }
 }

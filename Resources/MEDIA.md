@@ -1,49 +1,64 @@
 # Oruvi: WidgetKit nativo y reproducción del sistema
 
-## Añadir el widget
+## Añadir y recuperar el widget
 
 Instala Oruvi en Aplicaciones y abre la app al menos una vez. Haz clic secundario en el escritorio, abre **Editar widgets** y busca **Oruvi**. El widget **Música y Standby** tiene tamaños pequeño y mediano. macOS gestiona posición, tamaño, estilo y eliminación. La extensión está en `Oruvi.app/Contents/PlugIns/OruviWidgets.appex`.
 
-Desde 0.10.0 se elimina la tarjeta AppKit de 0.9.0/0.9.1. Sus opciones Mostrar, Mantener al frente y arrastre propio dejan de existir. No se intenta convertir la posición anterior en una colocación del sistema: añadir o quitar widgets siempre es decisión del usuario desde macOS.
+Desde 0.10.0 no existe la tarjeta AppKit de 0.9.0/0.9.1. Se retiraron Mostrar, Mantener al frente y arrastre propio. Añadir o quitar widgets siempre es decisión del usuario desde macOS.
+
+En 0.10.1, si falta estado, pulsa **Conectar** o la **flecha circular** del widget. También está en **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. La acción conecta la selección actual y espera la lectura antes de terminar el App Intent, pero no reproduce, pausa ni salta contenido. No cambia ningún selector. No es necesario eliminar los widgets para recuperar el estado.
+
+Si macOS pide acceso a datos compartidos, autoriza Oruvi. Ausencia de archivo, caducidad, corrupción y acceso denegado se presentan como estados distintos, no como el mismo mensaje de app cerrada. Ajustes muestra la fecha de la última escritura leída de vuelta correctamente por la app; esto no certifica por sí solo que macOS ya haya mostrado esa instantánea en pantalla.
 
 ## Arquitectura
 
 La extensión es un target WidgetKit real, sandboxed, con `NSExtensionPointIdentifier=com.apple.widgetkit-extension`. El pipeline genera un proyecto Xcode determinista en el directorio temporal de compilación. Xcode compila la app y la extensión, genera App Intents metadata en ambos targets y empotra la extensión. Las firmas se realizan desde los componentes internos hasta la app, antes del DMG.
 
-`AudioPlaybackIntent` ejecuta los comandos en la aplicación contenedora, sobre el router y la cola de reproducción existentes. No se incluye ScriptingBridge, MediaRemote Adapter ni Sparkle en el widget. El enlace `oruvi://standby` abre la pantalla completa, mientras que los botones de transporte no la abren. Las rutas admitidas son solo navegación; no se aceptan comandos, rutas de archivos ni scripts desde URLs.
+`AudioPlaybackIntent` ejecuta los comandos en la aplicación contenedora, sobre el router y la cola de reproducción existentes. No se incluye ScriptingBridge, MediaRemote Adapter ni Sparkle en el widget. El enlace `oruvi://standby` abre la pantalla completa; los botones de transporte no la abren. Las rutas URL admitidas son solo navegación: no aceptan comandos, archivos ni scripts.
 
-El widget refleja la superficie de reproducción activa de Oruvi. Se conservan las preferencias independientes Notch y Standby y sus selectores Automático/Apple Music/Spotify. Un botón verifica sesión, pista y selección antes de actuar; un widget atrasado pide otro clic después de actualizar en vez de controlar contenido diferente por accidente.
+El widget refleja la superficie de reproducción activa de Oruvi. Se conservan las preferencias independientes Notch y Standby y sus selectores Automático/Apple Music/Spotify. Un botón verifica sesión, pista y selección antes de actuar. Si la representación quedó obsoleta, se recupera el estado real antes de pedir otro clic; no se controla una grabación diferente por accidente.
 
-## Optimización y ciclo de vida
+## Sincronización y consumo
 
-WidgetKit renderiza representaciones, no una ventana permanente de Oruvi. No hay `NSPanel`, animación de fondo, bucle por segundo ni consultas musicales en el proceso del widget. La app comprueba los widgets realmente añadidos mediante `WidgetCenter` y solo mantiene demanda de reproducción adicional mientras existe uno. La extensión lee una instantánea acotada; no arranca reproductores ni solicita autorización de Automatización.
+La publicación no depende de que WidgetCenter enumere primero el widget: se escribe una única instantánea actual al iniciar y al cambiar reproducción, portada o estado. Una respuesta vacía o retrasada de WidgetCenter no borra esa instantánea.
 
-La app agrupa cambios durante 250 ms, evita reescribir estados iguales y separa recargas solicitadas al sistema al menos 5 segundos. Esas son políticas, no una garantía de latencia. WidgetKit conserva el control del presupuesto y puede demorar portadas, sobre todo cuando la app no está al frente. No se reproduce audio silencioso ni se simula una sesión de audio para evadir ese presupuesto.
+La extensión no tiene una ventana permanente, bucle por segundo ni consultas musicales. Envía una señal sin metadatos al solicitar un timeline, deja una oportunidad asíncrona acotada de 600 ms para que la app publique y lee el estado. Los previews de la galería no solicitan conexión. Una señal solo mantiene temporalmente elegible el muestreador existente; nunca conecta un reproductor previamente desconectado ni envía un comando.
 
-Los controles interactivos esperan a escribir el nuevo estado observado antes de terminar el App Intent, tras lo cual WidgetKit solicita su propia actualización. Una sesión reiniciada invalida los botones antiguos. Bloqueo, reposo y desconexión producen estados sin contenido privado y sin transporte habilitado.
+La app combina la presencia informada por WidgetCenter con una demanda temporal de hasta 20 minutos desde la última solicitud. Un temporizador de mantenimiento de 60 segundos, con tolerancia y suspendido durante reposo, revisa presencia y caducidad. No es otro temporizador de lectura de música. Cuando no hay presencia ni demanda vigente, el widget deja de mantener elegible el muestreador. El notch o Standby pueden seguir necesitándolo por separado.
+
+Las publicaciones se agrupan durante 250 ms, sin cancelar indefinidamente las solicitudes forzadas. Los estados iguales no se reescriben salvo renovación de vigencia cada 10 minutos. Las recargas solicitadas se separan al menos 5 segundos; las señales de timeline no crean un ciclo de recarga. La extensión solicita un nuevo timeline a los 15 minutos y programa un estado seguro al caducar la instantánea. Todas son políticas de solicitud: WidgetKit conserva el presupuesto y puede demorar la actualización visual, especialmente con Oruvi en segundo plano. No se reproduce audio silencioso ni se simula una sesión de audio para eludir ese presupuesto.
+
+Los controles esperan una lectura real y una escritura atómica antes de terminar el App Intent. Una sesión reiniciada invalida los botones antiguos. Los errores de acceso se reintentan de forma espaciada o por acción explícita; una resolución fallida del contenedor no queda memorizada para siempre.
 
 ## Datos compartidos y privacidad
 
-App Group: `group.com.kaizentrick.Oruvi`, declarado en los entitlements y plists de los dos targets. Se accede por `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`, nunca construyendo una ruta a otros contenedores ni usando excepciones de sandbox.
+App Group: `group.com.kaizentrick.Oruvi`, declarado en entitlements y plists de ambos targets. Se accede por `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`, sin construir rutas a otros contenedores ni usar excepciones de sandbox.
 
-Una sola instantánea JSON contiene los metadatos actuales y su miniatura JPEG (hasta 192 píxeles, 256 KiB). Límite de archivo: 512 KiB. Escritura atómica, permisos privados, exclusión de copias de seguridad, caducidad de una hora y eliminación al cerrar Oruvi o detectar que se retiró el último widget. No hay historial. WidgetKit conserva sus propias representaciones del widget bajo control del sistema, por lo que Oruvi no puede prometer borrado instantáneo de cada representación mostrada.
+Una única instantánea JSON contiene los metadatos actuales y su miniatura JPEG de hasta 192 píxeles y 256 KiB. Límite total: 512 KiB; escritura atómica, permisos privados, exclusión de copias de seguridad y caducidad de una hora. El archivo puede mantenerse mientras Oruvi está abierta aunque la enumeración de widgets esté vacía: así una respuesta tardía no destruye datos que un widget instalado necesita. No se almacena un historial. Desconexión y reposo reemplazan el contenido por estados sin metadatos privados ni transporte habilitado; cerrar Oruvi elimina el archivo.
 
-La extensión no tiene acceso de red, Apple Events, cámara o micrófono. No se envían títulos de vídeos/navegadores a LRCLIB o catálogos de música. Los controles y la reproducción genérica conservan los límites documentados de MediaRemote: el proveedor debe publicar Ahora suena y aceptar comandos. No se garantiza control de cada sonido del Mac.
+WidgetKit conserva representaciones bajo control de macOS. Oruvi no promete borrado o sustitución instantáneos de todas las representaciones ya archivadas por el sistema.
 
-## Firma y distribución
+La extensión no tiene red, Apple Events, cámara ni micrófono. No se envían títulos de vídeos o navegadores a LRCLIB ni a catálogos musicales. La reproducción genérica mantiene los límites de MediaRemote: el proveedor debe publicar Ahora suena y aceptar los comandos. No se garantiza control de cada sonido del Mac.
 
-El repositorio conserva la distribución ad-hoc existente, sin Developer ID ni notarización configurados. Ed25519 firma la actualización de Sparkle, no convierte el binario en notarizado ni registra un equipo de Apple. macOS puede solicitar permiso para datos compartidos o rechazar componentes conforme a las políticas del equipo. No se modifica Gatekeeper, SIP, TCC ni la validación de bibliotecas.
+## Firma y autorización del grupo
 
-Para distribución identificada de producción se debe usar una identidad Developer ID real del titular y configurar el App Group y perfiles correspondientes en Apple Developer. No se incluyen claves privadas, equipos ficticios ni perfiles fabricados. El pipeline admite la identidad de firma existente; cualquier incorporación de perfiles debe conservar los identificadores de app y extensión.
+La distribución continúa firmada ad-hoc, sin Developer ID ni notarización configurados. Ed25519 firma la actualización Sparkle; no autoriza el App Group ni convierte el binario en notarizado. macOS puede solicitar consentimiento para datos compartidos o rechazar el acceso conforme a las políticas del equipo. Ese problema no se puede resolver fingiendo datos ni desactivando seguridad.
 
-## Verificación
+La firma ad-hoc no concede autorización permanente al App Group. Para la distribución identificada mediante Developer ID se debe configurar una identidad real del titular y perfiles que autoricen `group.com.kaizentrick.Oruvi` en ambos targets, o utilizar un grupo autorizado por el Team ID real. No se incluyen claves privadas, equipos ficticios ni perfiles fabricados. No se añade acceso completo al disco, servidor localhost, otro contenedor compartido ni cambios a Gatekeeper, SIP o TCC.
 
-Se comprueban contenido nativo del bundle, versión común, arquitectura, entitlements, metadata del App Intent en ambos targets, firma y copia dentro del DMG. En el runner de GitHub se registra temporalmente la extensión con LaunchServices/PlugInKit y se comprueba que el sistema la reconozca. Estas herramientas NO se invocan en la Mac del usuario ni forman parte del inicio normal de Oruvi.
+## Verificación en GitHub
 
-Se mantienen las pruebas de reproducción, preferencias, notch, letras y seguridad existentes; se sustituyen las pruebas de la tarjeta retirada por instantáneas, límites, persistencia atómica, caducidad y demanda del widget nativo. Los ensayos de grupo y registro en GitHub no demuestran una sesión interactiva en cada Mac: los runners pueden tener configuraciones de seguridad distintas de un equipo personal. Se debe verificar instalación/reapertura, galería, permisos y botones con reproductores reales. No se afirman benchmarks de energía ni latencias medidas.
+Se conservan las pruebas de reproducción, preferencias, notch, letras y seguridad. La cobertura nueva comprueba el controlador asíncrono real: observación del modelo → miniatura → archivo atómico → solicitud de recarga. Se prueban bootstrap antes de enumeración, respuestas cero tardías, múltiples widgets, señales repetidas sin recargas infinitas, portada tardía, cambio de canción, pausa, reposo, desconexión y cierre.
+
+Un ensayo separado compila el mismo serializador y resolutor del contenedor usado en producción dentro de dos bundles firmados. Un proceso escribe datos sintéticos y otro, sandboxed, verifica que puede leer el mismo título, bytes de imagen e identidad de transporte. Usa un grupo de CI aislado, no música del usuario.
+
+Se verifican los bundles reales, versión común, arquitectura, entitlements, metadata del App Intent, firmas y copia dentro del DMG. LaunchServices/PlugInKit comprueban el registro temporal de la extensión en el runner; no se invocan en la Mac del usuario ni durante el inicio normal de la app.
+
+Estos ensayos no equivalen a pulsar widgets con reproducción real en todos los Mac. Los runners pueden tener una configuración SIP distinta: leer el grupo en CI no demuestra autorización en una Mac personal. Se deben distinguir la entrega probada con datos sintéticos, el registro de la extensión y las pruebas interactivas de permisos y reproductores reales. No se afirman benchmarks de energía ni latencias medidas en el equipo del usuario.
 
 Referencias primarias:
 - https://developer.apple.com/documentation/widgetkit/creating-a-widget-extension
 - https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities
 - https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date
 - https://developer.apple.com/documentation/appintents/audioplaybackintent
+- https://developer.apple.com/forums/thread/721701

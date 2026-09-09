@@ -3,15 +3,15 @@ import AppIntents
 import Foundation
 
 enum OruviWidgetCommand: String, AppEnum {
-    case previous, toggle, next
+    case previous, toggle, next, refresh
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Control de reproducción"
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-        .previous: "Anterior", .toggle: "Reproducir o pausar", .next: "Siguiente"
+        .previous: "Anterior", .toggle: "Reproducir o pausar", .next: "Siguiente", .refresh: "Conectar y actualizar"
     ]
 }
 
-/// AudioPlaybackIntent is executed by macOS in the containing APP, never by
-/// starting a second player bridge inside the sandboxed widget extension.
+/// AudioPlaybackIntent executes in the containing app, including cold launches.
+/// Recovery is separate from transport: it does not toggle or start playback.
 struct OruviWidgetPlaybackIntent: AudioPlaybackIntent {
     static var title: LocalizedStringResource = "Controlar reproducción con Oruvi"
     static var isDiscoverable: Bool = false
@@ -28,8 +28,6 @@ struct OruviWidgetPlaybackIntent: AudioPlaybackIntent {
     }
     @MainActor func perform() async throws -> some IntentResult {
         #if !ORUVI_WIDGET_EXTENSION
-        // macOS starts the accessory app on demand. Do not foreground Standby for
-        // a transport command; only its dedicated link opens the presentation.
         await NativeWidgetController.shared.perform(command: command.rawValue, session: session,
             trackID: trackID, sourceID: sourceID, preference: preference)
         #endif

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.1 — Sincronización y recuperación de widgets
+
+- Publica el estado al iniciar sin esperar a la enumeración de WidgetCenter; un resultado vacío no borra la música.
+- Botón Conectar/Actualizar utilizable sin metadatos, con lectura real completada antes de recargar.
+- Portada y pausa mediante un único snapshot atómico; errores de acceso, caducidad y datos corruptos distinguibles.
+- Recuperación tras actualizar Oruvi, reposo o cambios de contenido; selectores independientes conservados.
+- Pruebas del pipeline asíncrono real y lectura desde otro proceso sandboxed, además del registro de la extensión.
+
+
 ## 0.10.0 — WidgetKit nativo
 
 - Extensión de la galería de macOS, tamaños pequeño y mediano, portada, transporte y enlace a Standby.
