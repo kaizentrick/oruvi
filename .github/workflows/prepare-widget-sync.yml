@@ -2,7 +2,7 @@ name: Integrate widget data synchronization fix
 on:
   push:
     branches: [fix/widget-playback-0101]
-    paths: [scripts/prepare-widget-sync.py]
+    paths: [scripts/prepare-widget-sync.py, .github/workflows/prepare-widget-sync.yml]
 permissions:
   contents: write
 concurrency:
@@ -19,6 +19,14 @@ jobs:
           ref: fix/widget-playback-0101
       - name: Apply exact source integration and remove temporary files
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/prepare-widget-sync.py'); text=p.read_text()
+          old='    if s.count(old) != 1:'
+          assert text.count(old)==1
+          text=text.replace(old, "    if path == 'scripts/check.sh': old='\\n'+old; new='\\n'+new\n"+old)
+          p.write_text(text)
+          PY
           python3 scripts/prepare-widget-sync.py
           for script in scripts/*.sh; do bash -n "$script"; done
           python3 scripts/audit-source.py
