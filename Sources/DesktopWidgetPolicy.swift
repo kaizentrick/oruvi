@@ -1,5 +1,6 @@
 // Copyright (c) 2026 KaizenTrick. SPDX-License-Identifier: MIT
 import Foundation
+import CoreGraphics
 
 /// Pure preferences and geometry shared by the desktop card and regression tests.
 enum DesktopWidgetPolicy {
