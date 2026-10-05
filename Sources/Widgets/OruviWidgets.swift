@@ -26,10 +26,12 @@ struct OruviWidgetProvider: TimelineProvider {
         // Give the running host one bounded, asynchronous opportunity to publish.
         // Reading before the hint used to archive the empty state for 15 minutes.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.6) {
-            let now = Date(), value = current()
-            let expiry = max(now.addingTimeInterval(300), value.generatedAt.addingTimeInterval(WidgetSnapshot.maximumAge))
-            let expired = WidgetSnapshotRead.expired.presentation(at: expiry)
-            let entries = [OruviWidgetEntry(date: now, snapshot: value), OruviWidgetEntry(date: expiry, snapshot: expired)]
+            let now = Date()
+            let value = current(at: now)
+            var entries = [OruviWidgetEntry(date: now, snapshot: value)]
+            if let expiry = WidgetTimelinePolicy.expiry(of: value, at: now) {
+                entries.append(OruviWidgetEntry(date: expiry, snapshot: WidgetSnapshotRead.expired.presentation(at: expiry)))
+            }
             completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(900))))
         }
     }

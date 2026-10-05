@@ -20,7 +20,7 @@ struct NotchGeometry {
         let height = cutout ? floor(safeTop * density) / density : 30
         let center = cutout ? (left!.maxX + right!.minX) / 2 : frame.midX
         return NotchGeometry(screenFrame: frame, centerX: center,
-                             top: frame.maxY - (cutout ? 0 : 5), cameraWidth: cutout ? gap : 0,
+                             top: frame.maxY, cameraWidth: cutout ? gap : 0,
                              topInset: height, compactWidth: cutout ? gap + 88 : 150, scale: density)
     }
     func frame(expanded: Bool, tab: NotchTab = .music) -> CGRect {
@@ -32,14 +32,14 @@ struct NotchGeometry {
 }
 
 enum NotchTab: String, CaseIterable, Identifiable {
-    case music, files, agenda, timer
+    case music, files, agenda, timer, connections
     var id: String { rawValue }
-    var contentHeight: CGFloat { self == .music ? 158 : 240 }
+    var contentHeight: CGFloat { self == .music ? 158 : (self == .connections ? 280 : 240) }
     var title: String {
-        switch self { case .music: return "Música"; case .files: return "Archivos"; case .agenda: return "Agenda"; case .timer: return "Temporizador" }
+        switch self { case .music: return "Música"; case .files: return "Archivos"; case .agenda: return "Agenda"; case .timer: return "Temporizador"; case .connections: return "Conexiones" }
     }
     var symbol: String {
-        switch self { case .music: return "music.note"; case .files: return "tray"; case .agenda: return "calendar"; case .timer: return "timer" }
+        switch self { case .music: return "music.note"; case .files: return "tray"; case .agenda: return "calendar"; case .timer: return "timer"; case .connections: return "point.3.connected.trianglepath.dotted" }
     }
 }
 

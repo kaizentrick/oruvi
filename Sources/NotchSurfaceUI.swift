@@ -4,7 +4,7 @@ import SwiftUI
 import Observation
 import ColorSync
 
-/// Independently implemented concave attachment/capsule. No third-party assets,
+/// Edge-attached surface on every Mac, including displays without a cutout. No third-party assets,
 /// facial models, lock-screen overlays or private APIs are involved.
 struct NotchSurfaceShape: Shape {
     let flare: CGFloat
@@ -14,10 +14,6 @@ struct NotchSurfaceShape: Shape {
         let path = CGMutablePath()
         let f = min(max(0, flare), min(rect.width / 4, rect.height / 2))
         let r = min(max(0, radius), min((rect.width - 2 * f) / 2, rect.height / 2))
-        guard f > 0 else {
-            path.addRoundedRect(in: rect, cornerWidth: r, cornerHeight: r)
-            return path
-        }
         let left = rect.minX + f, right = rect.maxX - f, top = rect.minY, bottom = rect.maxY
         path.move(to: CGPoint(x: rect.minX, y: top))
         path.addLine(to: CGPoint(x: rect.maxX, y: top))

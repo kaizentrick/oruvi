@@ -55,6 +55,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         notch = notchController
         notchController.start()
         NativeWidgetController.shared.start()
+        CodexUsageController.shared.start()
         didFinishLaunching = true
         if let route = pendingWidgetRoute { pendingWidgetRoute = nil; openWidgetRoute(route) }
         OruviUpdates.shared.startIfConfigured()
@@ -152,6 +153,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {
         NativeWidgetController.shared.stop()
+        CodexUsageController.shared.stop()
         StandbyModel.shared.shutdown()
         // Complete child-process cleanup before the application run loop exits.
         SystemMediaBridge.shared.shutdown()

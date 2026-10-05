@@ -19,6 +19,14 @@ import Foundation
         var value = WidgetSnapshot(); value.state = .sleeping
         check(!value.canRefresh, "No widget command during sleep")
         value = WidgetSnapshot(); value.state = .ready; value.session = "test"; value.trackID = "test"
+        value.generatedAt = now.addingTimeInterval(-3599)
+        check(WidgetTimelinePolicy.expiry(of: value, at: now)!.timeIntervalSince(now) < 2, "Nearly expired media is not prolonged five more minutes")
+        check(WidgetTimelinePolicy.expiry(of: value, at: now.addingTimeInterval(2)) == nil, "Already expired media never gets a future ready timeline")
+        for state in [WidgetPlaybackState.closed, .unavailable, .disconnected, .sleeping, .idle] {
+            var empty = value; empty.state = state
+            check(WidgetTimelinePolicy.expiry(of: empty, at: now) == nil, "Actionable empty/access states do not turn into misleading stale music")
+        }
+        value.generatedAt = now
         try store.write(value)
         check(store.load() == .value(value), "Atomic writer/reader round trip")
         check(store.load(at:now.addingTimeInterval(3700)) == .expired, "Expired current state identified")

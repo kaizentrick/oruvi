@@ -377,6 +377,7 @@ private struct SettingsPanel: View {
             Form {
                 UpdatesSettings()
                 NativeWidgetSettings()
+                Section("Conexión con Codex") { CodexConnectionView(usage: .shared) }
                 Section("Notch y reproductores") {
                     Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
                     LabeledContent("Reproductor del Notch") {

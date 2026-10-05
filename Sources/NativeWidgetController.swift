@@ -122,7 +122,7 @@ final class NativeWidgetController {
         refreshConfigurations(force: true)
         Task { [weak self] in
             guard let self else { return }
-            await self.perform(command: "refresh", session: "", trackID: "", sourceID: "", preference: "")
+            await self.perform(command: "refresh", session: "", trackID: "", sourceID: "", preference: "", reload: true)
         }
     }
     private func requestPublication(force: Bool = false) {
@@ -195,9 +195,10 @@ final class NativeWidgetController {
             return
         }
         retryWriteAt = .distantPast; storageError = ""; lastPublishedAt = value.generatedAt
-        let changed = policy.previous.map { !value.samePresentation(as: $0) } ?? true
         policy.record(value, reload: false)
-        if reload && (changed || force) { requestReload() }
+        // Renew the timeline's expiry as well as the file's freshness. Otherwise
+        // a paused track can turn stale on screen despite healthy heartbeat writes.
+        if reload { requestReload() }
     }
     private func requestReload() {
         guard reloading == nil else { return }
@@ -216,7 +217,7 @@ final class NativeWidgetController {
             self.reloading = nil
         }
     }
-    func perform(command: String, session: String, trackID: String, sourceID: String, preference: String) async {
+    func perform(command: String, session: String, trackID: String, sourceID: String, preference: String, reload: Bool = false) async {
         guard !LumaEnvironment.isTesting, ["refresh", "previous", "toggle", "next"].contains(command) else { return }
         for _ in 0..<40 where !started { try? await Task.sleep(nanoseconds: 50_000_000) }
         guard started, !stopped, !model.screenSleeping, !performing else { return }
@@ -234,7 +235,8 @@ final class NativeWidgetController {
         } else {
             message = await model.controlFromNativeWidget(command, expectedTrackID: trackID, sourceID: sourceID, preference: preference)
         }
-        await publishNow(force: true, reload: false, message: message)
+        // App Intents already trigger a reload; actions from the app must request one.
+        await publishNow(force: true, reload: reload, message: message)
         performing = false
         if dirty { requestPublication() }
     }
@@ -256,6 +258,13 @@ final class NativeWidgetController {
         precondition(LumaEnvironment.isTesting && !started)
         self.store = store; verificationReload = reload; started = true
         trackChanges(); requestPublication(force: true)
+    }
+    func renewForVerification() {
+        precondition(LumaEnvironment.isTesting)
+        guard var previous = policy.previous else { return }
+        previous.generatedAt = Date().addingTimeInterval(-601)
+        policy.record(previous, reload: false)
+        requestPublication()
     }
     #endif
     nonisolated static func jpegThumbnail(_ image: CGImage) -> Data? {

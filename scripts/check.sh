@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
-WORK="$(mktemp -d "$ROOT/.build.verify.XXXXXX")"
+mkdir -p "$ROOT/.tmp/codex"
+WORK="$(mktemp -d "$ROOT/.tmp/codex/verify.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     Sources/Core.swift Sources/PlaybackRecovery.swift Sources/Typography.swift Sources/UpdateConfiguration.swift scripts/verify.swift \
@@ -29,6 +30,9 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     Sources/WidgetShared/WidgetSnapshot.swift scripts/verify-widget-recovery.swift -o "$WORK/verify-widget-recovery"
 "$WORK/verify-widget-recovery"
+xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
+    Sources/CodexUsage.swift Sources/CodexUsageBridge.swift scripts/verify-codex-usage.swift -o "$WORK/verify-codex-usage"
+"$WORK/verify-codex-usage" "$WORK"
 python3 - <<'PY'
 import pathlib
 import plistlib

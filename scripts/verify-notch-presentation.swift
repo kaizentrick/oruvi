@@ -23,6 +23,7 @@ struct VerifyNotchPresentation {
                             let envelope = NotchPresentation.envelope(geometry)
                             let compact = NotchPresentation.target(geometry, expanded: false, tab: .music, notice: false)
                             expect(compact.height == geometry.topInset, "compact never adds height beneath camera")
+                            expect(geometry.top == screen.maxY && compact.flare > 0, "every display uses an attached surface, never a floating pill")
                             expect(screen.contains(envelope), "bounded envelope remains on its selected display")
                             expect(envelope.maxY == geometry.top, "top edge stays anchored")
                             for tab in NotchTab.allCases {
