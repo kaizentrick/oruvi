@@ -12,11 +12,9 @@ struct NativeWidgetSettings: View {
                 LabeledContent("Último estado compartido", value: date.formatted(date: .omitted, time: .standard)).font(.caption)
             }
             Button("Conectar y actualizar widgets") { widgets.refreshNow() }
-            Text("Conectar y actualizar recupera el estado del reproductor seleccionado sin iniciar ni pausar contenido. También puedes usar la flecha circular del widget. Si macOS solicita acceso a datos compartidos, autorízalo para que la app y la extensión puedan leer el mismo estado.")
+            Text("Si el widget no responde, pulsa Conectar y actualizar. Recupera la música sin iniciar ni pausar contenido; no necesitas quitar el widget. Si macOS pide acceso a datos compartidos de Oruvi, autorízalo.")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("La distribución actual utiliza firma ad-hoc: el acceso a App Groups puede requerir autorización de macOS. No necesitas acceso completo al disco ni desactivar protecciones. Una firma Developer ID y un perfil que autorice el grupo son necesarios para eliminar esa dependencia de consentimiento.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("El widget usa el reproductor activo de Oruvi y conserva los selectores independientes del Notch y Standby. macOS administra posición, tamaño, apariencia y frecuencia de actualización. Se comparte una sola instantánea con una miniatura, sin historial ni otra ventana o bucle musical.")
+            Text("Abre Oruvi desde Aplicaciones al menos una vez para que macOS pueda encontrar sus widgets. macOS decide cuándo refrescarlos; el notch muestra el estado mientras usas la app.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

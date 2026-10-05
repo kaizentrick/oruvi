@@ -12,7 +12,7 @@ struct NotchSurfaceState: Equatable {
     var flare: CGFloat
     var radius: CGFloat
     var expansion: CGFloat
-    static let initial = NotchSurfaceState(width: 150, height: 30, flare: 0, radius: 15, expansion: 0)
+    static let initial = NotchSurfaceState(width: 150, height: 30, flare: 6, radius: 12, expansion: 0)
 }
 
 enum NotchPresentation {
@@ -22,7 +22,7 @@ enum NotchPresentation {
     static let closingDuration: TimeInterval = 0.18
 
     static func envelope(_ geometry: NotchGeometry) -> CGRect {
-        let largest = geometry.frame(expanded: true, tab: .files)
+        let largest = geometry.frame(expanded: true, tab: .connections)
         let width = min(geometry.screenFrame.width, largest.width + shadowMargin * 2)
         let height = min(geometry.screenFrame.height - (geometry.screenFrame.maxY - geometry.top),
                          largest.height + noticeHeight + shadowMargin)
@@ -35,7 +35,7 @@ enum NotchPresentation {
         let availableWidth = max(1, envelope.width - shadowMargin * 2)
         let width = !expanded && notice ? min(max(320, base.width), availableWidth) : min(base.width, availableWidth)
         let height = max(1, min(base.height + (notice ? noticeHeight : 0), envelope.height - shadowMargin))
-        return NotchSurfaceState(width: width, height: height, flare: geometry.hasCutout ? 6 : 0,
+        return NotchSurfaceState(width: width, height: height, flare: 6,
                                  radius: expanded || notice ? 22 : min(12, geometry.topInset / 2),
                                  expansion: expanded ? 1 : 0)
     }

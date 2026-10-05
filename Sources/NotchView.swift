@@ -5,6 +5,7 @@ import SwiftUI
 struct NotchView: View {
     @Bindable var model: StandbyModel
     @Bindable var controller: NotchController
+    @Bindable private var usage = CodexUsageController.shared
     var body: some View {
         GeometryReader { geometry in
             let state = controller.surface.state
@@ -45,7 +46,9 @@ struct NotchView: View {
     private var compact: some View {
         HStack(spacing: 0) {
             Group {
-                if model.hasTrack {
+                if usage.enabled && usage.pinned {
+                    Text("CODEX").font(.system(size: 8, weight: .semibold)).tracking(0.3)
+                } else if model.hasTrack {
                     AlbumArtwork(model: model)
                         .frame(width: min(22, max(1, controller.topInset - 8)), height: min(22, max(1, controller.topInset - 8)))
                         .clipShape(RoundedRectangle(cornerRadius: 5))
@@ -53,14 +56,21 @@ struct NotchView: View {
             }.frame(width: 44)
             Spacer(minLength: 0)
             Group {
-                if NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.anchor.playing) {
+                if usage.enabled && usage.pinned {
+                    Text(usage.compactText).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                } else if NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.anchor.playing) {
                     Image(systemName: "music.note").font(.system(size: 14, weight: .medium))
                 } else { Color.clear.frame(width: 18, height: 18) }
             }.frame(width: 44)
-        }.contentShape(Rectangle()).onTapGesture { controller.openForKeyboard() }
+        }.contentShape(Rectangle()).onTapGesture { openCompact() }
+            .help(usage.enabled && usage.pinned ? usage.compactHelp : "Abrir Oruvi")
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(model.hasTrack ? "Oruvi. \(model.track.title). Abrir widgets." : "Oruvi. Abrir widgets.")
-            .accessibilityAddTraits(.isButton).accessibilityAction { controller.openForKeyboard() }
+            .accessibilityLabel(usage.enabled && usage.pinned ? usage.compactHelp : (model.hasTrack ? "Oruvi. \(model.track.title). Abrir widgets." : "Oruvi. Abrir widgets."))
+            .accessibilityAddTraits(.isButton).accessibilityAction { openCompact() }
+    }
+    private func openCompact() {
+        if usage.enabled && usage.pinned { controller.select(.connections) }
+        controller.openForKeyboard()
     }
     private func noticeRow(_ notice: NotchNotice) -> some View {
         HStack(spacing: 6) {
@@ -119,6 +129,7 @@ struct NotchView: View {
                 case .files: NotchShelfView(shelf: controller.shelf, controller: controller)
                 case .agenda: NotchAgendaView(agenda: controller.agenda, controller: controller)
                 case .timer: NotchTimerView(countdown: controller.countdown)
+                case .connections: NotchConnectionsView(model: model, controller: controller)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay {
@@ -154,10 +165,10 @@ struct NotchView: View {
                         .frame(width: 48, height: 48).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.hasTrack ? model.track.title : "Nada en reproducción")
+                    Text(model.hasTrack ? model.track.title : (model.connected ? "Nada en reproducción" : "Conecta tu música"))
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         .help(model.hasTrack ? model.track.title : model.connectionStatus)
-                    Text(model.hasTrack ? model.track.artist : "Ahora suena · Music · Spotify")
+                    Text(model.hasTrack ? model.track.artist : (model.connected ? model.connectionStatus : "Ahora suena · Music · Spotify"))
                         .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(height: 48)
@@ -170,6 +181,8 @@ struct NotchView: View {
                     control("backward.fill", command: "previous", label: "Anterior")
                     control(model.anchor.playing ? "pause.fill" : "play.fill", command: "toggle", label: model.anchor.playing ? "Pausar" : "Reproducir")
                     control("forward.fill", command: "next", label: "Siguiente")
+                } else if !model.connected {
+                    Button("Conectar") { model.connectMusic() }.font(.system(size: 11, weight: .medium)).buttonStyle(.plain)
                 } else {
                     Button("Abrir reproductor") { model.openInstalledPlayer() }.font(.system(size: 11)).buttonStyle(.plain)
                 }

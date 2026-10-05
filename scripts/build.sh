@@ -6,20 +6,21 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resour
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 [[ "${SDK_VERSION%%.*}" -ge 26 ]] || { echo 'Requiere SDK macOS 26.'; exit 1; }
-LOCK="$ROOT/.build.lock"
+mkdir -p "$ROOT/.tmp/codex"
+LOCK="$ROOT/.tmp/codex/build.lock"
 if [[ "${1:-}" == --clean ]]; then
     [[ ! -d "$LOCK" ]] || { echo 'Hay una compilación activa.'; exit 1; }
     CURRENT="$ROOT/dist/Oruvi-$VERSION-arm64.dmg"; [[ -s "$CURRENT" ]]
     hdiutil verify "$CURRENT"
     shopt -s nullglob
-    for path in "$ROOT"/.build.*; do [[ -d "$path" && ! -L "$path" && "$path" != "$LOCK" ]] && rm -rf -- "$path"; done
+    for path in "$ROOT"/.tmp/codex/build.*; do [[ -d "$path" && ! -L "$path" && "$path" != "$LOCK" ]] && rm -rf -- "$path"; done
     for file in "$ROOT/dist"/Oruvi-*.dmg "$ROOT/dist"/Luma-*.dmg "$ROOT/dist"/*.zip; do [[ "$file" == "$CURRENT" ]] || rm -f -- "$file"; done
     rm -f Sources/LumaQA.swift .DS_Store dist/.DS_Store
     echo 'Temporales eliminados; claves privadas, código y DMG vigente conservados.'; exit 0
 fi
 mkdir "$LOCK" 2>/dev/null || { echo 'Hay otra compilación o un bloqueo pendiente.'; exit 1; }
-BUILD="${BUILD_DIRECTORY:-$(mktemp -d "$ROOT/.build.XXXXXX")}"
-[[ "$BUILD" == "$ROOT"/.build.* && "$BUILD" != "$LOCK" && -d "$BUILD" && ! -L "$BUILD" ]] || { rmdir "$LOCK"; exit 1; }
+BUILD="${BUILD_DIRECTORY:-$(mktemp -d "$ROOT/.tmp/codex/build.XXXXXX")}"
+[[ "$BUILD" == "$ROOT"/.tmp/codex/build.* && "$BUILD" != "$LOCK" && -d "$BUILD" && ! -L "$BUILD" ]] || { rmdir "$LOCK"; exit 1; }
 exec 3>&1
 cleanup() {
     result=$?

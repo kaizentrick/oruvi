@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0 — Conexiones y una isla integrada a la Mac
+
+- Superficie unida al borde superior también en monitores sin cámara, sin separación ni cápsula flotante; conserva apertura, arrastre y geometría de entrada.
+- Nueva pestaña Conexiones: Codex, reproducción, Calendario y estado de los widgets. La música desconectada ofrece una acción Conectar.
+- Codex consulta los límites de la cuenta mediante el app server local, con conexión voluntaria, periodos reales, reinicios y selección de límite. Permite fijar el porcentaje restante en el compacto.
+- Consultas de Codex acotadas, cancelación al desconectar/bloquear/dormir/salir, reintentos espaciados y datos caducos identificados. Sin tareas de IA, historial de uso ni copia de credenciales.
+- Recuperación de widgets desde Ajustes con recarga explícita; el heartbeat renueva la caducidad visible y las instantáneas próximas a vencer no prolongan contenido obsoleto.
+- Pruebas de protocolo local, límites múltiples, timeout, cancelación, caducidad y regresiones geométricas. La firma ad-hoc conserva sus requisitos de autorización de macOS.
+
 ## 0.10.1 — Sincronización y recuperación de widgets
 
 - Publica el estado al iniciar sin esperar a la enumeración de WidgetCenter; un resultado vacío no borra la música.

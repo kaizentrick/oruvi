@@ -145,6 +145,15 @@ struct WidgetPublicationPolicy {
     func reloadDelay(at now: Date) -> TimeInterval { max(0, 5 - now.timeIntervalSince(lastReload ?? .distantPast)) }
 }
 
+enum WidgetTimelinePolicy {
+    /// A timeline must retire private media exactly when its snapshot expires.
+    /// Missing/denied/idle presentations keep their actionable explanation.
+    static func expiry(of snapshot: WidgetSnapshot, at now: Date) -> Date? {
+        guard snapshot.state == .ready, snapshot.isValid(at: now) else { return nil }
+        return snapshot.generatedAt.addingTimeInterval(WidgetSnapshot.maximumAge + 0.01)
+    }
+}
+
 /// WidgetCenter enumeration can lag behind getTimeline. A metadata-free demand
 /// hint keeps an existing connection eligible, but NEVER connects a disabled
 /// player. Gallery previews do not send demand. No permanent placement flag.

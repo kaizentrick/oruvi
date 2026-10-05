@@ -312,7 +312,7 @@ final class NotchController {
         beginInteraction()
         let alert = NSAlert()
         alert.messageText = "Oruvi, desde el notch"
-        alert.informativeText = "Acerca el puntero, incluso sobre la cámara, para abrir el panel.\n\nMúsica: Automático sigue Ahora suena; Apple Music y Spotify mantienen sus controles. Notch y Standby conservan selecciones separadas.\n\nArchivos: arrastra desde Finder. AirDrop siempre te pide elegir destinatario.\n\nAgenda solicita permiso solo al conectarla. Temporizador avisa al terminar.\n\nEn Más opciones puedes elegir pantalla, háptica y avisos. Para añadir un widget real: clic secundario en el escritorio → Editar widgets → Oruvi.\n\nEsc o un clic fuera cierran el panel. Standby y el bloqueo lo ocultan. Oruvi no usa la cámara ni almacena contraseñas."
+        alert.informativeText = "Acerca el puntero, incluso sobre la cámara, para abrir el panel.\n\nMúsica: Automático sigue Ahora suena; Apple Music y Spotify mantienen sus controles. Notch y Standby conservan selecciones separadas.\n\nArchivos: arrastra desde Finder. AirDrop siempre te pide elegir destinatario.\n\nAgenda solicita permiso solo al conectarla. Temporizador avisa al terminar.\n\nConexiones reúne música, Calendario, widgets y Codex. Conecta Codex para ver tus límites y fijar el porcentaje restante en el compacto.\n\nEn Más opciones puedes elegir pantalla, háptica y avisos. Para añadir un widget real: clic secundario en el escritorio → Editar widgets → Oruvi.\n\nEsc o un clic fuera cierran el panel. Standby y el bloqueo lo ocultan. Oruvi no usa la cámara ni almacena contraseñas."
         alert.addButton(withTitle: "Entendido")
         NSApp.activate(); alert.runModal(); endInteraction()
     }

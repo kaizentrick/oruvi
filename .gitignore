@@ -5,6 +5,7 @@
 /.build.lock/
 /.deps/
 /QA/
+/.tmp/
 .DS_Store
 *.xcuserstate
 *.xcuserdatad/

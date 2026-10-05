@@ -34,7 +34,7 @@ struct VerifyNotch {
         let external = NotchGeometry.resolve(frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080), safeTop: 0, left: nil, right: nil, scale: 1)
         expect(!external.hasCutout, "external display has no fake camera")
         expect(external.compactHeight == 30, "external mini-island height")
-        expect(external.frame(expanded: false).maxY == 1075, "external top margin")
+        expect(external.frame(expanded: false).maxY == 1080, "external display attaches to the top edge")
         let missingAreas = NotchGeometry.resolve(frame: CGRect(x: 0, y: 0, width: 1440, height: 900), safeTop: 32, left: nil, right: nil, scale: 0)
         expect(!missingAreas.hasCutout && missingAreas.scale == 1, "safe fallback for missing geometry")
         for hasTrack in [false, true] {

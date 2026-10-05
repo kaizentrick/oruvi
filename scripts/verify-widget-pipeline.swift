@@ -37,6 +37,9 @@ import AppKit
         try await settle()
         check(store.read()?.generatedAt == current?.generatedAt, "Repeated timeline hints deduplicate writes")
         check(reloads == 1, "Repeated timeline hints cannot form a reload loop")
+        controller.renewForVerification()
+        try await Task.sleep(for: .seconds(6))
+        check(reloads == 2, "Unchanged heartbeat renews the visible timeline before its expiry")
         let colorspace = CGColorSpaceCreateDeviceRGB()
         let bitmap = CGContext(data: nil, width: 384, height: 384, bitsPerComponent: 8, bytesPerRow: 0, space: colorspace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
         bitmap.setFillColor(CGColor(gray: 0.4, alpha: 1)); bitmap.fill(CGRect(x:0,y:0,width:384,height:384))

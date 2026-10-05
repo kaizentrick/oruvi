@@ -1,4 +1,4 @@
-# Notch 0.11.0 — Presentación, interacción y personalización
+# Notch 0.12.0 — Presentación, interacción y personalización
 
 Copyright (c) 2026 KaizenTrick. SPDX-License-Identifier: MIT
 
@@ -6,7 +6,7 @@ Esta versión integra la primera etapa del estudio de Glance: superficie animada
 
 ## Superficie visible y ventana contenedora
 
-El compacto conserva la altura de `safeAreaInsets.top` cuando hay recorte físico. No añade altura debajo de la cámara mientras está en reposo. Sin recorte se mantiene una isla de 30 puntos, separada 5 puntos del borde superior. La forma tiene una unión cóncava al borde en pantallas con cámara y esquinas redondeadas en las demás.
+El compacto conserva la altura de `safeAreaInsets.top` cuando hay recorte físico. No añade altura debajo de la cámara mientras está en reposo. Sin recorte se mantiene una superficie de 30 puntos unida al borde superior. La forma tiene una unión cóncava al borde en todas las pantallas; nunca una cápsula separada.
 
 La ventana AppKit es un contenedor acotado al máximo contenido y su sombra. Solo se recoloca/redimensiona al cambiar la geometría de pantalla. Abrir, cerrar, cambiar de pestaña o mostrar un aviso anima únicamente la superficie SwiftUI, no `NSWindow.setFrame`.
 
@@ -14,7 +14,7 @@ La ventana AppKit es un contenedor acotado al máximo contenido y su sombra. Sol
 
 Los valores configurados son 35 ms de espera de apertura, 220 ms de expansión, 180 ms de contracción y 220 ms de tolerancia antes de cerrar. No son mediciones de latencia o autonomía en cada Mac. La apertura y el cierre usan curvas distintas, acotadas para no desbordar el contenedor.
 
-Música conserva 360 puntos de ancho base y 158 puntos de contenido bajo la cámara; las otras pestañas usan 240. Los tamaños se acotan a la pantalla. Música mantiene portada, título, artista, selector y controles. Las cuatro pestañas siguen siendo iconos con nombres accesibles. La presentación compacta solo muestra la nota musical mientras hay contenido reproduciéndose.
+Música conserva 360 puntos de ancho base y 158 puntos de contenido bajo la cámara; Conexiones usa 280 para mostrar su directorio completo y las otras pestañas, 240. Los tamaños se acotan a la pantalla. Música mantiene portada, título, artista, selector y controles. Las cinco pestañas siguen siendo iconos con nombres accesibles. Conexiones agrupa Codex, reproducción, Calendario y widgets. El compacto muestra música o, al fijar Codex, el porcentaje restante de uso.
 
 ## Clics, cámara y arrastre
 
@@ -37,7 +37,7 @@ Más opciones (…) → Personalizar notch permite cambiar estas preferencias:
 
 Más opciones (…) → Personalizar notch → Pantalla del notch ofrece Automática y las pantallas detectadas. Automática prefiere un recorte físico, después la pantalla principal y finalmente otra disponible. Una selección explícita usa el identificador UUID público de la pantalla cuando está disponible. Si se desconecta, se usa una alternativa sin borrar la preferencia, para recuperarla cuando vuelva. Esto no mueve la selección de pantalla de Standby ni cambia sus reproductores.
 
-La Guía del notch se abre a petición desde el menú; no aparece automáticamente al iniciar. Explica música, archivos, Agenda, Temporizador y la instalación de widgets nativos. Los permisos se siguen solicitando cuando una función los necesita, no en bloque.
+La Guía del notch se abre a petición desde el menú; no aparece automáticamente al iniciar. Explica música, archivos, Agenda, Temporizador, Conexiones y la instalación de widgets nativos. Los permisos se siguen solicitando cuando una función los necesita, no en bloque.
 
 ## Funciones y privacidad conservadas
 

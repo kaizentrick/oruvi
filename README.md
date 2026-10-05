@@ -20,11 +20,11 @@ Usa `Oruvi.dmg`, no los ZIP «Source code». Cada release publica ese alias junt
 
 ## Notch más ligero
 
-El compacto en reposo conserva exactamente la franja superior que macOS informa para la cámara, sin añadir altura debajo. Muestra portada a la izquierda cuando hay canción y una nota musical a la derecha solo mientras reproduce. En pausa, ese lado queda vacío. En monitores sin recorte aparece una pequeña isla superior.
+El compacto en reposo conserva exactamente la franja superior que macOS informa para la cámara, sin añadir altura debajo. Muestra portada a la izquierda cuando hay canción y una nota musical a la derecha solo mientras reproduce. En pausa, ese lado queda vacío. En monitores sin recorte se une al borde superior: no hay separación ni cápsula flotante. Al fijar Codex, el compacto muestra su porcentaje restante en lugar de la portada.
 
-El panel ampliado tiene cuatro pestañas **solo con iconos**: Música, Archivos, Agenda y Temporizador. Las ayudas al detener el puntero y las etiquetas de VoiceOver conservan sus nombres. En Música se muestran una portada de 48 puntos, título, artista, selector de reproductor y anterior/pausa/siguiente. **Standby, Ajustes y Cerrar** se agrupan en el menú de tres puntos, sin fila inferior de iconos sueltos.
+El panel ampliado tiene cinco pestañas **solo con iconos**: Música, Archivos, Agenda, Temporizador y Conexiones. Las ayudas al detener el puntero y las etiquetas de VoiceOver conservan sus nombres. En Música se muestran una portada de 48 puntos, título, artista, selector de reproductor y anterior/pausa/siguiente. **Standby, Ajustes y Cerrar** se agrupan en el menú de tres puntos, sin fila inferior de iconos sueltos.
 
-El ancho ampliado base es de 360 puntos. Música utiliza 158 puntos de contenido bajo la cámara; los otros widgets disponen de 240. Se adapta dentro de los límites de la pantalla y conserva el borde superior al cambiar de vista. En 0.11.0 la unión superior es cóncava en pantallas con recorte; las demás conservan una isla redondeada. Se anima la superficie dentro de una ventana acotada de tamaño estable, no la ventana completa. Una transición interrumpida continúa desde el estado visible. Reducir movimiento y bajo consumo evitan esta animación.
+El ancho ampliado base es de 360 puntos. Música utiliza 158 puntos de contenido bajo la cámara; Conexiones, 280; los otros widgets, 240. Se adapta dentro de los límites de la pantalla y conserva el borde superior al cambiar de vista. Desde 0.12.0 la unión superior es cóncava en todas las pantallas, con y sin recorte. Se anima la superficie dentro de una ventana acotada de tamaño estable, no la ventana completa. Una transición interrumpida continúa desde el estado visible. Reducir movimiento y bajo consumo evitan esta animación.
 
 ### Apertura, también sobre la cámara
 
@@ -43,6 +43,16 @@ Abre **Notch → … → Personalizar notch**. **Avisos breves** muestra una fra
 **Pantalla del notch** permite elegir Automática o una pantalla detectada. La elección explícita se conserva aunque se desconecte la pantalla: se usa una alternativa y se recupera la preferida cuando vuelve. No modifica la pantalla ni el reproductor de Standby. **Guía del notch…** explica las funciones a petición, sin abrirse al iniciar.
 
 Esta primera integración toma como referencia la presentación notch/isla de Glance, con implementación propia. No incorpora sus modelos, imágenes, videos ni código de credenciales. **No añade cámara, reconocimiento facial ni desbloqueo de macOS.**
+
+## Conexiones y uso de Codex
+
+Abre **Notch → Conexiones → Codex → Conectar Codex**. Oruvi consulta la sesión de ChatGPT de Codex instalada en tu Mac mediante `account/rateLimits/read` del app server local. Requiere Codex CLI accesible en una ubicación habitual (`~/.local/bin`, Homebrew o el bundle de Codex); no solicita ni copia tokens, contraseñas o archivos de autenticación. Las cuentas con API key pueden no informar de estos límites.
+
+Muestra los límites que la cuenta publique, sus periodos reales, el porcentaje restante y la fecha de reinicio. Si hay varios límites puedes elegir uno. **Uso visible en el notch** fija en el compacto el menor porcentaje restante entre las ventanas vigentes del límite elegido. No asume periodos de cinco horas ni interpreta un reinicio como permiso confirmado para volver a usar la cuenta.
+
+Consulta aproximadamente cada minuto, suspende al bloquear o dormir la Mac y espacia reintentos cuando hay errores. Puedes actualizar manualmente o desconectar. Los estados sin sesión, sin CLI, sin conexión o vencidos se distinguen de 0% y 100%; no se guarda historial. Esta conexión no inicia conversaciones, no ejecuta tareas y no compra ni consume créditos de reinicio. Los límites pertenecen a la cuenta, no solo a este chat o a esta Mac.
+
+Conexiones también lleva a reproducción, Agenda y widgets nativos. Los permisos se solicitan al activar cada función.
 
 ## Reproductores independientes
 
@@ -117,7 +127,7 @@ bash scripts/check.sh
 bash scripts/build.sh
 ```
 
-Resultado: `dist/Oruvi-0.11.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
+Resultado: `dist/Oruvi-0.12.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
 
 `bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 
@@ -127,7 +137,7 @@ Resultado: `dist/Oruvi-0.11.0-arm64.dmg`. El bundle sigue siendo `com.kaizentric
 
 Se conservan las pruebas de lógica existentes y las matrices de selección automática, aplicaciones instaladas, preferencias separadas, migración, cámara/bordes y pantallas múltiples. En 0.11.0 se añaden comprobaciones parametrizadas de silueta, límites de entrada, coordenadas de pantalla, avisos y antirrebote, además de pruebas del animador real y su cancelación. La compilación ejecuta además pruebas sobre el modelo real de Oruvi con preferencias aisladas, sin abrir reproductores, solicitar permisos ni hacer búsquedas externas. Se verifican el flujo asíncrono del widget, su lectura entre procesos, la extensión nativa, la firma y el icono. El DMG se monta y se verifican firma, binario y copia de la licencia.
 
-Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop, la sensación física del trackpad ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se ha utilizado la Mac personal para desarrollar esta actualización y no se afirman benchmarks nuevos.
+Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop, la sensación física del trackpad ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se afirman benchmarks nuevos; la compilación y las pruebas no sustituyen verificar los permisos y la galería en cada instalación.
 
 ## Licencia y atribución
 
@@ -136,5 +146,7 @@ El código de Oruvi se distribuye bajo la **MIT estándar**, con copyright de Ka
 La licencia propia no transfiere derechos sobre letras, música, imágenes, tipografías o componentes de terceros. Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) y [SECURITY.md](SECURITY.md). Oruvi es independiente de Apple y Spotify y no incorpora código ni recursos de Boring Notch. La referencia de diseño de Glance y los límites de esta adaptación están documentados en [Resources/NOTCH.md](Resources/NOTCH.md).
 
 ### Recuperación de widgets (0.10.1)
+
+Desde 0.12.0, actualizar desde Ajustes solicita también la recarga del widget. La renovación periódica mantiene vigente su timeline aunque la canción siga pausada. Los errores de acceso conservan su explicación y el contenido caduca en su plazo real.
 
 Si el widget no recibe datos, pulsa **Conectar** o la **flecha circular**: recupera la selección actual sin iniciar reproducción. También está en **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. No es necesario eliminar y volver a añadir los widgets. Si aparece un aviso de datos compartidos, autoriza Oruvi; una denegación se informa, no se oculta como si la app estuviera cerrada. La firma ad-hoc conserva las limitaciones de autorización de App Groups descritas en `Resources/MEDIA.md`.
