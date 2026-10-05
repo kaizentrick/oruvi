@@ -78,7 +78,8 @@ struct VerifyPlayerHover {
                 expect(expanded.height == 190 && expanded.width == 360, "smaller music surface")
                 expect(expanded.maxY == compact.maxY, "top edge never moves")
                 for tab in NotchTab.allCases where tab != .music {
-                    expect(geometry.frame(expanded: true, tab: tab).height == 272, "functional room for widgets")
+                    let expectedHeight: CGFloat = tab == .connections ? 312 : 272
+                    expect(geometry.frame(expanded: true, tab: tab).height == expectedHeight, "connections directory and widgets keep their intended space")
                 }
             }
         }
