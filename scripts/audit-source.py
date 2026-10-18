@@ -20,7 +20,6 @@ if staged:
 else:
     paths = [p.relative_to(root) for d in allowed_dirs if (root / d).exists() for p in (root / d).rglob("*") if p.is_file()]
     paths += [pathlib.Path(n) for n in allowed_root if (root / n).is_file()]
-    paths = [p for p in paths if str(p) != "Sources/LumaQA.swift"]
 seed = root / ".private/sparkle.key"
 secret = seed.read_bytes().strip() if seed.is_file() else b""
 errors = []

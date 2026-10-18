@@ -17,7 +17,13 @@ enum LumaEnvironment {
     }()
     static let supportDirectory: URL = {
         if isTesting { return FileManager.default.temporaryDirectory.appendingPathComponent(testDomain, isDirectory: true) }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("LumaStandby", isDirectory: true)
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let current = appSupport.appendingPathComponent("Oruvi", isDirectory: true)
+        let legacy = appSupport.appendingPathComponent("LumaStandby", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: current.path), FileManager.default.fileExists(atPath: legacy.path) {
+            try? FileManager.default.moveItem(at: legacy, to: current)
+        }
+        return current
     }()
     static func cleanTestingData() {
         guard isTesting else { return }
@@ -36,19 +42,14 @@ struct HTTPReply: Sendable {
 }
 enum RemoteError: Error { case invalidURL, invalidResponse, oversized, unavailable }
 
-/// Rejects redirects away from the requested provider. No arbitrary image hosts, HTTP or cookies.
-private final class SafeRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        guard let original = task.originalRequest?.url, let target = request.url,
-              ArtworkURLPolicy.redirect(from: original, to: target) else {
-            completionHandler(nil); return
-        }
-        completionHandler(request)
-    }
-}
 final class BoundedHTTPClient: @unchecked Sendable {
     private let session: URLSession
+    private static let retryFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return formatter
+    }()
     init(session: URLSession? = nil) {
         if let session { self.session = session; return }
         let config = URLSessionConfiguration.ephemeral
@@ -58,7 +59,7 @@ final class BoundedHTTPClient: @unchecked Sendable {
         config.timeoutIntervalForRequest = 12
         config.timeoutIntervalForResource = 18
         config.httpMaximumConnectionsPerHost = 1
-        self.session = URLSession(configuration: config, delegate: SafeRedirects(), delegateQueue: nil)
+        self.session = URLSession(configuration: config)
     }
     func get(_ url: URL, maxBytes: Int = 1_000_000) async throws -> HTTPReply {
         guard maxBytes > 0, ArtworkURLPolicy.allowed(url) else { throw RemoteError.invalidURL }
@@ -76,9 +77,6 @@ final class BoundedHTTPClient: @unchecked Sendable {
         if let value, let seconds = Double(value), seconds.isFinite {
             return now.addingTimeInterval(max(1, min(seconds, 86400)))
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        return value.flatMap { formatter.date(from: $0) } ?? now.addingTimeInterval(60)
+        return value.flatMap { retryFormatter.date(from: $0) } ?? now.addingTimeInterval(60)
     }
 }

@@ -1,5 +1,30 @@
 import SwiftUI
 import AppKit
+import Observation
+import ServiceManagement
+
+@MainActor @Observable
+final class LaunchAtLogin {
+    static let shared = LaunchAtLogin()
+    private(set) var enabled = false
+    var message = ""
+    private init() { refresh() }
+    func refresh() {
+        guard !LumaEnvironment.isTesting else { enabled = false; return }
+        enabled = SMAppService.mainApp.status == .enabled
+    }
+    func setEnabled(_ value: Bool) {
+        guard !LumaEnvironment.isTesting else { return }
+        do {
+            if value { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+            message = ""
+        } catch {
+            message = "Gestiona el inicio automático en Ajustes del Sistema → General → Ítems de inicio."
+        }
+        refresh()
+    }
+}
 
 // The lifecycle lives in OruviApplication.swift; this file contains views only.
 // There is no SwiftUI Settings scene that macOS could restore on launch.
@@ -10,14 +35,13 @@ struct StandbyHost: View {
 
 struct StandbyView: View {
     @Bindable var model: StandbyModel
-    var snapshot = false
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         GeometryReader { geometry in
             let inset = min(64.0, max(28.0, geometry.size.width * 0.046))
             let compact = geometry.size.height < 710
             ZStack {
-                SmoothMesh(palette: model.meshPalette, framesPerSecond: snapshot ? 0 : model.policy.framesPerSecond, light: scheme == .light)
+                SmoothMesh(palette: model.meshPalette, framesPerSecond: model.policy.framesPerSecond, light: scheme == .light)
                     .animation(model.reduceMotion ? nil : .easeInOut(duration: 1.2), value: model.meshPalette)
                 VStack(spacing: 0) {
                     topBar
@@ -39,7 +63,7 @@ struct StandbyView: View {
         }
         .frame(minWidth: 480, minHeight: 380)
         .ignoresSafeArea(.container, edges: .all)
-        .background { if !snapshot { WindowAccessor(model: model).frame(width: 1, height: 1).allowsHitTesting(false) } }
+        .background { WindowAccessor(model: model).frame(width: 1, height: 1).allowsHitTesting(false) }
         .sheet(isPresented: $model.settingsOpen) { SettingsPanel(model: model) }
         .overlay(alignment: .top) {
             if let message = model.toastMessage {
@@ -110,31 +134,6 @@ struct StandbyView: View {
     }
 }
 
-private struct FluidMesh: View {
-    let palette: [RGB]
-    let fps: Double
-    let light: Bool
-    var body: some View {
-        TimelineView(.animation(minimumInterval: fps > 0 ? 1 / fps : 1, paused: fps == 0)) { context in
-            let t = fps > 0 ? context.date.timeIntervalSinceReferenceDate * 0.12 : 0.65
-            let points: [SIMD2<Float>] = [
-                [0, 0], [Float(0.50 + 0.12 * sin(t)), 0], [1, 0],
-                [0, Float(0.50 + 0.16 * cos(t * 0.83))],
-                [Float(0.48 + 0.18 * sin(t * 0.73)), Float(0.50 + 0.17 * cos(t * 0.64))],
-                [1, Float(0.50 + 0.15 * sin(t * 0.58))],
-                [0, 1], [Float(0.50 + 0.12 * cos(t * 0.79)), 1], [1, 1]
-            ]
-            let colors = palette.count >= 4 ? palette : RGB.dusk
-            MeshGradient(width: 3, height: 3, points: points,
-                         colors: [colors[0].color, colors[1].color, colors[0].color, colors[3].color, colors[2].color, colors[1].color, colors[0].color, colors[3].color, colors[0].color], smoothsColors: true)
-                .overlay(light ? Color.white.opacity(0.72) : Color.black.opacity(0.42))
-                .overlay(LinearGradient(colors: [.black.opacity(light ? 0 : 0.10), .clear, .black.opacity(light ? 0.04 : 0.30)], startPoint: .top, endPoint: .bottom))
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
-    }
-}
-
 private struct EditorialClock: View {
     let model: StandbyModel
     var large = false
@@ -150,7 +149,7 @@ private struct EditorialClock: View {
             Text(date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "es_MX"))).uppercased())
                 .font(.system(size: large ? 17 : 12, weight: .medium)).tracking(2.5).opacity(0.65)
                 .lineLimit(2).padding(.horizontal, large ? 0 : 12)
-            EditorialTime(text: model.qaClockText ?? Self.format(date, twentyFour: model.twentyFourHour),
+            EditorialTime(text: Self.format(date, twentyFour: model.twentyFourHour),
                           maximumSize: large ? (compact ? 205 : 290) : (compact ? 155 : 185), centered: large, typeface: model.clockTypeface, weight: model.clockWeight)
                 .frame(height: large ? (compact ? 195 : 310) : (compact ? 155 : 215))
             if !model.twentyFourHour {
@@ -196,6 +195,7 @@ struct AlbumArtwork: View {
             }
         }
         .overlay(Color.black.opacity(hovered && model.activePlayer != .spotify ? 0.22 : 0))
+        .overlay(Rectangle().strokeBorder(.white.opacity(hovered && model.activePlayer == .spotify ? 0.35 : 0), lineWidth: 1.5))
         .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -214,20 +214,6 @@ private struct TrackHeading: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text(model.track.title).font(model.contentTypeface.font(size: 23, emphasized: true)).tracking(-0.6).lineLimit(2)
                 Text(model.track.artist).font(model.contentTypeface.font(size: 13)).opacity(0.55).lineLimit(1)
-            }
-        }
-    }
-}
-private struct ListeningCover: View {
-    let model: StandbyModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            AlbumArtwork(model: model).aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 26)).shadow(color: .black.opacity(0.15), radius: 20, y: 10)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(model.track.title).font(.system(size: 27, weight: .semibold)).tracking(-0.6).lineLimit(2)
-                Text(model.track.artist).font(.system(size: 15)).opacity(0.65).lineLimit(1)
-                Text(model.track.album).font(.system(size: 12)).opacity(0.4).lineLimit(1)
             }
         }
     }
@@ -379,6 +365,13 @@ private struct SettingsPanel: View {
                 NativeWidgetSettings()
                 Section("Conexión con Codex") { CodexConnectionView(usage: .shared) }
                 Section("Notch y reproductores") {
+                    Toggle("Abrir Oruvi al iniciar sesión", isOn: Binding(
+                        get: { LaunchAtLogin.shared.enabled },
+                        set: { LaunchAtLogin.shared.setEnabled($0) }
+                    ))
+                    if !LaunchAtLogin.shared.message.isEmpty {
+                        Text(LaunchAtLogin.shared.message).font(.caption).foregroundStyle(.secondary)
+                    }
                     Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
                     LabeledContent("Reproductor del Notch") {
                         PlayerSourcePicker(selection: $model.notchPlayerPreference, surface: .notch, activePlayer: nil)

@@ -164,7 +164,7 @@ NSData *LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle) {
             NSString *identifier = Identity(Text(track.persistentID), title);
             if (bridge.error || ![identifier isEqualToString:expectedID]) return nil;
             SBElementArray *artworks = [track artworks];
-            if (bridge.error || artworks.count == 0 || bridge.error) return nil;
+            if (bridge.error || artworks.count == 0) return nil;
             LumaMusicArtwork *artwork = [artworks objectAtIndex:0];
             NSData *data = ArtworkBytes(artwork.rawData);
             if (bridge.error) return nil;

@@ -16,7 +16,9 @@ struct IdleActivationPolicy {
     }
     func nextCheck(idle: Double) -> Double {
         guard idle.isFinite else { return 30 }
-        return min(30, max(1, max(15, delay) - idle))
+        let threshold = max(15, delay.isFinite ? delay : 300)
+        let remaining = max(threshold - max(0, idle), max(threshold - (now - lastDismissed), threshold - (now - lastWake)))
+        return min(30, max(1, remaining.isFinite ? remaining : 30))
     }
 }
 
@@ -57,18 +59,21 @@ enum MotivationalPhrases {
 }
 
 enum RecordingMatcher {
+    private static let primaryArtistRegex = try! NSRegularExpression(pattern: #"\s+(?:&|feat\.?|ft\.?|featuring|with|x)\s+|,\s+"#, options: .caseInsensitive)
+    private static let featuredSuffixRegex = try! NSRegularExpression(pattern: #"\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]"#, options: .caseInsensitive)
     static func normalized(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")
     }
     static func primaryArtist(_ value: String) -> String {
-        let pattern = #"\s+(?:&|feat\.?|ft\.?|featuring|with|x)\s+|,\s+"#
-        let range = value.range(of: pattern, options: [.regularExpression, .caseInsensitive])
-        return range.map { String(value[..<$0.lowerBound]) } ?? value
+        let ns = value as NSString
+        let match = primaryArtistRegex.firstMatch(in: value, range: NSRange(location: 0, length: ns.length))
+        return match.map { ns.substring(to: $0.range.location) } ?? value
     }
     static func title(_ value: String) -> String {
         // Remove a featured-credit suffix, never live/remix/remastered version labels.
-        let stripped = value.replacingOccurrences(of: #"\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        let ns = value as NSString
+        let stripped = featuredSuffixRegex.stringByReplacingMatches(in: value, range: NSRange(location: 0, length: ns.length), withTemplate: "")
         return normalized(stripped)
     }
     static func matches(track: TrackIdentity, title candidateTitle: String, artist: String, duration: Double, tolerance: Double = 2.1) -> Bool {

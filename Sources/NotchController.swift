@@ -5,12 +5,13 @@ import Observation
 
 final class OruviNotchPanel: NSPanel {
     var acceptsKeyboard = false
-    var onEscape: (() -> Void)?
+    var onKey: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { acceptsKeyboard }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { onEscape?() } else { super.keyDown(with: event) }
+        if onKey?(event) == true { return }
+        super.keyDown(with: event)
     }
 }
 extension NotchGeometry {
@@ -31,16 +32,16 @@ final class NotchController {
     var compactWidth: CGFloat = 150
     private(set) var notice: NotchNotice?
     private(set) var displayChoices: [NotchDisplayOption] = []
-    var hapticsEnabled = UserDefaults.standard.bool(forKey: "notchHapticsEnabled") {
-        didSet { UserDefaults.standard.set(hapticsEnabled, forKey: "notchHapticsEnabled") }
+    var hapticsEnabled = LumaEnvironment.preferences.bool(forKey: "notchHapticsEnabled") {
+        didSet { LumaEnvironment.preferences.set(hapticsEnabled, forKey: "notchHapticsEnabled") }
     }
-    var noticesEnabled = (UserDefaults.standard.object(forKey: "notchNoticesEnabled") as? Bool) ?? true {
+    var noticesEnabled = (LumaEnvironment.preferences.object(forKey: "notchNoticesEnabled") as? Bool) ?? true {
         didSet {
-            UserDefaults.standard.set(noticesEnabled, forKey: "notchNoticesEnabled")
+            LumaEnvironment.preferences.set(noticesEnabled, forKey: "notchNoticesEnabled")
             if !noticesEnabled { dismissNotice() }
         }
     }
-    private(set) var selectedDisplayID = UserDefaults.standard.string(forKey: "notchDisplayID") ?? "automatic"
+    private(set) var selectedDisplayID = LumaEnvironment.preferences.string(forKey: "notchDisplayID") ?? "automatic"
     @ObservationIgnored let surface = NotchSurfaceAnimator()
     @ObservationIgnored let shelf = NotchShelf()
     @ObservationIgnored let agenda = NotchAgenda()
@@ -99,7 +100,7 @@ final class NotchController {
         hosting.wantsLayer = true; hosting.layer?.masksToBounds = true
         hosting.registerForDraggedTypes([.fileURL])
         p.contentView = hosting
-        p.onEscape = { [weak self] in self?.collapse() }
+        p.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         p.identifier = NSUserInterfaceItemIdentifier("oruvi.notch")
         p.appearance = NSAppearance(named: .darkAqua)
         panel = p
@@ -200,7 +201,7 @@ final class NotchController {
     func chooseDisplay(_ identifier: String) {
         guard identifier == "automatic" || displayChoices.contains(where: { $0.id == identifier }) else { return }
         selectedDisplayID = identifier
-        UserDefaults.standard.set(identifier, forKey: "notchDisplayID")
+        LumaEnvironment.preferences.set(identifier, forKey: "notchDisplayID")
         reconcileNextTurn()
     }
     func hideForPresentation() { presentationHandoff = true; reconcile() }
@@ -271,6 +272,31 @@ final class NotchController {
         guard tab != value else { return }
         tab = value; agenda.setActive(expanded && value == .agenda)
         userHaptic(); updateFrame(animated: !draggingFiles)
+    }
+    func handleKey(_ event: NSEvent) -> Bool {
+        guard expanded else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.isDisjoint(with: [.command, .control, .option]) else { return false }
+        let tabs = NotchTab.allCases
+        switch event.keyCode {
+        case 53: collapse(); return true
+        case 18: select(.music); return true
+        case 19: select(.files); return true
+        case 20: select(.agenda); return true
+        case 21: select(.timer); return true
+        case 23: select(.connections); return true
+        case 123:
+            if let index = tabs.firstIndex(of: tab) { select(tabs[(index - 1 + tabs.count) % tabs.count]) }
+            return true
+        case 124:
+            if let index = tabs.firstIndex(of: tab) { select(tabs[(index + 1) % tabs.count]) }
+            return true
+        case 49:
+            if tab == .music && model.hasTrack { model.control("toggle"); return true }
+            if tab == .timer { countdown.toggle(); return true }
+            return false
+        default: return false
+        }
     }
     func setExpanded(_ value: Bool, animated: Bool = true) {
         guard (!value || input.visible), expanded != value else { return }
@@ -351,18 +377,6 @@ final class NotchController {
         for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
         trackingMenus.removeAll(); pendingMenuAction = nil; panel = nil
     }
-    #if LUMA_QA
-    func captureQA(to url: URL) {
-        guard let content = panel?.contentView else { return }
-        surface.move(to: surface.target, animated: false)
-        content.layoutSubtreeIfNeeded()
-        guard let image = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { return }
-        content.cacheDisplay(in: content.bounds, to: image)
-        try? image.representation(using: .png, properties: [:])?.write(to: url)
-    }
-    var qaWindowFrame: CGRect { panel?.frame ?? .zero }
-    var qaIgnoresMouseEvents: Bool { panel?.ignoresMouseEvents ?? true }
-    #endif
     var isShown: Bool { panel?.isVisible == true }
     var frame: NSRect { NotchPresentation.frame(surface.state, in: panel?.frame ?? .zero) }
 }

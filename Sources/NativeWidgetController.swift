@@ -35,6 +35,7 @@ final class NativeWidgetController {
     @ObservationIgnored private var lastQuery = Date.distantPast
     @ObservationIgnored private var querying = false
     @ObservationIgnored private var retryWriteAt = Date.distantPast
+    @ObservationIgnored private var lastDistributedDemand = Date.distantPast
     @ObservationIgnored private let io = DispatchQueue(label: "com.kaizentrick.Oruvi.widget-cache", qos: .utility)
     #if LUMA_QA
     @ObservationIgnored private var verificationReload: (() -> Void)?
@@ -49,7 +50,9 @@ final class NativeWidgetController {
             observe(workspace, name) { [weak self] in self?.refreshConfigurations() }
         }
         observe(DistributedNotificationCenter.default(), Notification.Name(OruviWidgetIdentity.requested)) { [weak self] in
-            self?.receiveDemand()
+            guard let self, Date().timeIntervalSince(self.lastDistributedDemand) >= 2 else { return }
+            self.lastDistributedDemand = Date()
+            self.receiveDemand()
         }
         // Bootstrap BEFORE the asynchronous enumeration. A zero/error response
         // must never erase a valid song and leave the widget permanently empty.

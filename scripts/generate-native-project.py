@@ -29,13 +29,13 @@ def phase(identifier, files):
     entries = [obj(identifier+':'+p, isa='PBXBuildFile', fileRef=source(p)) for p in files]
     return obj(identifier, isa='PBXSourcesBuildPhase', buildActionMask=2147483647, files=entries, runOnlyForDeploymentPostprocessing=0)
 
-host = sorted(str(p.relative_to(root)) for p in (root/'Sources').glob('*.swift') if p.name != 'LumaQA.swift')
+host = sorted(str(p.relative_to(root)) for p in (root/'Sources').glob('*.swift'))
 shared = sorted(str(p.relative_to(root)) for p in (root/'Sources/WidgetShared').glob('*.swift'))
 widget = sorted(str(p.relative_to(root)) for p in (root/'Sources/Widgets').glob('*.swift')) + shared
 host += shared + ['Sources/MusicBridge.m', 'Sources/SpotifyBridge.m']
 assert shared and widget and 'Sources/OruviApplication.swift' in host
 assert 'Sources/WidgetShared/WidgetIntents.swift' in shared
-common = dict(SDKROOT='macosx', MACOSX_DEPLOYMENT_TARGET='26.0', ARCHS='arm64', ONLY_ACTIVE_ARCH='YES', SWIFT_VERSION='5.0', SWIFT_COMPILATION_MODE='wholemodule', SWIFT_OPTIMIZATION_LEVEL='-O', SWIFT_TREAT_WARNINGS_AS_ERRORS='YES', CLANG_ENABLE_MODULES='YES', CLANG_ENABLE_OBJC_ARC='YES', CODE_SIGNING_ALLOWED='NO', GENERATE_INFOPLIST_FILE='NO', CURRENT_PROJECT_VERSION=number, MARKETING_VERSION=version, SWIFT_EMIT_LOC_STRINGS='YES', ENABLE_HARDENED_RUNTIME='NO', ENABLE_USER_SCRIPT_SANDBOXING='YES', DEBUG_INFORMATION_FORMAT='dwarf-with-dsym', DEAD_CODE_STRIPPING='YES')
+common = dict(SDKROOT='macosx', MACOSX_DEPLOYMENT_TARGET='26.0', ARCHS='arm64', ONLY_ACTIVE_ARCH='YES', SWIFT_VERSION='5.0', SWIFT_COMPILATION_MODE='wholemodule', SWIFT_OPTIMIZATION_LEVEL='-O', SWIFT_TREAT_WARNINGS_AS_ERRORS='YES', CLANG_ENABLE_MODULES='YES', CLANG_ENABLE_OBJC_ARC='YES', CODE_SIGNING_ALLOWED='NO', GENERATE_INFOPLIST_FILE='NO', CURRENT_PROJECT_VERSION=number, MARKETING_VERSION=version, SWIFT_EMIT_LOC_STRINGS='YES', ENABLE_HARDENED_RUNTIME='YES', ENABLE_USER_SCRIPT_SANDBOXING='YES', DEBUG_INFORMATION_FORMAT='dwarf-with-dsym', DEAD_CODE_STRIPPING='YES')
 
 def config(identifier, **extra):
     values = dict(common); values.update(extra)

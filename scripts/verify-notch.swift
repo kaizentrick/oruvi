@@ -42,6 +42,12 @@ struct VerifyNotch {
                 expect(NotchCompactPolicy.showsMusicIndicator(hasTrack: hasTrack, playing: playing) == (hasTrack && playing), "indicator only during playback with a track")
             }
         }
+        expect(NotchCompactPolicy.resolve(tab: .timer, musicActive: true, timerActive: true, codexActive: true) == .timer, "keep timer in compact notch when timer tab is selected and running")
+        expect(NotchCompactPolicy.resolve(tab: .music, musicActive: true, timerActive: true, codexActive: true) == .music, "keep music in compact notch when music tab is selected and playing")
+        expect(NotchCompactPolicy.resolve(tab: .connections, musicActive: true, timerActive: true, codexActive: true) == .codex, "keep codex in compact notch when connections tab is selected and connected")
+        expect(NotchCompactPolicy.resolve(tab: .timer, musicActive: false, timerActive: false, codexActive: true) == .codex, "fall back to active codex when selected timer tab is idle")
+        expect(NotchCompactPolicy.resolve(tab: .connections, musicActive: false, timerActive: true, codexActive: false) == .timer, "fall back to running timer when codex is disconnected")
+        expect(NotchCompactPolicy.resolve(tab: .files, musicActive: false, timerActive: false, codexActive: false) == .none, "show nothing in compact notch when no source is active")
         let a = URL(fileURLWithPath: "/tmp/oruvi-test/a.pdf")
         let b = URL(fileURLWithPath: "/tmp/oruvi-test/b.png")
         let remote = URL(string: "https://example.com/file.pdf")!
@@ -53,6 +59,15 @@ struct VerifyNotch {
         expect(NotchFilePolicy.candidates(many, existing: []).count == 20, "bounded shelf")
         expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(19))).count == 1, "remaining capacity")
         expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(20))).isEmpty, "full shelf")
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("oruvi-shelf-" + UUID().uuidString, isDirectory: true)
+        let realFile = tempDir.appendingPathComponent("doc.txt")
+        let linkFile = tempDir.appendingPathComponent("link.txt")
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try? Data("ok".utf8).write(to: realFile)
+        try? FileManager.default.createSymbolicLink(at: linkFile, withDestinationURL: realFile)
+        expect(NotchFilePolicy.isSafeFile(realFile) && NotchFilePolicy.isSafeFile(tempDir), "accept regular files and directories")
+        expect(!NotchFilePolicy.isSafeFile(linkFile), "reject symlinks in shelf")
         let now = ContinuousClock.now
         var timer = NotchTimerState()
         timer.configure(seconds: 60)
@@ -77,6 +92,19 @@ struct VerifyNotch {
         expect(timer.totalSeconds == 1, "lower duration bound")
         timer.configure(seconds: Int.max)
         expect(timer.totalSeconds == 10800, "upper duration bound")
-        print("Notch verification passed: \(checks) checks (geometry, indicator, file policy, countdown).")
+        timer.configure(seconds: 300)
+        timer.adjust(secondsDelta: 60)
+        expect(timer.totalSeconds == 360 && timer.seconds(at: now) == 360, "adjust adds 1 minute")
+        timer.adjust(secondsDelta: -600)
+        expect(timer.totalSeconds == 60, "adjust clamps to 1 minute minimum")
+        let meetURL = NotchMeetingDetector.extractURL(url: nil, location: "Sala B · https://meet.google.com/abc-defg-hij", notes: nil)
+        expect(meetURL?.absoluteString == "https://meet.google.com/abc-defg-hij", "extract Google Meet URL from location")
+        let zoomURL = NotchMeetingDetector.extractURL(url: nil, location: nil, notes: "Join Zoom: https://us02web.zoom.us/j/123456789).")
+        expect(zoomURL?.absoluteString == "https://us02web.zoom.us/j/123456789", "extract Zoom URL and strip trailing punctuation")
+        let teamsURL = NotchMeetingDetector.extractURL(url: URL(string: "https://teams.microsoft.com/l/meetup-join/19"), location: nil, notes: nil)
+        expect(teamsURL?.host == "teams.microsoft.com", "accept direct Teams event URL")
+        let untrusted = NotchMeetingDetector.extractURL(url: URL(string: "https://evil.example.com/meet"), location: "http://meet.google.com/insecure", notes: "https://user:pass@meet.google.com/abc")
+        expect(untrusted == nil, "reject untrusted host, non-https, or credentials in meeting URL")
+        print("Notch verification passed: \(checks) checks (geometry, indicator, file policy, countdown, meeting detector).")
     }
 }

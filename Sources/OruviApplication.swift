@@ -61,9 +61,6 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         OruviUpdates.shared.startIfConfigured()
         if LumaEnvironment.isTesting {
             controller.activate()
-            #if LUMA_QA
-            LumaQA.run(model: model, runtime: controller, window: viewWindow)
-            #endif
         } else {
             controller.rescheduleIdle() // Desktop notch first; Standby only on demand or inactivity.
         }
@@ -80,7 +77,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         status = item
         rebuild(menu)
     }
-    func menuWillOpen(_ menu: NSMenu) { rebuild(menu) }
+    func menuWillOpen(_ menu: NSMenu) { LaunchAtLogin.shared.refresh(); rebuild(menu) }
     private func rebuild(_ menu: NSMenu) {
         let model = StandbyModel.shared
         menu.removeAllItems()
@@ -95,6 +92,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         menu.addItem(.separator())
         _ = item("Activar pantalla completa", #selector(showPresentation))
         _ = item("Ocultar presentación", #selector(hidePresentation), enabled: model.isVisible)
+        _ = item("Abrir panel del notch", #selector(openNotchPanel), enabled: model.notchEnabled && !model.isVisible)
         menu.addItem(.separator())
         for (index, mode) in LayoutMode.allCases.enumerated() {
             let entry = item(mode.displayName, #selector(changeLayout(_:)), key: String(index + 1), tag: index)
@@ -108,6 +106,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         _ = item(model.automaticActivationStatus, nil, enabled: false)
         _ = item(model.autoPausedUntil == nil ? "Pausar activación durante 1 hora" : "Reanudar activación", #selector(pauseAutomatic))
         menu.addItem(.separator())
+        let loginItem = item("Abrir al iniciar sesión", #selector(toggleLaunchAtLogin))
+        loginItem.state = LaunchAtLogin.shared.enabled ? .on : .off
         let updates = OruviUpdates.shared
         _ = item(updates.availableVersion.map { "Actualizar a \($0)…" } ?? "Buscar actualizaciones…", #selector(checkUpdates))
         _ = item("Ajustes…", #selector(showSettings), key: ",")
@@ -128,6 +128,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     }
     @objc private func showPresentation() { StandbyModel.shared.showWindow() }
     @objc private func hidePresentation() { StandbyModel.shared.dismissStandby() }
+    @objc private func openNotchPanel() { notch?.openForKeyboard() }
+    @objc private func toggleLaunchAtLogin() { LaunchAtLogin.shared.setEnabled(!LaunchAtLogin.shared.enabled) }
     @objc private func showSettings() { let model = StandbyModel.shared; model.showWindow(); model.settingsOpen = true }
     @objc private func changeLayout(_ sender: NSMenuItem) {
         guard LayoutMode.allCases.indices.contains(sender.tag) else { return }

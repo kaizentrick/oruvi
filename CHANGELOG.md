@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0 — Seguridad endurecida, calendario mensual, scrubber, letras y mejoras en el notch
+
+- Seguridad endurecida: verificación de propietario y permisos de binario/directorio en `CodexExecutable`, sanitización de `CODEX_HOME`, rechazo de symlinks en la bandeja del notch (`NotchFilePolicy.isSafeFile`), rate-limiting de notificaciones distribuidas y `ENABLE_HARDENED_RUNTIME = YES`.
+- Música y Notch compacto: barra de progreso interactiva (`NotchTrackProgress`) con búsqueda por arrastre (`seek`), letra sincronizada en vivo (`♪ ...`), icono vectorial de OpenAI/Codex (`CodexVectorIcon`) y retención contextual de la sección activa en el notch compacto (`NotchCompactPolicy`).
+- Temporizador: cuenta regresiva en vivo (`mm:ss`) en el notch compacto, controles `−1m` / `+1m`, presets de `5, 10, 15, 25 y 45 min` y persistencia de preferencia de sonido.
+- Agenda y Archivos: calendario mensual interactivo siempre visible al conectar Agenda (`NotchMonthCalendar`) con indicadores y filtro por día, detección de enlaces de videollamada (`NotchMeetingDetector` para Meet, Zoom, Teams, Webex y FaceTime) con botón **Unirse** en 1 clic, apertura rápida de archivos y menú nativo de compartir (Portapapeles, AirDrop, Correo, Mensajes).
+- Sistema y teclado: opción **Abrir al iniciar sesión** (`SMAppService.mainApp`), **Abrir panel del notch** desde la barra de estado y navegación por teclado en el notch (`1`–`5`, `←`/`→`, `Espacio` y `Esc`).
+
 ## 0.12.0 — Conexiones y una isla integrada a la Mac
 
 - Superficie unida al borde superior también en monitores sin cámara, sin separación ni cápsula flotante; conserva apertura, arrastre y geometría de entrada.

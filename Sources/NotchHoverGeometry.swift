@@ -7,7 +7,6 @@ import CoreGraphics
 enum NotchHoverGeometry {
     static let openingDelay: UInt64 = 35_000_000
     static let closingDelay: UInt64 = 220_000_000
-    static let animationDuration = 0.16
     /// Full camera band, 12 pt to either side and 10 pt underneath. No overlay
     /// window, no click interception and no dependence on native cutout hit tests.
     static func activation(compact: CGRect, screen: CGRect) -> CGRect {

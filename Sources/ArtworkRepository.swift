@@ -10,8 +10,20 @@ actor ArtworkRepository {
     private let root: URL
     private let client: BoundedHTTPClient
     private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
     private var lastRequest = Date.distantPast
     private var blockedUntil = Date.distantPast
+    private static let sizePattern = try! NSRegularExpression(pattern: #"/[0-9]+x[0-9]+bb\."#)
+
+    private func acquireSlot() async {
+        guard busy else { busy = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    private func releaseSlot() {
+        if waiters.isEmpty { busy = false }
+        else { waiters.removeFirst().resume() }
+    }
+
     init(root: URL = LumaEnvironment.supportDirectory, client: BoundedHTTPClient = BoundedHTTPClient()) {
         self.root = root.appendingPathComponent("ArtworkCache", isDirectory: true)
         self.client = client
@@ -26,9 +38,9 @@ actor ArtworkRepository {
            let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode(ArtworkPayload.self, from: data),
            !cached.data.isEmpty, cached.data.count <= 4_000_000, Date().timeIntervalSince(cached.savedAt) < 30 * 86400 { return cached }
         guard track.duration.isFinite, track.duration > 0, !track.artist.isEmpty else { return nil }
-        while busy { try await Task.sleep(nanoseconds: 100_000_000); try Task.checkCancellation() }
-        busy = true
-        defer { busy = false }
+        await acquireSlot()
+        defer { releaseSlot() }
+        try Task.checkCancellation()
         guard Date() >= blockedUntil else { throw RemoteError.unavailable }
         // Apple's documented Search API limit is roughly 20 calls/minute; stay below it.
         let wait = 3.2 - Date().timeIntervalSince(lastRequest)
@@ -54,7 +66,9 @@ actor ArtworkRepository {
             }
         guard let record = matches.first, let original = record.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) else { return nil }
         // The returned URL is the fallback if this image service doesn't accept a larger rendition.
-        let larger = original.absoluteString.replacingOccurrences(of: #"/[0-9]+x[0-9]+bb\."#, with: "/600x600bb.", options: .regularExpression)
+        let sourceURL = original.absoluteString
+        let larger = Self.sizePattern.stringByReplacingMatches(
+            in: sourceURL, range: NSRange(sourceURL.startIndex..<sourceURL.endIndex, in: sourceURL), withTemplate: "/600x600bb.")
         let imageURL = RecordingMatcher.appleArtworkURL(larger) ?? original
         var image = try await client.get(imageURL, maxBytes: 4_000_000)
         if image.status != 200 && imageURL != original { image = try await client.get(original, maxBytes: 4_000_000) }

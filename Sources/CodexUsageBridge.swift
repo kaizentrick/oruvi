@@ -6,13 +6,45 @@ enum CodexExecutable {
     static func locate() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates = [
-            home.appendingPathComponent(".local/bin/codex"),
-            home.appendingPathComponent(".codex/packages/standalone/current/bin/codex"),
-            URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex"),
             URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex"),
-            home.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex")
+            URL(fileURLWithPath: "/opt/homebrew/bin/codex"),
+            URL(fileURLWithPath: "/usr/local/bin/codex"),
+            home.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex"),
+            home.appendingPathComponent(".codex/packages/standalone/current/bin/codex"),
+            home.appendingPathComponent(".local/bin/codex")
         ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        return candidates.first { isSafeExecutable($0) }
+    }
+    static func isSafeExecutable(_ url: URL) -> Bool {
+        guard url.isFileURL, url.path.hasPrefix("/"), !url.path.contains("\0") else { return false }
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        let path = resolved.path, parent = resolved.deletingLastPathComponent().path
+        guard FileManager.default.isExecutableFile(atPath: path) else { return false }
+        var fileInfo = stat(), parentInfo = stat()
+        guard stat(path, &fileInfo) == 0, stat(parent, &parentInfo) == 0 else { return false }
+        let uid = getuid()
+        let validFile = (fileInfo.st_mode & S_IFMT) == S_IFREG &&
+            (fileInfo.st_uid == 0 || fileInfo.st_uid == uid) &&
+            (fileInfo.st_mode & (S_IWGRP | S_IWOTH)) == 0
+        let validParent = (parentInfo.st_mode & S_IFMT) == S_IFDIR &&
+            (parentInfo.st_uid == 0 || parentInfo.st_uid == uid) &&
+            (parentInfo.st_mode & (S_IWGRP | S_IWOTH)) == 0
+        return validFile && validParent
+    }
+    static func validatedHome(_ raw: String?) -> String? {
+        guard let raw, raw.hasPrefix("/"), !raw.contains("\0") else { return nil }
+        let lexical = URL(fileURLWithPath: raw)
+        guard !lexical.pathComponents.contains("..") else { return nil }
+        var linkInfo = stat()
+        guard lstat(raw, &linkInfo) == 0, (linkInfo.st_mode & S_IFMT) == S_IFDIR else { return nil }
+        let resolved = lexical.standardizedFileURL.resolvingSymlinksInPath().path
+        var dirInfo = stat()
+        let uid = getuid()
+        guard stat(resolved, &dirInfo) == 0,
+              (dirInfo.st_mode & S_IFMT) == S_IFDIR,
+              (dirInfo.st_uid == 0 || dirInfo.st_uid == uid),
+              (dirInfo.st_mode & (S_IWGRP | S_IWOTH)) == 0 else { return nil }
+        return resolved
     }
 }
 
@@ -50,15 +82,19 @@ final class CodexUsageRequest: @unchecked Sendable {
         }
     }
     private func start(executable: URL) {
+        guard CodexExecutable.isSafeExecutable(executable) else {
+            finish(.failure(CodexUsageError.unavailable)); return
+        }
+        let resolvedExecutable = executable.standardizedFileURL.resolvingSymlinksInPath()
         let child = Process(), stdin = Pipe(), stdout = Pipe()
-        child.executableURL = executable
+        child.executableURL = resolvedExecutable
         child.arguments = ["app-server", "--listen", "stdio://"]
         child.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         // Retain Codex's chosen home/profile, but never inherit shell injection
         // variables. No shell is used and stderr is never recorded.
         var environment = ["HOME": FileManager.default.homeDirectoryForCurrentUser.path,
                            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"]
-        if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], codexHome.hasPrefix("/") {
+        if let codexHome = CodexExecutable.validatedHome(ProcessInfo.processInfo.environment["CODEX_HOME"]) {
             environment["CODEX_HOME"] = codexHome
         }
         child.environment = environment

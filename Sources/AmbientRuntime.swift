@@ -36,39 +36,12 @@ final class AmbientRuntime {
     private var wasMediaProtected = false
     private var lastMediaProtected = -Double.greatestFiniteMagnitude
     var isBlocked: Bool { sleeping || sessionInactive || locked }
-    var hasIdleTimer: Bool { idleTimer?.isValid == true }
-    var hasPhraseTimer: Bool { phraseTimer?.isValid == true }
-    var isFullScreenPresentation: Bool {
-        window.isVisible && NSScreen.screens.contains { abs($0.frame.width - window.frame.width) < 1 && abs($0.frame.height - window.frame.height) < 1 && $0.frame.origin == window.frame.origin }
-    }
     init(model: StandbyModel, window: NSWindow) {
         self.model = model; self.window = window; model.runtime = self
         installObservers()
         localEvents = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .swipe]) { [weak self] event in
             guard let self else { return event }
             return self.handle(event)
-        }
-    }
-    /// Opening the app is not permission to cover an ongoing film. Explicit menu activation is.
-    func launchRespectingMedia() {
-        guard !stopped, !isBlocked else { return }
-        guard model.avoidMedia else { activate(); return }
-        mediaSerial += 1
-        let serial = mediaSerial
-        let foreground = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        mediaCheck = Task { [weak self] in
-            let sample = await Task.detached(priority: .utility) {
-                MediaProtection.sample(frontmostBundleID: foreground, ownPID: ownPID)
-            }.value
-            guard !Task.isCancelled, let self, self.mediaSerial == serial, !self.stopped, !self.isBlocked else { return }
-            self.mediaCheck = nil
-            if sample.shouldProtect(enabled: self.model.avoidMedia, conservativeBrowsers: self.model.protectBrowsers) {
-                self.wasMediaProtected = true
-                self.lastMediaProtected = ProcessInfo.processInfo.systemUptime
-                self.model.automaticActivationStatus = sample.reason
-                self.rescheduleIdle()
-            } else { self.activate() }
         }
     }
     func activate(automatic: Bool = false) {
@@ -148,8 +121,7 @@ final class AmbientRuntime {
         let delay = min(120, max(1, model.idleMinutes.isFinite ? model.idleMinutes : 5)) * 60
         let policy = IdleActivationPolicy(enabled: true, delay: delay, visible: false, blocked: isBlocked, now: now, lastDismissed: lastDismissed, lastWake: lastWake)
         if policy.shouldActivate(idle: idle) { checkMediaBeforeActivation(); return }
-        let remaining = max(delay - max(0, idle), max(delay - (now - lastDismissed), delay - (now - lastWake)))
-        let interval = min(30, max(1, remaining.isFinite ? remaining : 30))
+        let interval = policy.nextCheck(idle: idle)
         model.automaticActivationStatus = "En espera · después de \(Int(delay / 60)) min"
         scheduleIdleTimer(after: interval)
     }

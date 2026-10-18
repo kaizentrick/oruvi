@@ -70,7 +70,25 @@ import Foundation
         try script("import sys\nprint('x'*1100000,flush=True)\nsys.stdin.read()\n")
         do { _ = try await CodexUsageRequest().read(executable: server); preconditionFailure("oversized output") }
         catch { check(error as? CodexUsageError == .invalidResponse, "subprocess output is bounded") }
-        print("PASS: \(checks) Codex usage checks: buckets, freshness, quotas, real stdio handshake, timeout, cancellation and output bounds.")
+        let unsafeBinary = root.appendingPathComponent("unsafe-codex")
+        let safeHome = root.appendingPathComponent("safe-home", isDirectory: true)
+        let symlinkHome = root.appendingPathComponent("symlink-home")
+        defer {
+            try? FileManager.default.removeItem(at: unsafeBinary)
+            try? FileManager.default.removeItem(at: safeHome)
+            try? FileManager.default.removeItem(at: symlinkHome)
+        }
+        try "#!/bin/sh\nexit 0\n".write(to: unsafeBinary, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: unsafeBinary.path)
+        check(!CodexExecutable.isSafeExecutable(unsafeBinary), "world-writable executable rejected")
+        check(CodexExecutable.isSafeExecutable(server), "owner-only executable accepted")
+        try FileManager.default.createDirectory(at: safeHome, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createSymbolicLink(at: symlinkHome, withDestinationURL: safeHome)
+        check(CodexExecutable.validatedHome(safeHome.path) != nil, "valid owner-only CODEX_HOME accepted")
+        check(CodexExecutable.validatedHome(symlinkHome.path) == nil, "symlink CODEX_HOME rejected")
+        check(CodexExecutable.validatedHome(safeHome.path + "/../safe-home") == nil, "traversal CODEX_HOME rejected")
+        check(CodexExecutable.validatedHome("relative/path") == nil, "relative CODEX_HOME rejected")
+        print("PASS: \(checks) Codex usage checks: buckets, freshness, quotas, real stdio handshake, timeout, cancellation, executable/home hardening and output bounds.")
     }
     static func tryFrames(_ frames: inout CodexUsageFrames, _ bytes: Data) -> [Data] { try! frames.append(bytes) }
 }

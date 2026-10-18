@@ -18,6 +18,11 @@ struct NotchTimerState {
     mutating func configure(seconds: Int) {
         totalSeconds = min(10800, max(1, seconds)); reset()
     }
+    mutating func adjust(secondsDelta: Int) {
+        guard !running else { return }
+        let base = completed || held <= .zero ? totalSeconds : seconds()
+        configure(seconds: min(10800, max(60, base + secondsDelta)))
+    }
     mutating func start(at now: ContinuousClock.Instant = .now) {
         guard !running else { return }
         if completed || held <= .zero { reset() }

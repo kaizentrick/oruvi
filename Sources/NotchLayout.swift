@@ -43,8 +43,24 @@ enum NotchTab: String, CaseIterable, Identifiable {
     }
 }
 
+enum NotchCompactMode: Equatable {
+    case none, music, timer, codex
+}
+
 enum NotchCompactPolicy {
     static func showsMusicIndicator(hasTrack: Bool, playing: Bool) -> Bool { hasTrack && playing }
+    static func resolve(tab: NotchTab, musicActive: Bool, timerActive: Bool, codexActive: Bool) -> NotchCompactMode {
+        switch tab {
+        case .music where musicActive: return .music
+        case .timer where timerActive: return .timer
+        case .connections where codexActive: return .codex
+        default:
+            if timerActive { return .timer }
+            if musicActive { return .music }
+            if codexActive { return .codex }
+            return .none
+        }
+    }
 }
 
 enum NotchFilePolicy {
@@ -60,5 +76,41 @@ enum NotchFilePolicy {
             result.append(normalized)
         }
         return result
+    }
+    static func isSafeFile(_ url: URL) -> Bool {
+        guard url.isFileURL,
+              let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .isDirectoryKey]),
+              values.isSymbolicLink != true,
+              values.isRegularFile == true || values.isDirectory == true else { return false }
+        return true
+    }
+}
+
+enum NotchMeetingDetector {
+    private static let linkPattern = try! NSRegularExpression(pattern: #"https://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+"#, options: [.caseInsensitive])
+    static func isAllowedMeetingURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
+              let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        if host == "meet.google.com" || host == "teams.microsoft.com" || host == "teams.live.com" || host == "facetime.apple.com" {
+            return true
+        }
+        if host == "zoom.us" || host.hasSuffix(".zoom.us") || host == "webex.com" || host.hasSuffix(".webex.com") {
+            return true
+        }
+        return false
+    }
+    static func extractURL(url: URL?, location: String?, notes: String?) -> URL? {
+        if let url, isAllowedMeetingURL(url) { return url }
+        for field in [location, notes] {
+            guard let text = field, !text.isEmpty else { continue }
+            let bounded = String(text.prefix(8192))
+            let range = NSRange(bounded.startIndex..<bounded.endIndex, in: bounded)
+            for match in linkPattern.matches(in: bounded, range: range) {
+                guard let swiftRange = Range(match.range, in: bounded) else { continue }
+                let raw = String(bounded[swiftRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;)>]\"'"))
+                if let candidate = URL(string: raw), isAllowedMeetingURL(candidate) { return candidate }
+            }
+        }
+        return nil
     }
 }

@@ -12,9 +12,19 @@ actor LyricsRepository {
     private let local: URL
     private let client: BoundedHTTPClient
     private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
     private var blockedUntil = Date.distantPast
     private var lastRequest = Date.distantPast
     private var misses: [String: Date] = [:]
+
+    private func acquireSlot() async {
+        guard busy else { busy = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    private func releaseSlot() {
+        if waiters.isEmpty { busy = false }
+        else { waiters.removeFirst().resume() }
+    }
 
     init(root: URL = LumaEnvironment.supportDirectory, client: BoundedHTTPClient = BoundedHTTPClient()) {
         self.root = root.appendingPathComponent("LyricsCache", isDirectory: true)
@@ -72,9 +82,9 @@ actor LyricsRepository {
         }
         if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable("Esta canción no tiene letra sincronizada disponible.") }
         do {
-            while busy { try await Task.sleep(nanoseconds: 100_000_000); try Task.checkCancellation() }
-            busy = true
-            defer { busy = false }
+            await acquireSlot()
+            defer { releaseSlot() }
+            try Task.checkCancellation()
             let reply = try await request("get", items: [
                 URLQueryItem(name: "track_name", value: track.title), URLQueryItem(name: "artist_name", value: track.artist),
                 URLQueryItem(name: "album_name", value: track.album), URLQueryItem(name: "duration", value: String(Int(track.duration.rounded())))

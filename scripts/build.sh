@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+    export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+fi
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || { echo 'Requiere macOS y Apple Silicon.'; exit 1; }
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
@@ -15,7 +18,7 @@ if [[ "${1:-}" == --clean ]]; then
     shopt -s nullglob
     for path in "$ROOT"/.tmp/codex/build.*; do [[ -d "$path" && ! -L "$path" && "$path" != "$LOCK" ]] && rm -rf -- "$path"; done
     for file in "$ROOT/dist"/Oruvi-*.dmg "$ROOT/dist"/Luma-*.dmg "$ROOT/dist"/*.zip; do [[ "$file" == "$CURRENT" ]] || rm -f -- "$file"; done
-    rm -f Sources/LumaQA.swift .DS_Store dist/.DS_Store
+    rm -f .DS_Store dist/.DS_Store
     echo 'Temporales eliminados; claves privadas, código y DMG vigente conservados.'; exit 0
 fi
 mkdir "$LOCK" 2>/dev/null || { echo 'Hay otra compilación o un bloqueo pendiente.'; exit 1; }
@@ -93,26 +96,16 @@ PLIST
     done
     codesign --force "${SIGN_OPTIONS[@]}" --sign "${SIGN_IDENTITY:--}" "$framework"
 }
-ALL=(); RELEASE=(); MODEL_TEST=()
+MODEL_TEST=()
 for source in Sources/*.swift Sources/WidgetShared/*.swift; do
-    ALL+=("$source")
-    if [[ "$source" != Sources/LumaQA.swift ]]; then
-        RELEASE+=("$source")
-        [[ "$source" == Sources/OruviApplication.swift ]] || MODEL_TEST+=("$source")
-    fi
- done
+    [[ "$source" == Sources/OruviApplication.swift ]] || MODEL_TEST+=("$source")
+done
 printf '\n[2/5] Modelo de reproducción aislado\n'
 xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${MODEL_TEST[@]}" scripts/verify-surfaces.swift "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$BUILD/verify-surfaces"
 DYLD_FRAMEWORK_PATH="$DEPS" "$BUILD/verify-surfaces" --smoke-test >&3
 xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${MODEL_TEST[@]}" scripts/verify-widget-pipeline.swift "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$BUILD/verify-widget-pipeline"
 DYLD_FRAMEWORK_PATH="$DEPS" "$BUILD/verify-widget-pipeline" --smoke-test >&3
 if [[ "${GITHUB_ACTIONS:-false}" == true ]]; then bash scripts/verify-widget-sharing.sh >&3; fi
-if [[ -f Sources/LumaQA.swift && "${SKIP_VERIFICATION:-0}" != 1 ]]; then
-    QA_APP="$BUILD/qa-app/Oruvi.app"; prepare_app "$QA_APP"
-    xcrun swiftc "${BASE[@]}" -Onone -whole-module-optimization -D LUMA_QA "${ALL[@]}" "$BUILD/libOruviPlayers.a" "${FRAMEWORKS[@]}" -o "$QA_APP/Contents/MacOS/Oruvi"
-    codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$QA_APP"
-    "$QA_APP/Contents/MacOS/Oruvi" --smoke-test --qa-output "$BUILD/qa"
-fi
 if [[ "${QA_ONLY:-0}" == 1 ]]; then echo 'Verificación terminada.' >&3; exit 0; fi
 printf '\n[3/5] Aplicación optimizada\n'
 bash scripts/build-native-targets.sh "$BUILD" "$DEPS" "$VERSION" "$ORUVI_BUILD_NUMBER"

@@ -10,11 +10,11 @@ struct LyricLine: Identifiable, Codable, Equatable, Sendable {
 /// Enhanced-LRC word tags are removed: this version synchronizes by LINE, not word.
 enum LRCParser {
     static let maximumBytes = 512_000
+    private static let offsetPattern = try! NSRegularExpression(pattern: #"\[offset:([+-]?\d+)\]"#, options: .caseInsensitive)
+    private static let stamps = try! NSRegularExpression(pattern: #"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]"#)
+    private static let words = try! NSRegularExpression(pattern: #"<\d{1,3}:\d{2}(?:\.\d{1,3})?>"#)
     static func parse(_ source: String) -> [LyricLine] {
         guard source.utf8.count <= maximumBytes else { return [] }
-        let offsetPattern = try! NSRegularExpression(pattern: #"\[offset:([+-]?\d+)\]"#, options: .caseInsensitive)
-        let stamps = try! NSRegularExpression(pattern: #"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]"#)
-        let words = try! NSRegularExpression(pattern: #"<\d{1,3}:\d{2}(?:\.\d{1,3})?>"#)
         let all = source as NSString
         let offsetMatch = offsetPattern.matches(in: source, range: NSRange(location: 0, length: all.length)).last
         let offset = offsetMatch.flatMap { Double(all.substring(with: $0.range(at: 1))) }.map { $0 / 1000 } ?? 0

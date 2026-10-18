@@ -89,12 +89,23 @@ final class StandbyModel {
     private var activeSystemBundleID = ""
     @ObservationIgnored private var systemArtworkData: Data?
     var notchVisible = false
-    var notchExpanded = false
+    var notchExpanded = false {
+        didSet {
+            guard started, oldValue != notchExpanded else { return }
+            if lyricsSurfaceVisible {
+                if hasTrack && lines.isEmpty && lyricsTask == nil && ProcessInfo.processInfo.systemUptime >= lyricsRetryAt { fetchLyrics() }
+                updateCue()
+            } else if !policy.visible {
+                cueTimer?.invalidate(); cueTimer = nil
+            }
+        }
+    }
     var playerArtworkURL = ""
     var meshTheme: MeshTheme = .aurora {
         didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
     }
     var visibleLyrics: Bool { musicShowsLyrics && !lines.isEmpty }
+    var lyricsSurfaceVisible: Bool { (isVisible || (notchVisible && notchExpanded)) && !screenSleeping }
     var needsPlayback: Bool { (isVisible || notchVisible || nativeWidgetInUse) && !screenSleeping }
     var connectionStatus = "Conecta Música de este Mac"
     var connected = false
@@ -136,7 +147,6 @@ final class StandbyModel {
     }
     var automaticSession = false
     var phraseIndex = 0
-    var qaClockText: String?
     var currentPhrase: String { MotivationalPhrases.all[phraseIndex] }
     var meshPalette: [RGB] { meshFollowsMusic && hasTrack ? palette : meshTheme.palette }
     var layout: LayoutMode = .editorial {
@@ -342,7 +352,7 @@ final class StandbyModel {
         updateDisplayAssertion(); runtime?.refreshPhrases()
         if needsPlayback {
             if connected { refreshPlayback() } else { updateCue() }
-            if !policy.visible { cueTimer?.invalidate(); cueTimer = nil; lyricsTask?.cancel(); lyricsTask = nil }
+            if !lyricsSurfaceVisible { cueTimer?.invalidate(); cueTimer = nil; lyricsTask?.cancel(); lyricsTask = nil }
         } else {
             generation += 1
             recovery.invalidate(); isResynchronizing = !demoMode
@@ -526,14 +536,20 @@ final class StandbyModel {
             _ = await synchronizeNativeWidget(connectIfNeeded: false)
             return "El contenido cambió. Vuelve a pulsar el control."
         }
-        let session = generation, source = activePlayer, selection = effectivePlayerPreference
+        let session = generation, source = activePlayer, selection = effectivePlayerPreference, queue = musicQueue
         let result: ([String: Any], [String: Any]) = await withCheckedContinuation { continuation in
-            musicQueue.async { [playerRouter] in
+            queue.async { [playerRouter] in
                 let commandResult = playerRouter.command(command, position: 0, source: source,
                     preference: selection, expectedTrackID: expectedTrackID, requireSameTrack: true)
-                if commandResult["status"] as? String == "ok" { Thread.sleep(forTimeInterval: 0.15) }
-                let value = playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true)
-                continuation.resume(returning: (commandResult, value))
+                if commandResult["status"] as? String == "ok" {
+                    queue.asyncAfter(deadline: .now() + 0.15) {
+                        let value = playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true)
+                        continuation.resume(returning: (commandResult, value))
+                    }
+                } else {
+                    let value = playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true)
+                    continuation.resume(returning: (commandResult, value))
+                }
             }
         }
         guard session == generation, connected, !screenSleeping else { return "La sesión de Oruvi cambió." }
@@ -572,7 +588,7 @@ final class StandbyModel {
             lyricsAvailability = .unavailable; lyricsRetryAt = .greatestFiniteMagnitude
             lyricStatus = "Letras automáticas no disponibles para esta fuente."; return
         }
-        guard !demoMode, hasTrack, policy.visible, !isResynchronizing else { return }
+        guard !demoMode, hasTrack, lyricsSurfaceVisible, !isResynchronizing else { return }
         lines = []; activeLine = nil; lyricSource = ""
         lyricsAvailability = .loading
         lyricStatus = automaticLyrics ? "Recuperando letra sincronizada…" : "Buscando tu archivo LRC local…"
@@ -583,7 +599,7 @@ final class StandbyModel {
                 do { if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000) }; try Task.checkCancellation() }
                 catch { return }
                 let result = await repository.load(for: identity, allowNetwork: allowed)
-                guard !Task.isCancelled, let self, self.track == identity, self.automaticLyrics == allowed, self.policy.visible else { return }
+                guard !Task.isCancelled, let self, self.track == identity, self.automaticLyrics == allowed, self.lyricsSurfaceVisible else { return }
                 switch result {
                 case .available(let payload):
                     self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue(); self.lyricsTask = nil; return
@@ -664,7 +680,7 @@ final class StandbyModel {
     }
     private func updateCue() {
         cueTimer?.invalidate(); cueTimer = nil
-        guard policy.visible, !isResynchronizing else { return }
+        guard lyricsSurfaceVisible, !isResynchronizing else { return }
         let position = anchor.value(at: ProcessInfo.processInfo.systemUptime) + lyricOffset
         let index = LRCParser.index(at: position, in: lines)
         if activeLine != index { activeLine = index }

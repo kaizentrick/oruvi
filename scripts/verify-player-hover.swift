@@ -85,7 +85,6 @@ struct VerifyPlayerHover {
         }
         expect(!NotchHoverGeometry.contains(CGPoint(x: CGFloat.nan, y: 0), in: CGRect(x: 0, y: 0, width: 10, height: 10)), "reject invalid pointer")
         expect(NotchHoverGeometry.openingDelay == 35_000_000, "35 ms dwell configuration")
-        expect(NotchHoverGeometry.animationDuration == 0.16, "160 ms transition configuration")
         print("PASS: \(count) player-selection and camera-hover checks.")
     }
 }

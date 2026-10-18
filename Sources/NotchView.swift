@@ -43,33 +43,77 @@ struct NotchView: View {
         // Surface geometry is animated once by NotchSurfaceAnimator. Do not add
         // another implicit size animation: the input outline must use the same sample.
     }
+    private var compactMode: NotchCompactMode {
+        NotchCompactPolicy.resolve(
+            tab: controller.tab,
+            musicActive: NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.anchor.playing),
+            timerActive: controller.countdown.state.running,
+            codexActive: usage.enabled && usage.pinned
+        )
+    }
     private var compact: some View {
-        HStack(spacing: 0) {
+        let mode = compactMode
+        return HStack(spacing: 0) {
             Group {
-                if usage.enabled && usage.pinned {
-                    Text("CODEX").font(.system(size: 8, weight: .semibold)).tracking(0.3)
-                } else if model.hasTrack {
+                switch mode {
+                case .codex:
+                    CodexVectorIcon(size: 14).foregroundStyle(.white.opacity(0.92))
+                case .music:
                     AlbumArtwork(model: model)
                         .frame(width: min(22, max(1, controller.topInset - 8)), height: min(22, max(1, controller.topInset - 8)))
                         .clipShape(RoundedRectangle(cornerRadius: 5))
-                } else { Color.clear.frame(width: 22, height: 22) }
+                case .timer:
+                    Image(systemName: "timer").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+                case .none:
+                    Color.clear.frame(width: 22, height: 22)
+                }
             }.frame(width: 44)
             Spacer(minLength: 0)
             Group {
-                if usage.enabled && usage.pinned {
+                switch mode {
+                case .codex:
                     Text(usage.compactText).font(.system(size: 11, weight: .medium)).monospacedDigit()
-                } else if NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.anchor.playing) {
+                case .timer:
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(controller.countdown.text)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                    }
+                case .music:
                     Image(systemName: "music.note").font(.system(size: 14, weight: .medium))
-                } else { Color.clear.frame(width: 18, height: 18) }
+                case .none:
+                    Color.clear.frame(width: 18, height: 18)
+                }
             }.frame(width: 44)
         }.contentShape(Rectangle()).onTapGesture { openCompact() }
-            .help(usage.enabled && usage.pinned ? usage.compactHelp : "Abrir Oruvi")
+            .help(compactHelp(mode))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(usage.enabled && usage.pinned ? usage.compactHelp : (model.hasTrack ? "Oruvi. \(model.track.title). Abrir widgets." : "Oruvi. Abrir widgets."))
+            .accessibilityLabel(compactAccessibilityLabel(mode))
             .accessibilityAddTraits(.isButton).accessibilityAction { openCompact() }
     }
+    private func compactHelp(_ mode: NotchCompactMode) -> String {
+        switch mode {
+        case .codex: return usage.compactHelp
+        case .timer: return "Temporizador · \(controller.countdown.text)"
+        case .music: return "\(model.track.title) · \(model.track.artist)"
+        case .none: return "Abrir Oruvi"
+        }
+    }
+    private func compactAccessibilityLabel(_ mode: NotchCompactMode) -> String {
+        switch mode {
+        case .codex: return usage.compactHelp
+        case .timer: return "Oruvi. Temporizador \(controller.countdown.text). Abrir widgets."
+        case .music: return "Oruvi. \(model.track.title). Abrir widgets."
+        case .none: return "Oruvi. Abrir widgets."
+        }
+    }
     private func openCompact() {
-        if usage.enabled && usage.pinned { controller.select(.connections) }
+        switch compactMode {
+        case .codex: controller.select(.connections)
+        case .timer: controller.select(.timer)
+        case .music: controller.select(.music)
+        case .none: break
+        }
         controller.openForKeyboard()
     }
     private func noticeRow(_ notice: NotchNotice) -> some View {
@@ -85,7 +129,7 @@ struct NotchView: View {
         }
     }
     private var workspace: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(NotchTab.allCases) { option in
                     Button { controller.select(option) } label: {
@@ -145,7 +189,7 @@ struct NotchView: View {
                     }
                 }
             if let notice = controller.notice { noticeRow(notice).frame(height: 22) }
-        }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
+        }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 12)
     }
     private func displayOption(_ title: String, id: String) -> some View {
         Button {
@@ -155,23 +199,38 @@ struct NotchView: View {
             else { Text(title) }
         }
     }
+    private var currentLyricLine: String? {
+        guard model.hasTrack, let index = model.activeLine, index >= 0, index < model.lines.count else { return nil }
+        let text = model.lines[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
     private var music: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             HStack(spacing: 12) {
                 if model.hasTrack {
-                    AlbumArtwork(model: model).frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 10))
+                    AlbumArtwork(model: model).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
-                    Image(systemName: "music.note").font(.system(size: 23, weight: .light))
-                        .frame(width: 48, height: 48).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    Image(systemName: "music.note").font(.system(size: 21, weight: .light))
+                        .frame(width: 44, height: 44).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(model.hasTrack ? model.track.title : (model.connected ? "Nada en reproducción" : "Conecta tu música"))
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         .help(model.hasTrack ? model.track.title : model.connectionStatus)
                     Text(model.hasTrack ? model.track.artist : (model.connected ? model.connectionStatus : "Ahora suena · Music · Spotify"))
                         .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                    if let lyric = currentLyricLine {
+                        Text("♪ " + lyric)
+                            .font(.system(size: 10, weight: .medium)).italic()
+                            .foregroundStyle(.white.opacity(0.82)).lineLimit(1)
+                            .contentTransition(.opacity)
+                    }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(height: 48)
+            }.frame(height: 46)
+            if model.hasTrack && model.track.duration > 0 {
+                NotchTrackProgress(model: model, active: controller.expanded && controller.tab == .music)
+                    .frame(height: 16)
+            }
             HStack(spacing: 6) {
                 PlayerSourcePicker(selection: $model.notchPlayerPreference, surface: .notch,
                                    activePlayer: model.hasTrack ? model.activePlayer : nil)
@@ -186,12 +245,69 @@ struct NotchView: View {
                 } else {
                     Button("Abrir reproductor") { model.openInstalledPlayer() }.font(.system(size: 11)).buttonStyle(.plain)
                 }
-            }.frame(height: 32)
+            }.frame(height: 30)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private func control(_ symbol: String, command: String, label: String) -> some View {
         Button { model.control(command) } label: {
-            Image(systemName: symbol).font(.system(size: command == "toggle" ? 18 : 16, weight: .medium)).frame(width: 32, height: 32)
+            Image(systemName: symbol).font(.system(size: command == "toggle" ? 18 : 16, weight: .medium)).frame(width: 30, height: 30)
         }.buttonStyle(.plain).help(label).accessibilityLabel(label)
+    }
+}
+
+private struct NotchTrackProgress: View {
+    let model: StandbyModel
+    let active: Bool
+    @State private var dragProgress: Double?
+    @State private var draggedTrackKey: String?
+    var body: some View {
+        Group {
+            if model.anchor.playing && active && !model.isResynchronizing {
+                TimelineView(.periodic(from: .now, by: model.onBattery ? 1.0 : 0.5)) { _ in bar }
+            } else { bar }
+        }
+    }
+    private var bar: some View {
+        let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
+        let duration = max(model.track.duration, 1)
+        let fraction = dragProgress ?? min(1, max(0, position / duration))
+        let shown = dragProgress.map { $0 * duration } ?? position
+        return HStack(spacing: 8) {
+            Text(Self.time(shown))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(width: 28, alignment: .leading)
+            GeometryReader { geometry in
+                Capsule().fill(.white.opacity(0.16))
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.82)).frame(width: max(0, geometry.size.width * fraction))
+                    }
+                    .frame(height: 3).frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if draggedTrackKey == nil { draggedTrackKey = model.track.cacheKey }
+                            dragProgress = min(1, max(0, value.location.x / max(1, geometry.size.width)))
+                        }
+                        .onEnded { value in
+                            let target = min(1, max(0, value.location.x / max(1, geometry.size.width)))
+                            if draggedTrackKey == model.track.cacheKey { model.control("seek", position: target * duration) }
+                            dragProgress = nil; draggedTrackKey = nil
+                        })
+                    .accessibilityLabel("Posición de la canción")
+                    .accessibilityValue(Self.time(position) + " de " + Self.time(duration))
+            }.frame(height: 12)
+            Text("−" + Self.time(max(0, duration - shown)))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(width: 34, alignment: .trailing)
+        }
+        .disabled(!model.hasTrack || model.track.duration <= 0 || model.isResynchronizing)
+        .onChange(of: model.track.cacheKey) { _, _ in dragProgress = nil; draggedTrackKey = nil }
+    }
+    private static func time(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "0:00" }
+        let value = Int(max(0, seconds))
+        return String(format: "%d:%02d", value / 60, value % 60)
     }
 }
