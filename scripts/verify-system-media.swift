@@ -14,6 +14,10 @@ import Foundation
         check(sample.title == "Vídeo 🎵", "Unicode")
         check(sample.elapsed == 12, "Timestamp compensation")
         check(sample.dictionary(at: 23)["position"] as? Double == 15, "Uptime extrapolation")
+        check(sample.dictionary(at: 23)["sampleUptime"] as? Double == 23, "Consumers must not extrapolate the same interval twice")
+        var faster = base; faster["playbackRate"] = 1.5
+        let fast = SystemMediaSnapshot(payload: faster, uptime: 20, epoch: 1002)!.dictionary(at: 22)
+        check(fast["position"] as? Double == 16 && fast["playbackRate"] as? Double == 1.5, "System rate reaches the lyric clock")
         check(sample.dictionary(at: 1000)["position"] as? Double == 120, "Finite duration clamp")
         check(sample.id == SystemMediaSnapshot(payload: base, uptime: 999, epoch: 1002)!.id, "Identity independent of time")
         var changed = base; changed["title"] = "Otro vídeo"

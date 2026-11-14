@@ -69,8 +69,13 @@ final class StandbyModel {
         let next: PlaybackSurface = isVisible ? .standby : .notch
         guard next != playbackSurface else { return }
         lastSurfacePlayers[playbackSurface] = activePlayer
+        let previousPreference = effectivePlayerPreference
         playbackSurface = next; generation += 1
         guard !demoMode else { return }
+        if connected && prefs.bool(forKey: next.enabledKey) && previousPreference == effectivePlayerPreference {
+            stopLyricsUpdates()
+            return
+        }
         clearTrack()
         activePlayer = effectivePlayerPreference.source ?? lastSurfacePlayers[next] ?? .music
         connected = prefs.bool(forKey: next.enabledKey)
@@ -86,26 +91,28 @@ final class StandbyModel {
         nativeWidgetInUse = present
         if started { policyChanged() }
     }
-    private var activeSystemBundleID = ""
+    private(set) var activeSystemBundleID = ""
     @ObservationIgnored private var systemArtworkData: Data?
+    @ObservationIgnored private var appliedSystemArtwork: Data?
+    @ObservationIgnored private var retainedArtwork: (track: TrackIdentity, image: NSImage, palette: [RGB], link: URL?, systemData: Data?)?
     var notchVisible = false
     var notchExpanded = false {
         didSet {
             guard started, oldValue != notchExpanded else { return }
-            if lyricsSurfaceVisible {
-                if hasTrack && lines.isEmpty && lyricsTask == nil && ProcessInfo.processInfo.systemUptime >= lyricsRetryAt { fetchLyrics() }
-                updateCue()
-            } else if !policy.visible {
-                cueTimer?.invalidate(); cueTimer = nil
-            }
+            updateLyricsVisibility()
         }
     }
     var playerArtworkURL = ""
     var meshTheme: MeshTheme = .aurora {
         didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
     }
-    var visibleLyrics: Bool { musicShowsLyrics && !lines.isEmpty }
-    var lyricsSurfaceVisible: Bool { (isVisible || (notchVisible && notchExpanded)) && !screenSleeping }
+    var visibleLyrics: Bool { musicShowsLyrics && hasTrack }
+    var lyricsSurfaceVisible: Bool { ((isVisible && visibleLyrics && layout != .clock) || (notchVisible && notchExpanded)) && !screenSleeping }
+    var currentLyricText: String? {
+        guard !isResynchronizing, let activeLine, lines.indices.contains(activeLine) else { return nil }
+        let text = lines[activeLine].text
+        return text.isEmpty ? nil : text
+    }
     var needsPlayback: Bool { (isVisible || notchVisible || nativeWidgetInUse) && !screenSleeping }
     var connectionStatus = "Conecta Música de este Mac"
     var connected = false
@@ -128,7 +135,7 @@ final class StandbyModel {
     var repeatMode = 0
     var playbackOptionsAvailable = false
     var musicShowsLyrics = false {
-        didSet { prefs.set(musicShowsLyrics, forKey: "musicShowsLyrics") }
+        didSet { prefs.set(musicShowsLyrics, forKey: "musicShowsLyrics"); updateLyricsVisibility() }
     }
     var clockTypeface: AmbientTypeface = .editorial {
         didSet { prefs.set(clockTypeface.rawValue, forKey: "clockTypeface") }
@@ -150,7 +157,7 @@ final class StandbyModel {
     var currentPhrase: String { MotivationalPhrases.all[phraseIndex] }
     var meshPalette: [RGB] { meshFollowsMusic && hasTrack ? palette : meshTheme.palette }
     var layout: LayoutMode = .editorial {
-        didSet { prefs.set(layout.rawValue, forKey: "layout"); runtime?.refreshPhrases() }
+        didSet { prefs.set(layout.rawValue, forKey: "layout"); runtime?.refreshPhrases(); updateLyricsVisibility() }
     }
     var energyMode: EnergyMode = .adaptive {
         didSet { prefs.set(energyMode.rawValue, forKey: "energyMode"); policyChanged() }
@@ -352,12 +359,11 @@ final class StandbyModel {
         updateDisplayAssertion(); runtime?.refreshPhrases()
         if needsPlayback {
             if connected { refreshPlayback() } else { updateCue() }
-            if !lyricsSurfaceVisible { cueTimer?.invalidate(); cueTimer = nil; lyricsTask?.cancel(); lyricsTask = nil }
+            if !lyricsSurfaceVisible { stopLyricsUpdates() }
         } else {
             generation += 1
             recovery.invalidate(); isResynchronizing = !demoMode
-            cueTimer?.invalidate(); cueTimer = nil
-            lyricsTask?.cancel(); lyricsTask = nil
+            stopLyricsUpdates()
             artworkTask?.cancel(); artworkTask = nil
         }
     }
@@ -389,12 +395,14 @@ final class StandbyModel {
         generation += 1; connected = false; demoMode = false
         prefs.set(false, forKey: playbackSurface.enabledKey)
         pollTimer?.invalidate(); pollTimer = nil
+        retainedArtwork = nil
         clearTrack(); isResynchronizing = false; connectionStatus = "Música desconectada"
     }
     private func clearTrack() {
         lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = .empty; anchor = PlaybackAnchor(); artwork = nil; artworkLink = nil; palette = RGB.aurora
         playerArtworkURL = ""; activeSystemBundleID = ""; systemArtworkData = nil; systemProhibitsSkip = false
+        appliedSystemArtwork = nil
         lyricsAvailability = .idle; toastMessage = nil
         lyricsRetryAt = 0; artworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
@@ -464,35 +472,51 @@ final class StandbyModel {
         }
         // Never clear a valid song for a corrupt/incomplete playback sample.
         activePlayer = source; lastSurfacePlayers[playbackSurface] = source
-        playerArtworkURL = snapshot["artworkURL"] as? String ?? ""
         if changed {
             lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
             lyricsRetryAt = 0; artworkRetryAt = 0
             track = next; artwork = nil; artworkLink = nil
+            appliedSystemArtwork = nil
             toastTask?.cancel(); toastMessage = nil; lyricsAvailability = .idle
-            setPalette(RGB.fallback(for: next)); lines = []; activeLine = nil; lyricSource = ""
+            lyricStatus = "Buscando letra sincronizada…"; artworkStatus = ""
+            if let retainedArtwork, PlaybackRecovery.sameRecording(retainedArtwork.track, next),
+               retainedArtwork.track.sourceID == next.sourceID {
+                artwork = retainedArtwork.image; artworkLink = retainedArtwork.link
+                appliedSystemArtwork = retainedArtwork.systemData
+                setPalette(retainedArtwork.palette)
+            } else {
+                setPalette(RGB.fallback(for: next))
+            }
+            lines = []; activeLine = nil; lyricSource = ""
             playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
         }
         activeSystemBundleID = snapshot["systemBundleID"] as? String ?? ""
         systemProhibitsSkip = source == .system && ((snapshot["systemProhibitsSkip"] as? NSNumber)?.boolValue ?? false)
         let nextSystemArtwork = snapshot["systemArtwork"] as? Data
-        if source == .system && systemArtworkData != nextSystemArtwork {
-            artworkTask?.cancel(); artworkTask = nil; artwork = nil; artworkRetryAt = 0
+        let nextArtworkURL = snapshot["artworkURL"] as? String ?? ""
+        let newSystemArtwork = nextSystemArtwork.map { $0 != systemArtworkData } ?? false
+        let newArtworkURL = !nextArtworkURL.isEmpty && playerArtworkURL != nextArtworkURL
+        if (newSystemArtwork && nextSystemArtwork != appliedSystemArtwork) || (artwork == nil && newArtworkURL) {
+            artworkTask?.cancel(); artworkTask = nil; artworkRetryAt = 0
         }
-        systemArtworkData = nextSystemArtwork
+        playerArtworkURL = nextArtworkURL
+        if changed || nextSystemArtwork != nil { systemArtworkData = nextSystemArtwork }
         if let shuffle = snapshot["shuffle"] as? NSNumber, let repeated = snapshot["repeatMode"] as? NSNumber {
             shuffleEnabled = shuffle.boolValue; repeatMode = min(2, max(0, repeated.intValue)); playbackOptionsAvailable = true
         }
         let adjusted = changed ? position : PlaybackRecovery.reconciledPosition(position, sampleUptime: sample, previous: anchor, playing: playing)
-        anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing)
+        let reportedRate = (snapshot["playbackRate"] as? NSNumber)?.doubleValue ?? 1
+        let rate = SafePreference.number(reportedRate, range: 0...16, fallback: 1)
+        anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing, rate: rate)
         recovery.succeed(at: sample); isResynchronizing = false
         syncRoundTrip = (snapshot["roundTrip"] as? NSNumber)?.doubleValue ?? 0
         connectionStatus = activePlayer.name + (playing ? " · reproduciendo" : " · en pausa")
         // Missing resources recover without having to close and reopen the app. Cooldowns
         // prevent a failed or unavailable lyric from being requested on every playback tick.
         let now = ProcessInfo.processInfo.systemUptime
-        if lines.isEmpty && lyricsTask == nil && now >= lyricsRetryAt { fetchLyrics() }
-        if artwork == nil && artworkTask == nil && now >= artworkRetryAt { fetchArtwork() }
+        if lines.isEmpty && lyricsTask == nil && now >= lyricsRetryAt && lyricsSurfaceVisible { fetchLyrics() }
+        let needsSystemCover = systemArtworkData.map { $0 != appliedSystemArtwork } ?? false
+        if artworkTask == nil && now >= artworkRetryAt && (artwork == nil || needsSystemCover) { fetchArtwork() }
         updateCue()
     }
     private func schedulePoll() {
@@ -564,7 +588,7 @@ final class StandbyModel {
     func synchronizeNativeWidget(connectIfNeeded: Bool) async -> String {
         guard !LumaEnvironment.isTesting, !screenSleeping else { return "Oruvi está en reposo." }
         if !connected || demoMode {
-            guard connectIfNeeded else { return "Pulsa Conectar en el widget." }
+            guard connectIfNeeded else { return "Conecta el reproductor en los ajustes de Oruvi." }
             connectMusic()
         }
         guard connected, !demoMode else { return "Conecta el reproductor en Oruvi." }
@@ -614,25 +638,37 @@ final class StandbyModel {
             self.lyricsTask = nil
         }
     }
+    private func stopLyricsUpdates() {
+        cueTimer?.invalidate(); cueTimer = nil
+        if lyricsTask != nil { lyricsTask?.cancel(); lyricsTask = nil; lyricsRetryAt = 0 }
+    }
+    private func updateLyricsVisibility() {
+        guard started else { return }
+        guard lyricsSurfaceVisible else { stopLyricsUpdates(); return }
+        if lines.isEmpty && lyricsTask == nil && ProcessInfo.processInfo.systemUptime >= lyricsRetryAt { fetchLyrics() }
+        updateCue()
+    }
     func fetchArtwork() {
         artworkTask?.cancel(); artworkTask = nil
         guard !demoMode, hasTrack, connected, needsPlayback, !isResynchronizing else { return }
-        if activePlayer == .system {
-            let identity = track
-            artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
-            guard let data = systemArtworkData else { artworkStatus = "Esta app no publica portada"; return }
-            artworkTask = Task { [weak self] in
-                let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(data) }.value
-                guard !Task.isCancelled, let self, self.track == identity, self.needsPlayback else { return }
-                if let decoded { self.artwork = decoded.0; self.setPalette(decoded.1); self.artworkStatus = "Portada del reproductor" }
-                self.artworkTask = nil
-            }
-            return
-        }
         let identity = track, source = activePlayer, artworkURL = playerArtworkURL, allowNetwork = automaticArtwork
+        let embedded = systemArtworkData
         artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
         artworkStatus = "Recuperando portada…"
         artworkTask = Task { [weak self, artworkRepository] in
+            if let embedded {
+                let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(embedded) }.value
+                guard !Task.isCancelled, let self, self.track == identity, self.needsPlayback else { return }
+                self.appliedSystemArtwork = embedded
+                if let decoded {
+                    self.setArtwork(decoded, systemData: embedded)
+                    self.artworkStatus = "Portada del reproductor"; self.artworkTask = nil; return
+                }
+                if self.artwork != nil { self.artworkTask = nil; return }
+            }
+            if source == .system {
+                self?.artworkStatus = "Portada no disponible"; self?.artworkTask = nil; return
+            }
             for attempt in 0..<3 {
                 do { if attempt > 0 { try await Task.sleep(nanoseconds: attempt == 1 ? 2_000_000_000 : 12_000_000_000) }; try Task.checkCancellation() }
                 catch { return }
@@ -642,20 +678,20 @@ final class StandbyModel {
                         if let remote = try await artworkRepository.loadSpotify(artworkURL) {
                             let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(remote.data) }.value
                             guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
-                            if let decoded { self.artwork = decoded.0; self.setPalette(decoded.1); self.artworkStatus = "Portada de Spotify"; self.artworkTask = nil; return }
+                            if let decoded { self.setArtwork(decoded); self.artworkStatus = "Portada de Spotify"; self.artworkTask = nil; return }
                         }
                     } catch { if Task.isCancelled { return } }
                     continue
                 }
                 let local: (NSImage, [RGB])? = await withCheckedContinuation { continuation in
                     self.artworkQueue.async {
-                        let result = LumaReadMusicArtwork(identity.id, identity.title).flatMap(Self.decodeArtwork)
+                        let result = LumaReadMusicArtwork(identity.id, identity.title, identity.album).flatMap(Self.decodeArtwork)
                         continuation.resume(returning: result)
                     }
                 }
                 guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
                 if let local {
-                    self.artwork = local.0; self.setPalette(local.1); self.artworkStatus = "Portada de Música"; self.artworkTask = nil; return
+                    self.setArtwork(local); self.artworkStatus = "Portada de Música"; self.artworkTask = nil; return
                 }
                 if attempt >= 1 && allowNetwork {
                     do {
@@ -663,7 +699,7 @@ final class StandbyModel {
                             let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(remote.data) }.value
                             guard !Task.isCancelled, self.track == identity, self.needsPlayback, self.automaticArtwork else { return }
                             if let decoded {
-                                self.artwork = decoded.0; self.artworkLink = remote.link; self.setPalette(decoded.1)
+                                self.setArtwork(decoded, link: remote.link)
                                 self.artworkStatus = "Portada · catálogo Apple"; self.artworkTask = nil; return
                             }
                         }
@@ -675,46 +711,56 @@ final class StandbyModel {
             self.artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60; self.artworkTask = nil
         }
     }
+    private func setArtwork(_ decoded: (NSImage, [RGB]), link: URL? = nil, systemData: Data? = nil) {
+        artwork = decoded.0; artworkLink = link
+        setPalette(decoded.1)
+        retainedArtwork = (track, decoded.0, decoded.1, link, systemData)
+    }
     private func setPalette(_ value: [RGB]) {
         palette = value // Interpolate only the mesh, not every view in the application.
     }
     private func updateCue() {
         cueTimer?.invalidate(); cueTimer = nil
         guard lyricsSurfaceVisible, !isResynchronizing else { return }
-        let position = anchor.value(at: ProcessInfo.processInfo.systemUptime) + lyricOffset
+        let now = ProcessInfo.processInfo.systemUptime
+        let position = anchor.value(at: now) + lyricOffset
         let index = LRCParser.index(at: position, in: lines)
         if activeLine != index { activeLine = index }
-        guard anchor.playing, !lines.isEmpty else { return }
         let next = (index ?? -1) + 1
-        guard next < lines.count else { return }
-        let timer = Timer(timeInterval: max(0.012, lines[next].time - position), repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.updateCue() } }
+        guard next < lines.count, let delay = anchor.delay(until: lines[next].time - lyricOffset, at: now) else { return }
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.updateCue() } }
         timer.tolerance = 0.012; cueTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func importLRC() {
         guard hasTrack, let window = mainWindow else { return }
+        let identity = track
         if settingsOpen || window.attachedSheet != nil {
             settingsOpen = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                guard let self, self.mainWindow?.attachedSheet == nil else { return }
+                guard let self, self.track == identity, self.mainWindow?.attachedSheet == nil else { return }
                 self.importLRC()
             }
             return
         }
-        let identity = track, panel = NSOpenPanel()
+        let panel = NSOpenPanel()
         panel.title = "Importar letra sincronizada para \(identity.title)"
         panel.allowedContentTypes = [.plainText, .data]; panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
-            self.lyricsTask?.cancel(); self.lyricsTask = nil
             Task {
                 let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
                 do {
-                    let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
-                    guard size <= LRCParser.maximumBytes else { throw NSError(domain: "Luma", code: 2, userInfo: [NSLocalizedDescriptionKey: "El límite es 512 KB por archivo LRC."]) }
-                    let payload = try await self.repository.importLocal(String(contentsOf: url, encoding: .utf8), for: identity)
+                    let file = try FileHandle(forReadingFrom: url)
+                    defer { try? file.close() }
+                    let data = try file.read(upToCount: LRCParser.maximumBytes + 1) ?? Data()
+                    guard data.count <= LRCParser.maximumBytes else { throw NSError(domain: "Luma", code: 2, userInfo: [NSLocalizedDescriptionKey: "El límite es 512 KB por archivo LRC."]) }
+                    let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16)
+                    let payload = try await self.repository.importLocal(text ?? "", for: identity)
                     guard self.track == identity else { return }
-                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue()
-                } catch { self.lyricStatus = error.localizedDescription }
+                    self.lyricsTask?.cancel(); self.lyricsTask = nil
+                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""
+                    self.musicShowsLyrics = true
+                } catch { self.showToast(error.localizedDescription) }
             }
         }
     }
@@ -727,9 +773,7 @@ final class StandbyModel {
         if started { policyChanged() }
     }
     func toggleLyrics() {
-        if visibleLyrics { musicShowsLyrics = false; return }
-        guard !lines.isEmpty else { showToast(lyricsAvailability.notification); return }
-        musicShowsLyrics = true
+        musicShowsLyrics.toggle()
     }
     func showToast(_ text: String) {
         toastTask?.cancel(); toastMessage = text
@@ -753,19 +797,31 @@ final class StandbyModel {
     func advancePhrase() {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.7)) { phraseIndex = MotivationalPhrases.next(after: phraseIndex, random: Int.random(in: 0...Int.max)) }
     }
-    func openMusic() {
+    func openMusic(source requestedSource: PlayerSource? = nil) {
         // Capture the source BEFORE dismissing Standby changes the active surface.
-        let source = effectivePlayerPreference.source ?? activePlayer
+        let source = requestedSource ?? effectivePlayerPreference.source ?? activePlayer
         let bundleID = source == .system ? activeSystemBundleID : source.rawValue
-        if !connected && !demoMode { connectMusic() }
+        if requestedSource == nil && !connected && !demoMode { connectMusic() }
         notch?.collapse(); runtime?.dismiss()
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             connectionStatus = source.name + " no está instalado."; return
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, error in
-            DispatchQueue.main.async { if error != nil { self?.connectionStatus = "No se pudo abrir " + source.name + "." } }
+        if NSApp.isActive { NSApp.yieldActivation(toApplicationWithBundleIdentifier: bundleID) }
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] app, error in
+            DispatchQueue.main.async {
+                if error != nil {
+                    self?.connectionStatus = "No se pudo abrir " + source.name + "."
+                } else if let app {
+                    if NSApp.isActive {
+                        NSApp.yieldActivation(to: app)
+                        app.activate(from: .current, options: [.activateAllWindows])
+                    } else {
+                        app.activate(options: [.activateAllWindows])
+                    }
+                }
+            }
         }
     }
     func useDemo() {

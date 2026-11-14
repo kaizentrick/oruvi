@@ -42,7 +42,7 @@ struct StandbyView: View {
             let compact = geometry.size.height < 710
             ZStack {
                 SmoothMesh(palette: model.meshPalette, framesPerSecond: model.policy.framesPerSecond, light: scheme == .light)
-                    .animation(model.reduceMotion ? nil : .easeInOut(duration: 1.2), value: model.meshPalette)
+                    .animation(model.policy.framesPerSecond > 0 ? .easeOut(duration: 0.28) : nil, value: model.meshPalette)
                 VStack(spacing: 0) {
                     topBar
                     Spacer(minLength: compact ? 12 : 26)
@@ -90,8 +90,8 @@ struct StandbyView: View {
                     VStack(alignment: .leading, spacing: compact ? 16 : 26) {
                         if model.hasTrack {
                             TrackHeading(model: model, compact: compact)
-                            if !model.lines.isEmpty { LyricsStage(model: model, compact: compact) }
-                            else { LyricsVisibilityButton(model: model) }
+                            LyricsVisibilityButton(model: model)
+                            if model.visibleLyrics { LyricsStage(model: model, compact: compact) }
                         }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.frame(maxWidth: 1240, maxHeight: .infinity)
@@ -225,18 +225,19 @@ struct LyricsStage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 12 : 19) {
             if model.isResynchronizing && !model.demoMode && model.hasTrack {
-                ProgressView().controlSize(.small).accessibilityLabel("Sincronizando canción")
+                ProgressView("Sincronizando canción…").controlSize(.small)
                     .frame(height: compact ? 180 : 230)
             } else if model.lines.isEmpty {
-                Text(model.hasTrack ? model.lyricStatus : "Abre Música para empezar.")
-                    .font(.system(size: 14)).lineSpacing(5).opacity(0.72).fixedSize(horizontal: false, vertical: true)
-                if model.hasTrack && !model.demoMode {
-                    HStack(spacing: 15) {
-                        if !model.automaticLyrics {
-                            Button("Activar letras") { model.settingsOpen = true }.buttonStyle(.glass)
-                        }
-                        Button("Importar .lrc") { model.importLRC() }.buttonStyle(.plain).opacity(0.65)
-                    }.padding(.top, 8)
+                if model.lyricsAvailability == .loading {
+                    ProgressView(model.lyricStatus).controlSize(.small)
+                } else {
+                    Text(model.lyricStatus)
+                        .font(.system(size: 14)).lineSpacing(5).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { lyricActions }
+                        VStack(alignment: .leading, spacing: 8) { lyricActions }
+                    }
                 }
             } else {
                 let index = model.activeLine ?? -1
@@ -244,7 +245,7 @@ struct LyricsStage: View {
                     cue(index - 1, prominence: 0.48, size: 19)
                         .frame(height: 45, alignment: .bottomLeading)
                 }
-                Text(index >= 0 && index < model.lines.count && !model.lines[index].text.isEmpty ? model.lines[index].text : "♪")
+                Text(model.currentLyricText ?? "♪")
                 .font(model.contentTypeface.font(size: compact ? 29 : (model.layout == .listening ? 39 : 36), emphasized: true))
                 .tracking(-0.6).lineSpacing(3).lineLimit(4).minimumScaleFactor(0.65)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -258,12 +259,22 @@ struct LyricsStage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // Stable row heights prevent adjacent cues from shifting the entire player.
     }
+    @ViewBuilder private var lyricActions: some View {
+        if model.lyricsAvailability == .offline {
+            Button("Reintentar") { model.fetchLyrics() }.buttonStyle(.glass)
+        }
+        if model.lyricsAvailability == .disabled {
+            Button("Activar letras") { model.automaticLyrics = true }.buttonStyle(.glass)
+        }
+        Button("Importar .lrc") { model.importLRC() }.buttonStyle(.borderless)
+    }
     @ViewBuilder private func cue(_ index: Int, prominence: Double, size: Double) -> some View {
         if index >= 0 && index < model.lines.count {
             Button { model.control("seek", position: max(0, model.lines[index].time - model.lyricOffset)) } label: {
                 Text(model.lines[index].text.isEmpty ? "♪" : model.lines[index].text)
                     .font(model.contentTypeface.font(size: size)).lineLimit(2).multilineTextAlignment(.leading).opacity(prominence)
             }.buttonStyle(.plain).help("Ir a este momento de la canción")
+                .disabled(model.track.duration <= 0 || model.isResynchronizing)
         } else { Text(" ").font(.system(size: size)) }
     }
 }

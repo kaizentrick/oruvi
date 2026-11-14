@@ -13,6 +13,10 @@ import Foundation
         snapshot.state = .ready; snapshot.trackID = "test"; snapshot.session = "test-session"
         snapshot.sourceID = "com.apple.Music"; snapshot.playing = true
         check(snapshot.canControl, "Connected content enables playback")
+        snapshot.sourceName = "Automático · Apple Music"
+        let legacy = try JSONDecoder().decode(WidgetSnapshot.self, from: JSONEncoder().encode(snapshot))
+        check(legacy.artworkPalette == nil && legacy.displaySourceName == "Apple Music", "Old snapshots need no palette and still show only the provider")
+        snapshot.sourceName = "Apple Music"
         for state in [WidgetPlaybackState.closed, .disconnected, .sleeping, .idle] {
             var value = snapshot; value.state = state
             check(!value.canControl, "Non-ready state disables controls")
@@ -27,6 +31,10 @@ import Foundation
         check(!value.isValid(at: now), "Bound metadata length")
         value = snapshot; value.artwork = Data(repeating: 1, count: WidgetSnapshot.maximumArtworkBytes + 1)
         check(!value.isValid(at: now), "Bound artwork memory")
+        value = snapshot; value.artworkPalette = [0, 0xFFFFFF]
+        check(!value.isValid(at: now), "Require four palette colors")
+        value.artworkPalette = [0, 0, 0, 0x1000000]
+        check(!value.isValid(at: now), "Reject colors outside 24-bit RGB")
         value = snapshot; value.schema = 2
         check(!value.isValid(at: now), "Reject unknown schema")
         value = snapshot; value.generatedAt = now.addingTimeInterval(10)
@@ -48,8 +56,9 @@ import Foundation
         try store.write(snapshot)
         check(store.read(at: now) == snapshot, "Atomic metadata and cover roundtrip")
         value = snapshot; value.artwork = Data([1,2,3]); value.title = "🎵 Música · 中文"
+        value.artworkPalette = [0xFF0000, 0x00FF00, 0x0000FF, 0xFFFFFF]
         try store.write(value)
-        check(store.read(at: now) == value, "Unicode and artwork roundtrip")
+        check(store.read(at: now) == value, "Unicode, artwork and palette roundtrip")
         check(store.read(at: now.addingTimeInterval(3601)) == nil, "Stale cache not exposed")
         try Data("invalid json".utf8).write(to: store.file!)
         check(store.read() == nil, "Corrupt state cannot crash extension")
@@ -57,7 +66,12 @@ import Foundation
         check(store.read() == nil, "Oversized file rejected before decode")
         store.clear(); check(store.read() == nil, "Disconnect removes presentation")
         check(WidgetSnapshotStore(directory: nil).read() == nil, "Unavailable group degrades safely")
-        check(OruviWidgetIdentity.standbyURL.scheme == "oruvi" && OruviWidgetIdentity.standbyURL.host == "standby", "Standby deep link")
+        check(OruviWidgetRoute(url: OruviWidgetIdentity.standbyURL) == .standby, "Corner button opens Standby")
+        check(OruviWidgetRoute(url: OruviWidgetIdentity.playerURL) == .player, "Widget body opens the player")
+        check(OruviWidgetRoute(url: OruviWidgetIdentity.musicURL) == .music, "Widget can open Apple Music directly")
+        check(OruviWidgetRoute(url: OruviWidgetIdentity.spotifyURL) == .spotify, "Widget can open Spotify directly")
+        check(OruviWidgetRoute(url: OruviWidgetIdentity.settingsURL) == .widgets, "Archived widget links still open settings")
+        check(OruviWidgetRoute(url: URL(string: "oruvi://player?command=next")!) == nil, "Widget routes only accept navigation")
         print("PASS: \(count) native widget snapshot, privacy, bounds and publication checks.")
     }
 }

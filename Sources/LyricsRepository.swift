@@ -40,14 +40,14 @@ actor LyricsRepository {
     private func read(_ url: URL, maxAge: TimeInterval? = nil) -> LyricsPayload? {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 1_000_000,
               let data = try? Data(contentsOf: url), let payload = try? JSONDecoder().decode(LyricsPayload.self, from: data),
-              !payload.lines.isEmpty, payload.lines.allSatisfy({ $0.time.isFinite && $0.time >= 0 }),
+              payload.lines.contains(where: { !$0.text.isEmpty }), payload.lines.allSatisfy({ $0.time.isFinite && $0.time >= 0 }),
               zip(payload.lines, payload.lines.dropFirst()).allSatisfy({ $0.time <= $1.time }) else { return nil }
         if let maxAge, Date().timeIntervalSince(payload.savedAt) > maxAge { return nil }
         return payload
     }
     func importLocal(_ source: String, for track: TrackIdentity) throws -> LyricsPayload {
         let lines = LRCParser.parse(source)
-        guard !lines.isEmpty else {
+        guard lines.contains(where: { !$0.text.isEmpty }) else {
             throw NSError(domain: "LumaStandby", code: 1, userInfo: [NSLocalizedDescriptionKey: "El archivo no contiene tiempos LRC válidos o supera 512 KB."])
         }
         let payload = LyricsPayload(lines: lines, source: "LRC local · por línea", savedAt: Date())
@@ -123,7 +123,8 @@ actor LyricsRepository {
     }
     private func payload(_ record: RemoteLyrics) -> LyricsPayload? {
         let lines = LRCParser.parse(record.syncedLyrics ?? "")
-        return lines.isEmpty ? nil : LyricsPayload(lines: lines, source: "LRCLIB · sincronización por línea", savedAt: Date())
+        guard lines.contains(where: { !$0.text.isEmpty }) else { return nil }
+        return LyricsPayload(lines: lines, source: "LRCLIB · sincronización por línea", savedAt: Date())
     }
     private func save(_ payload: LyricsPayload, name: String) {
         if let data = try? JSONEncoder().encode(payload), data.count <= 1_000_000 {

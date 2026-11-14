@@ -12,12 +12,12 @@ import Foundation
         check(WidgetSnapshotStore(directory:nil).load() == .unavailable, "Container failure is not a closed app")
         for result in [WidgetSnapshotRead.missing, .unavailable, .invalid, .expired] {
             let value = result.presentation(at:now)
-            check(value.canRefresh && !value.canControl, "Every failed read has safe recovery, never fictitious transport")
+            check(!value.canControl, "Failed reads cannot enable playback controls")
             check(value.artwork == nil && value.trackID.isEmpty, "Failed reads do not leak stale artwork or identities")
         }
         check(WidgetSnapshotRead.unavailable.presentation().state == .unavailable, "Permission failures exposed")
         var value = WidgetSnapshot(); value.state = .sleeping
-        check(!value.canRefresh, "No widget command during sleep")
+        check(!value.canControl, "No widget playback controls during sleep")
         value = WidgetSnapshot(); value.state = .ready; value.session = "test"; value.trackID = "test"
         value.generatedAt = now.addingTimeInterval(-3599)
         check(WidgetTimelinePolicy.expiry(of: value, at: now)!.timeIntervalSince(now) < 2, "Nearly expired media is not prolonged five more minutes")

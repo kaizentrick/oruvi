@@ -7,6 +7,9 @@ enum OruviWidgetIdentity {
     static let appGroup = "group.com.kaizentrick.Oruvi"
     static let requested = "com.kaizentrick.Oruvi.widget.requested"
     static let standbyURL = URL(string: "oruvi://standby")!
+    static let playerURL = URL(string: "oruvi://player")!
+    static let musicURL = URL(string: "oruvi://player/music")!
+    static let spotifyURL = URL(string: "oruvi://player/spotify")!
     static let settingsURL = URL(string: "oruvi://widgets")!
 }
 
@@ -25,24 +28,30 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     var sourceID = ""
     var preference = "automatic"
     var title = "Conectar Oruvi"
-    var artist = "Pulsa Conectar para actualizar la música."
-    var sourceName = "Automático"
+    var artist = "Conecta el reproductor en los ajustes de Oruvi."
+    var sourceName = ""
     var playing = false
     var canSkip = true
     var artwork: Data?
+    var artworkPalette: [UInt32]?
     var message = ""
     static let maximumArtworkBytes = 256 * 1024
     static let maximumFileBytes = 512 * 1024
     static let maximumAge: TimeInterval = 3600
 
     var canControl: Bool { state == .ready && !trackID.isEmpty && !session.isEmpty }
-    var canRefresh: Bool { state != .sleeping }
+    var displaySourceName: String {
+        let legacyPrefix = "Automático · "
+        guard state == .ready, sourceName != "Automático" else { return "" }
+        return sourceName.hasPrefix(legacyPrefix) ? String(sourceName.dropFirst(legacyPrefix.count)) : sourceName
+    }
     func isValid(at now: Date) -> Bool {
         schema == 1 && generatedAt.timeIntervalSince1970.isFinite &&
         now.timeIntervalSince(generatedAt) >= -60 && now.timeIntervalSince(generatedAt) <= Self.maximumAge &&
         ["automatic", "music", "spotify"].contains(preference) &&
         [session, trackID, sourceID, title, artist, sourceName, message].allSatisfy { $0.utf8.count <= 4096 } &&
-        (artwork?.count ?? 0) <= Self.maximumArtworkBytes
+        (artwork?.count ?? 0) <= Self.maximumArtworkBytes &&
+        (artworkPalette.map { $0.count == 4 && $0.allSatisfy { $0 <= 0xFFFFFF } } ?? true)
     }
     func samePresentation(as other: Self) -> Bool {
         var lhs = self, rhs = other
@@ -50,7 +59,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         return lhs == rhs
     }
     static func placeholder(at date: Date = Date()) -> Self {
-        var value = Self(); value.generatedAt = date; value.title = "Tu música"; value.artist = "Portada y controles"; value.sourceName = "Oruvi"
+        var value = Self(); value.generatedAt = date; value.title = "Tu música"; value.artist = "Portada y controles"
         return value
     }
 }
@@ -66,11 +75,11 @@ enum WidgetSnapshotRead: Equatable, Sendable {
             value.state = .unavailable; value.title = "Revisa el acceso de Oruvi"
             value.artist = "Abre los ajustes de Oruvi para revisar los datos compartidos."
         case .invalid:
-            value.state = .unavailable; value.title = "Actualizar Oruvi"
-            value.artist = "No se pudo leer el estado. Pulsa Actualizar."
+            value.state = .unavailable; value.title = "Reproducción no disponible"
+            value.artist = "Revisa la conexión en los ajustes de Oruvi."
         case .expired:
-            value.state = .stale; value.title = "Actualizar reproducción"
-            value.artist = "Pulsa Actualizar para recuperar el contenido actual."
+            value.state = .stale; value.title = "Esperando a Oruvi"
+            value.artist = "Abre Oruvi para recuperar la reproducción."
         default: break
         }
         return value
@@ -149,7 +158,7 @@ enum WidgetTimelinePolicy {
     /// A timeline must retire private media exactly when its snapshot expires.
     /// Missing/denied/idle presentations keep their actionable explanation.
     static func expiry(of snapshot: WidgetSnapshot, at now: Date) -> Date? {
-        guard snapshot.state == .ready, snapshot.isValid(at: now) else { return nil }
+        guard (snapshot.state == .ready || snapshot.artwork != nil), snapshot.isValid(at: now) else { return nil }
         return snapshot.generatedAt.addingTimeInterval(WidgetSnapshot.maximumAge + 0.01)
     }
 }

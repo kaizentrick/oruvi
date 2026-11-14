@@ -64,7 +64,7 @@ struct SystemMediaSnapshot: Equatable, Sendable {
         let position = duration > 0 ? min(duration, elapsed + delta) : elapsed + delta
         var value: [String: Any] = ["status": "ok", "source": "oruvi.system", "id": id, "title": title,
                 "artist": artist, "album": album, "duration": duration,
-                "position": position, "sampleUptime": uptime, "playing": playing,
+                "position": position, "sampleUptime": uptime, "playing": playing, "playbackRate": rate,
                 "systemBundleID": bundleID, "systemProhibitsSkip": prohibitsSkip]
         if let artwork { value["systemArtwork"] = artwork }
         return value

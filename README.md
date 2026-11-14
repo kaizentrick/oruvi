@@ -76,7 +76,7 @@ Incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un ico
 
 El widget no está ejecutándose continuamente: WidgetKit representa instantáneas y decide sus refrescos. Oruvi solicita actualización al cambiar el contenido, agrupa ráfagas y no escribe por cada segundo de progreso. No se garantiza portada instantánea en cada cambio; los controles validan sesión, pista y selección antes de actuar sobre un estado atrasado.
 
-Para compartir datos entre procesos se conserva **una instantánea local**, sin historial, en la caché del App Group: estado, metadatos actuales y miniatura JPEG de hasta 192 píxeles. Se sobrescribe de forma atómica, se elimina al cerrar Oruvi o retirar el último widget y tiene caducidad. WidgetKit también administra sus propias representaciones. No se envían los títulos de vídeos/navegadores a catálogos de música ni servicios de letras. La extensión no tiene permisos de red, Apple Events, cámara o micrófono.
+Para compartir datos entre procesos se conserva una instantánea local en la caché del App Group. Incluye el estado, los metadatos actuales, una miniatura JPEG de hasta 192 píxeles y su paleta. Si se detiene Apple Music o Spotify, el widget conserva la última portada disponible con el mensaje «Nada en reproducción». El archivo se sobrescribe de forma atómica, caduca y se elimina al cerrar Oruvi. WidgetKit también administra sus propias representaciones. La extensión no tiene permisos de red, Apple Events, cámara o micrófono.
 
 En **Ajustes → Widgets nativos de macOS** se muestran instrucciones y detección de widgets añadidos. La distribución actual sigue siendo ad-hoc, no notarizada: macOS puede solicitar acceso a datos compartidos o bloquear componentes según sus políticas. La validación del runner no reemplaza comprobar la galería en una instalación normal. No desactives SIP o Gatekeeper. Detalles de firma y diagnóstico en [Resources/MEDIA.md](Resources/MEDIA.md).
 
@@ -98,7 +98,7 @@ Standby conserva Reloj, Música y Reloj + música a pantalla completa. Oculta el
 
 El selector de Standby está en Música y en la barra superior de las otras dos vistas; Ajustes permite cambiar ambos selectores. La portada abre el reproductor mostrado: el destino se captura antes de abandonar la presentación y volver a la preferencia del notch.
 
-Las letras proceden de **LRCLIB o tus archivos LRC**, no son las letras oficiales de Apple o Spotify. Se sincronizan por línea; la disponibilidad depende de la grabación. Sin letra no se reserva un panel vacío y el botón informa del estado temporalmente. Carga, desconexión y letras desactivadas tienen estados distintos.
+Las letras de LRCLIB y de tus archivos LRC se sincronizan por línea. La disponibilidad depende de la grabación. Abre Letras para ver el estado de la búsqueda, reintentar si falla o importar un LRC propio.
 
 La malla Aurora tiene alternativas Atardecer y Medianoche, con adaptación a la portada e interpolación de color independiente de los controles. Una respuesta de portada antigua no cambia la canción nueva. Las imágenes de Spotify se descargan únicamente desde dominios permitidos de la URL suministrada por la app, sin sustituirlas por otro catálogo ni guardarlas en la caché persistente.
 
@@ -149,4 +149,4 @@ La licencia propia no transfiere derechos sobre letras, música, imágenes, tipo
 
 Desde 0.12.0, actualizar desde Ajustes solicita también la recarga del widget. La renovación periódica mantiene vigente su timeline aunque la canción siga pausada. Los errores de acceso conservan su explicación y el contenido caduca en su plazo real.
 
-Si el widget no recibe datos, pulsa **Conectar** o la **flecha circular**: recupera la selección actual sin iniciar reproducción. También está en **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. No es necesario eliminar y volver a añadir los widgets. Si aparece un aviso de datos compartidos, autoriza Oruvi; una denegación se informa, no se oculta como si la app estuviera cerrada. La firma ad-hoc conserva las limitaciones de autorización de App Groups descritas en `Resources/MEDIA.md`.
+Si el widget no recibe datos, abre **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. Si aparece un aviso de datos compartidos, autoriza Oruvi. Los detalles de autorización están en [Resources/MEDIA.md](Resources/MEDIA.md).

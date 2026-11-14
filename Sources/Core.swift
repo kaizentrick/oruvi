@@ -63,10 +63,16 @@ struct PlaybackAnchor: Equatable, Sendable {
     var uptime: Double = 0
     var duration: Double = 0
     var playing = false
+    var rate: Double = 1
     func value(at now: Double) -> Double {
-        let elapsed = playing ? max(0, now - uptime) : 0
+        let elapsed = playing ? max(0, now - uptime) * rate : 0
         let value = max(0, position + elapsed)
         return duration > 0 ? min(duration, value) : value
+    }
+    func delay(until position: Double, at now: Double) -> TimeInterval? {
+        guard playing, rate > 0, duration <= 0 || position <= duration else { return nil }
+        let delay = (position - value(at: now)) / rate
+        return delay.isFinite ? max(0.012, delay) : nil
     }
 }
 

@@ -199,11 +199,6 @@ struct NotchView: View {
             else { Text(title) }
         }
     }
-    private var currentLyricLine: String? {
-        guard model.hasTrack, let index = model.activeLine, index >= 0, index < model.lines.count else { return nil }
-        let text = model.lines[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
-    }
     private var music: some View {
         VStack(spacing: 6) {
             HStack(spacing: 12) {
@@ -219,7 +214,7 @@ struct NotchView: View {
                         .help(model.hasTrack ? model.track.title : model.connectionStatus)
                     Text(model.hasTrack ? model.track.artist : (model.connected ? model.connectionStatus : "Ahora suena · Music · Spotify"))
                         .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
-                    if let lyric = currentLyricLine {
+                    if let lyric = model.currentLyricText {
                         Text("♪ " + lyric)
                             .font(.system(size: 10, weight: .medium)).italic()
                             .foregroundStyle(.white.opacity(0.82)).lineLimit(1)

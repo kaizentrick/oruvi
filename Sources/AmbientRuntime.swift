@@ -71,7 +71,6 @@ final class AmbientRuntime {
         NSApp.activate()
         applySystemPresentation()
         model.refreshVisibility()
-        model.refreshPlayback()
         refreshPhrases()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, self.presentationSerial == serial, self.window.isVisible, !self.isBlocked else { return }
