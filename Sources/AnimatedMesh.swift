@@ -12,25 +12,56 @@ struct AnimatedMesh: NSViewRepresentable {
 
     func makeCoordinator() -> Renderer { Renderer(resources: resources) }
 
-    func makeNSView(context: Context) -> MTKView {
-        let view = MTKView(frame: .zero, device: resources.device)
+    func makeNSView(context: Context) -> MeshView {
+        let view = MeshView(frame: .zero, device: resources.device)
         view.colorPixelFormat = .bgra8Unorm
         view.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         view.framebufferOnly = true
+        view.isPaused = true
         context.coordinator.setPalette(palette)
-        view.preferredFramesPerSecond = framesPerSecond
         view.delegate = context.coordinator
+        view.setFrameRate(framesPerSecond)
         return view
     }
 
-    func updateNSView(_ view: MTKView, context: Context) {
+    func updateNSView(_ view: MeshView, context: Context) {
         context.coordinator.setPalette(palette)
-        if view.preferredFramesPerSecond != framesPerSecond { view.preferredFramesPerSecond = framesPerSecond }
+        view.setFrameRate(framesPerSecond)
     }
 
-    static func dismantleNSView(_ view: MTKView, coordinator: Renderer) {
-        view.isPaused = true
+    static func dismantleNSView(_ view: MeshView, coordinator: Renderer) {
+        view.setFrameRate(0)
         view.delegate = nil
+    }
+
+    final class MeshView: MTKView {
+        private var frameRate = 0
+        private var drawingTimer: Timer?
+
+        func setFrameRate(_ value: Int) {
+            guard frameRate != value else { return }
+            frameRate = value
+            updateDrawingTimer()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            updateDrawingTimer()
+        }
+
+        private func updateDrawingTimer() {
+            drawingTimer?.invalidate()
+            drawingTimer = nil
+            guard window != nil, frameRate > 0 else { return }
+            // Drive the requested cadence even when it does not divide the
+            // display refresh rate. MetalKit otherwise rounds 24 fps down on 60 Hz.
+            let timer = Timer(timeInterval: 1 / Double(frameRate), repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.draw() }
+            }
+            timer.tolerance = 0.001
+            drawingTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
 
     final class Resources {
