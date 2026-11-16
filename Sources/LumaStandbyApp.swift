@@ -91,13 +91,10 @@ struct StandbyView: View {
                 HStack(alignment: .center, spacing: layout.gap) {
                     EditorialClock(model: model, compact: compact)
                         .frame(width: layout.clockWidth)
-                    VStack(alignment: .leading, spacing: compact ? 16 : 26) {
-                        if model.hasTrack {
-                            TrackHeading(model: model, compact: compact)
-                            TransportBar(model: model).frame(maxWidth: 500)
-                            LyricsVisibilityButton(model: model)
-                            if model.visibleLyrics { LyricsStage(model: model, compact: compact) }
-                        } else { connectBar }
+                    ViewThatFits(in: .vertical) {
+                        editorialPlayer(compact: compact)
+                            .fixedSize(horizontal: false, vertical: true)
+                        editorialPlayer(compact: compact, scrollLyrics: true)
                     }
                     .frame(width: layout.musicWidth, alignment: .leading)
                     .frame(maxHeight: .infinity, alignment: .leading)
@@ -105,6 +102,30 @@ struct StandbyView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+    private func editorialPlayer(compact: Bool, scrollLyrics: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 16 : 26) {
+            if model.hasTrack {
+                TrackHeading(model: model, compact: compact)
+                    .fixedSize(horizontal: false, vertical: true)
+                TransportBar(model: model).frame(maxWidth: 500)
+                    .fixedSize(horizontal: false, vertical: true)
+                LyricsVisibilityButton(model: model)
+                if model.visibleLyrics {
+                    if scrollLyrics {
+                        ScrollView {
+                            LyricsStage(model: model, compact: compact)
+                        }
+                        .accessibilityIdentifier("standby.editorial.lyricsScroll")
+                    } else {
+                        LyricsStage(model: model, compact: compact)
+                    }
+                }
+            } else {
+                connectBar
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     private var topBar: some View {
         HStack(spacing: 10) {
