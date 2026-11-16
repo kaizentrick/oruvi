@@ -45,7 +45,7 @@ final class AmbientRuntime {
         }
     }
     func activate(automatic: Bool = false) {
-        guard !stopped, !isBlocked else { return }
+        guard !stopped, !isBlocked, !window.isVisible else { return }
         // Recheck after any asynchronous media query. Never cover a file chooser,
         // an AirDrop recipient picker or an agenda permission prompt automatically.
         if automatic && model.notch?.preventsAutomaticStandby == true { rescheduleIdle(); return }

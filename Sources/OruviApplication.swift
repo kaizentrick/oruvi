@@ -63,10 +63,12 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     private func claimApplicationInstance() -> Bool {
         guard !LumaEnvironment.isTesting else { return true }
         let current = NSRunningApplication.current
-        let peers = NSRunningApplication.runningApplications(withBundleIdentifier: OruviRelease.bundleID)
-            .filter { $0.processIdentifier != current.processIdentifier && !$0.isTerminated }
+        func peers() -> [NSRunningApplication] {
+            NSRunningApplication.runningApplications(withBundleIdentifier: OruviRelease.bundleID)
+                .filter { $0.processIdentifier != current.processIdentifier && !$0.isTerminated }
+        }
         // Older releases use Launch Services alone. Prefer a copy that was already open.
-        if let existing = peers.first(where: { $0.isFinishedLaunching && Self.launchedBefore($0, current) }) {
+        if let existing = peers().first(where: { $0.isFinishedLaunching && Self.launchedBefore($0, current) }) {
             existing.activate(options: [.activateAllWindows])
             return false
         }
@@ -74,14 +76,15 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         do {
             instanceLock = try ApplicationInstanceLock.acquire(at: file)
         } catch {
-            // A storage error should leave the app usable with Launch Services arbitration.
-            return true
+            // Keep a single incumbent even if the support directory is unavailable.
+            guard let earlier = peers().filter({ Self.launchedBefore($0, current) }).min(by: Self.launchedBefore) else {
+                return true
+            }
+            if earlier.isFinishedLaunching { earlier.activate(options: [.activateAllWindows]) }
+            return false
         }
         if instanceLock != nil { return true }
-        NSRunningApplication.runningApplications(withBundleIdentifier: OruviRelease.bundleID)
-            .filter { $0.processIdentifier != current.processIdentifier && !$0.isTerminated }
-            .min(by: Self.launchedBefore)?
-            .activate(options: [.activateAllWindows])
+        peers().min(by: Self.launchedBefore)?.activate(options: [.activateAllWindows])
         return false
     }
     private static func launchedBefore(_ lhs: NSRunningApplication, _ rhs: NSRunningApplication) -> Bool {
