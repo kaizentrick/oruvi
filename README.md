@@ -162,8 +162,6 @@ Se conservan las pruebas de lógica existentes y las matrices de selección auto
 
 Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop, la sensación física del trackpad ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se afirman benchmarks nuevos; la compilación y las pruebas no sustituyen verificar los permisos y la galería en cada instalación.
 
-</details>
-
 ## Licencia y atribución
 
 El código de Oruvi se distribuye bajo la **MIT estándar**, con copyright de KaizenTrick. Permite usar, copiar, modificar y redistribuir, incluso comercialmente, conservando el aviso de copyright y la licencia en copias o porciones sustanciales. No es una prohibición de reutilización del código. El archivo completo se incluye en el repositorio, dentro de la app y en el DMG.
@@ -175,3 +173,5 @@ La licencia propia no transfiere derechos sobre letras, música, imágenes, tipo
 Desde 0.12.0, actualizar desde Ajustes solicita también la recarga del widget. La renovación periódica mantiene vigente su timeline aunque la canción siga pausada. Los errores de acceso conservan su explicación y el contenido caduca en su plazo real.
 
 Si el widget no recibe datos, abre **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. Si aparece un aviso de datos compartidos, autoriza Oruvi. Los detalles de autorización están en [Resources/MEDIA.md](Resources/MEDIA.md).
+
+</details>
