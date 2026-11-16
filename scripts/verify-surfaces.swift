@@ -227,6 +227,22 @@ struct VerifySurfaces {
         model.control("next")
         model.control("seek", position: 100)
         expect(model.anchor == protected, "model rejects restricted controls even if a gesture already started")
+        var completionSounds = 0
+        let countdown = NotchCountdown { completionSounds += 1 }
+        countdown.sound = true
+        countdown.configure(minutes: 1)
+        countdown.toggle()
+        guard let countdownDeadline = countdown.state.deadline else { preconditionFailure("the countdown must be running") }
+        expect(!countdown.finishIfDue(at: countdownDeadline - .milliseconds(1)) && countdown.state.running,
+               "reconciling the timer before its deadline keeps it running")
+        expect(countdown.finishIfDue(at: countdownDeadline + .seconds(10)) && countdown.state.completed && completionSounds == 1,
+               "an overdue timer completes and plays the selected sound as soon as it is reconciled")
+        expect(!countdown.finishIfDue(at: countdownDeadline + .seconds(11)) && completionSounds == 1,
+               "a second reconciliation cannot replay the completion sound")
+        countdown.toggle()
+        expect(countdown.state.running && !countdown.state.completed, "a completed timer can start a new interval")
+        countdown.stop()
+        countdown.sound = false
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ArtworkFixture.self]
         let session = URLSession(configuration: configuration)

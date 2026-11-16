@@ -33,6 +33,11 @@ struct NotchTimerState {
         held = remaining(at: now); deadline = nil
         if held <= .zero { finish() }
     }
+    @discardableResult mutating func finishIfDue(at now: ContinuousClock.Instant = .now) -> Bool {
+        guard let deadline, now >= deadline else { return false }
+        finish()
+        return true
+    }
     mutating func finish() { held = .zero; deadline = nil; completed = true }
     mutating func reset() { deadline = nil; held = .seconds(totalSeconds); completed = false }
 }

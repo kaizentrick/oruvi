@@ -180,6 +180,7 @@ final class NotchController {
             if sessionBlocked || stopped { shelf.cancelChooser() }
             panel.orderOut(nil); model.notchExpanded = false; model.setNotchVisible(false); return
         }
+        countdown.finishIfDue()
         let screens = NSScreen.screens
         let options = NotchDisplays.options(screens)
         if options != displayChoices { displayChoices = options }

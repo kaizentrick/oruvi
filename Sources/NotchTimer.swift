@@ -9,24 +9,36 @@ final class NotchCountdown {
         didSet { LumaEnvironment.preferences.set(sound, forKey: "notchTimerSound") }
     }
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private let playCompletionSound: () -> Void
+
+    init(playCompletionSound: @escaping () -> Void = { NSSound.beep() }) {
+        self.playCompletionSound = playCompletionSound
+    }
     func configure(minutes: Int) { task?.cancel(); task = nil; state.configure(seconds: minutes * 60) }
     func adjust(minutesDelta: Int) {
         guard !state.running else { return }
         task?.cancel(); task = nil; state.adjust(secondsDelta: minutesDelta * 60)
     }
     func toggle() {
+        let now = ContinuousClock.now
+        if finishIfDue(at: now) { return }
         task?.cancel(); task = nil
-        if state.running { state.pause(); return }
-        state.start()
+        if state.running { state.pause(at: now); return }
+        state.start(at: now)
         guard let deadline = state.deadline else { return }
         // One deadline, not a repeating background timer. The one-second visual
         // updates belong exclusively to the expanded SwiftUI timer view.
         task = Task { [weak self] in
             do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
             guard !Task.isCancelled, let self, self.state.deadline == deadline else { return }
-            self.state.finish(); self.task = nil
-            if self.sound { NSSound.beep() }
+            self.finishIfDue()
         }
+    }
+    @discardableResult func finishIfDue(at now: ContinuousClock.Instant = .now) -> Bool {
+        guard state.finishIfDue(at: now) else { return false }
+        task?.cancel(); task = nil
+        if sound { playCompletionSound() }
+        return true
     }
     func reset() { task?.cancel(); task = nil; state.reset() }
     func stop() { reset() }
