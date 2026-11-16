@@ -20,15 +20,10 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     private var didFinishLaunching = false
     private var pendingWidgetRoute: OruviWidgetRoute?
     private var status: NSStatusItem?
+    private var instanceLock: ApplicationInstanceLock?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if !LumaEnvironment.isTesting,
-           let existing = NSRunningApplication.runningApplications(withBundleIdentifier: OruviRelease.bundleID)
-            .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
-            existing.activate(options: [.activateAllWindows])
-            NSApp.terminate(nil)
-            return
-        }
+        guard claimApplicationInstance() else { NSApp.terminate(nil); return }
         if let image = ApplicationIcon.image() {
             NSApp.applicationIconImage = image
         }
@@ -64,6 +59,36 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         } else {
             controller.rescheduleIdle() // Desktop notch first; Standby only on demand or inactivity.
         }
+    }
+    private func claimApplicationInstance() -> Bool {
+        guard !LumaEnvironment.isTesting else { return true }
+        let current = NSRunningApplication.current
+        let peers = NSRunningApplication.runningApplications(withBundleIdentifier: OruviRelease.bundleID)
+            .filter { $0.processIdentifier != current.processIdentifier && !$0.isTerminated }
+        // Older releases use Launch Services alone. Prefer a copy that was already open.
+        if let existing = peers.first(where: { $0.isFinishedLaunching && Self.launchedBefore($0, current) }) {
+            existing.activate(options: [.activateAllWindows])
+            return false
+        }
+        let file = LumaEnvironment.supportDirectory.appendingPathComponent(".\(OruviRelease.bundleID).instance")
+        do {
+            instanceLock = try ApplicationInstanceLock.acquire(at: file)
+        } catch {
+            // A storage error should leave the app usable with Launch Services arbitration.
+            return true
+        }
+        if instanceLock != nil { return true }
+        NSRunningApplication.runningApplications(withBundleIdentifier: OruviRelease.bundleID)
+            .filter { $0.processIdentifier != current.processIdentifier && !$0.isTerminated }
+            .min(by: Self.launchedBefore)?
+            .activate(options: [.activateAllWindows])
+        return false
+    }
+    private static func launchedBefore(_ lhs: NSRunningApplication, _ rhs: NSRunningApplication) -> Bool {
+        let a = lhs.launchDate ?? .distantPast
+        let b = rhs.launchDate ?? .distantPast
+        if a != b { return a < b }
+        return lhs.processIdentifier < rhs.processIdentifier
     }
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -157,6 +182,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
     @objc private func checkUpdates() { OruviUpdates.shared.checkNow() }
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {
+        guard didFinishLaunching else { return }
         NativeWidgetController.shared.stop()
         CodexUsageController.shared.stop()
         StandbyModel.shared.shutdown()

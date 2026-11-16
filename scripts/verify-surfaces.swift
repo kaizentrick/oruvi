@@ -328,6 +328,16 @@ struct VerifySurfaces {
         running = []
         expect(automaticSnapshot()["status"] as? String == "notRunning",
                "the last native session disappears when the app quits, even after permission was denied")
+        let lockFile = support.appendingPathComponent("verification.instance")
+        do {
+            let owner = try ApplicationInstanceLock.acquire(at: lockFile)
+            let duplicate = try ApplicationInstanceLock.acquire(at: lockFile)
+            expect(owner != nil && duplicate == nil, "a duplicate launch cannot acquire the active runtime lock")
+            withExtendedLifetime(owner) {}
+        }
+        let reopened = try ApplicationInstanceLock.acquire(at: lockFile)
+        expect(reopened != nil, "a new launch can start after the previous owner exits")
+        withExtendedLifetime(reopened) {}
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 
