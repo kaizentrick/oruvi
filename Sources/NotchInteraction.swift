@@ -37,6 +37,22 @@ struct NotchTransitionGate {
     mutating func cancel() { pending = nil }
 }
 
+/// Global and local movement events handle ordinary hover. The near-camera
+/// timer is a fallback for movement that AppKit does not deliver to either.
+struct NotchPointerCadence {
+    private var position: CGPoint?
+    private var fastUntil: TimeInterval = 0
+
+    mutating func interval(near: Bool, at point: CGPoint, uptime: TimeInterval) -> TimeInterval? {
+        guard near else { self = Self(); return nil }
+        if position != point {
+            position = point
+            fastUntil = uptime + 0.45
+        }
+        return uptime < fastUntil ? 0.06 : 0.5
+    }
+}
+
 /// A previous drag leaves data on NSPasteboard.Name.drag. Require a fresh gesture
 /// and a changed pasteboard before considering proximity; a window move is not a file.
 struct NotchDragFreshness {

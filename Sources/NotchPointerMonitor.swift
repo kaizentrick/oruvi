@@ -10,6 +10,7 @@ final class NotchPointerMonitor {
     private var local: Any?
     private var nearCameraTimer: Timer?
     private var wasNear = false
+    private var cadence = NotchPointerCadence()
     init(controller: NotchController) { self.controller = controller }
     func start() {
         if global == nil && local == nil {
@@ -26,22 +27,24 @@ final class NotchPointerMonitor {
     }
     private func sample() {
         guard let controller, controller.acceptsFileDrop else { stop(); return }
-        let near = controller.pointerWatchFrame.map { NotchHoverGeometry.contains(NSEvent.mouseLocation, in: $0) } ?? false
-        if near || wasNear || controller.expanded || controller.notice != nil { controller.refreshPointer() }
+        let point = NSEvent.mouseLocation
+        let near = controller.pointerWatchFrame.map { NotchHoverGeometry.contains(point, in: $0) } ?? false
+        if near || wasNear || controller.expanded || controller.notice != nil { controller.refreshPointer(at: point) }
         wasNear = near
-        if near && nearCameraTimer == nil {
-            // Only near the camera; no permanent idle-wide animation/input loop.
-            let timer = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.sample() }
-            }
-            timer.tolerance = 0.01; nearCameraTimer = timer; RunLoop.main.add(timer, forMode: .common)
-        } else if !near {
-            nearCameraTimer?.invalidate(); nearCameraTimer = nil
+        let interval = cadence.interval(near: near, at: point, uptime: ProcessInfo.processInfo.systemUptime)
+        guard interval != nearCameraTimer?.timeInterval else { return }
+        nearCameraTimer?.invalidate(); nearCameraTimer = nil
+        guard let interval else { return }
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sample() }
         }
+        timer.tolerance = min(0.05, interval / 6)
+        nearCameraTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func stop() {
         if let global { NSEvent.removeMonitor(global); self.global = nil }
         if let local { NSEvent.removeMonitor(local); self.local = nil }
         nearCameraTimer?.invalidate(); nearCameraTimer = nil; wasNear = false
+        cadence = NotchPointerCadence()
     }
 }

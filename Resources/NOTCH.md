@@ -22,7 +22,7 @@ La ventana contenedora NO es el objetivo del puntero. `NotchController.frame` re
 
 La transparencia de entrada de `NSWindow` se actualiza por posición del puntero y en cada muestra de animación. Además, `NSHostingView.hitTest` rechaza márgenes y esquinas fuera de la forma. Las comprobaciones de cierre y arrastre no usan el rectángulo completo del contenedor. No se coloca una ventana del tamaño del escritorio ni se capturan clics de otros programas intencionadamente. La verificación geométrica no sustituye una prueba end-to-end de entrega de clics en WindowServer.
 
-El sondeo de posición de 60 ms sigue limitado a la zona cercana a la cámara. El sondeo ya existente durante un gesto de arrastre también recupera la transparencia de entrada cuando AppKit consume eventos de movimiento. Lejos del notch no se consulta música por cada movimiento.
+El sondeo de posición se limita a la zona cercana a la cámara. Tras detectar movimiento comprueba cada 60 ms y, cuando el puntero lleva 450 ms quieto, cada 500 ms. Los eventos normales de movimiento se procesan al recibirlos. El sondeo durante un arrastre también recupera la transparencia de entrada cuando AppKit consume eventos de movimiento. Lejos del notch no se consulta música por cada movimiento.
 
 Arrastrar un archivo desde Finder abre Archivos sin esperar la animación. Solo se añaden referencias después de soltar y comprobar que el original está disponible. Cancelar/restaurar pestaña, límites, deduplicación, diálogos y selección de destinatario AirDrop se conservan. Añadir a la bandeja no se presenta como un envío completado. No se lee el portapapeles general ni el contenido de los documentos.
 

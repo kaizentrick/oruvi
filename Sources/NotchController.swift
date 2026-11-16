@@ -207,23 +207,25 @@ final class NotchController {
     }
     func hideForPresentation() { presentationHandoff = true; reconcile() }
     func resumeDesktop() { presentationHandoff = false; reconcile() }
-    func refreshPointer() {
-        updateInputTransparency()
+    func refreshPointer(at point: CGPoint = NSEvent.mouseLocation) {
+        updateInputTransparency(at: point)
         guard input.visible, let geometry else { return }
         let activation = NotchHoverGeometry.activation(compact: geometry.frame(expanded: false), screen: geometry.screenFrame)
         // Keep the full camera band and exact top edge; never substitute the envelope.
         let visible = frame.insetBy(dx: -8, dy: -8)
         let destination = NotchPresentation.frame(surface.target, in: panel?.frame ?? .zero)
         let region = expanded ? activation.union(visible).union(destination.insetBy(dx: -8, dy: -8)) : (notice == nil ? activation : activation.union(visible))
-        hover(NotchHoverGeometry.contains(NSEvent.mouseLocation, in: region))
+        hover(NotchHoverGeometry.contains(point, in: region))
     }
     func containsSurface(_ point: CGPoint) -> Bool {
         input.visible && !sessionBlocked && NotchSurfaceShape.contains(screenPoint: point, frame: frame, state: surface.state)
     }
-    private func updateInputTransparency() {
+    private func updateInputTransparency(at point: CGPoint = NSEvent.mouseLocation) {
         // Recomputed on pointer movement AND each animation sample, including a
         // stationary pointer during collapse. Invisible margins never become a target.
-        panel?.ignoresMouseEvents = !containsSurface(NSEvent.mouseLocation)
+        guard let panel else { return }
+        let ignoresMouse = !containsSurface(point)
+        if panel.ignoresMouseEvents != ignoresMouse { panel.ignoresMouseEvents = ignoresMouse }
     }
     func hover(_ inside: Bool) {
         guard input.visible else { return }
