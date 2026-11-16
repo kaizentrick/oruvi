@@ -97,6 +97,21 @@ struct VerifyNotch {
         expect(timer.totalSeconds == 360 && timer.seconds(at: now) == 360, "adjust adds 1 minute")
         timer.adjust(secondsDelta: -600)
         expect(timer.totalSeconds == 60, "adjust clamps to 1 minute minimum")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let march = calendar.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 13))!
+        let thisMonth = NotchAgendaDates(now: march, monthOffset: 0, calendar: calendar)!
+        let nextMonth = NotchAgendaDates(now: march, monthOffset: 1, calendar: calendar)!
+        expect(thisMonth.month.start == calendar.startOfDay(for: march), "Agenda starts with upcoming events, not historical days")
+        expect(!thisMonth.needsSeparateMonthQuery && nextMonth.needsSeparateMonthQuery, "reuse results only when they cover the entire visible month")
+        expect(calendar.component(.month, from: nextMonth.month.start) == 4 &&
+               calendar.component(.month, from: nextMonth.month.end) == 5, "a future month includes its late dates")
+        expect(thisMonth.upcoming.duration == 31 * 86_400 - 3_600, "day queries respect spring daylight-saving time")
+        expect(NotchAgendaDates(now: march, monthOffset: -1, calendar: calendar) == nil, "do not query historical months")
+        expect(NotchAgendaDates.overlaps(start: thisMonth.month.start.addingTimeInterval(-60), end: thisMonth.month.start.addingTimeInterval(60), range: thisMonth.month),
+               "an ongoing event crossing the boundary is included")
+        expect(!NotchAgendaDates.overlaps(start: thisMonth.month.end, end: thisMonth.month.end.addingTimeInterval(60), range: thisMonth.month),
+               "an event at the next month's boundary belongs to the next month")
         let meetURL = NotchMeetingDetector.extractURL(url: nil, location: "Sala B · https://meet.google.com/abc-defg-hij", notes: nil)
         expect(meetURL?.absoluteString == "https://meet.google.com/abc-defg-hij", "extract Google Meet URL from location")
         let zoomURL = NotchMeetingDetector.extractURL(url: nil, location: nil, notes: "Join Zoom: https://us02web.zoom.us/j/123456789).")

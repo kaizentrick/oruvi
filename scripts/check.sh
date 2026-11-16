@@ -9,7 +9,7 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
     -framework AppKit -framework SwiftUI -o "$WORK/verify"
 "$WORK/verify"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
-    Sources/NotchLayout.swift Sources/NotchTimerState.swift scripts/verify-notch.swift -o "$WORK/verify-notch"
+    Sources/NotchLayout.swift Sources/NotchTimerState.swift Sources/NotchAgendaDates.swift scripts/verify-notch.swift -o "$WORK/verify-notch"
 "$WORK/verify-notch"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     -target arm64-apple-macos26.0 Sources/NotchLayout.swift Sources/NotchPresentation.swift Sources/NotchSurfaceUI.swift \

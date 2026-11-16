@@ -13,27 +13,30 @@ struct NotchCalendarEvent: Identifiable, Sendable {
     let meetingURL: URL?
 }
 
-/// EKEvent/EKCalendar instances never cross the actor boundary. Database work is
-/// bounded to 31 days and runs away from the UI actor, without network services.
+/// EKEvent/EKCalendar instances stay on this actor. Each query covers at most
+/// 31 days and runs off the UI thread.
 private actor NotchCalendarReader {
     private let store = EKEventStore()
     func requestAccess() async throws -> Bool { try await store.requestFullAccessToEvents() }
-    func upcoming(now: Date) -> [NotchCalendarEvent] {
-        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return [] }
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: now)
-        let end = calendar.date(byAdding: .day, value: 31, to: start) ?? now.addingTimeInterval(2678400)
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        return store.events(matching: predicate)
-            .filter { $0.endDate > now && $0.status != .canceled }
+    func read(now: Date, dates: NotchAgendaDates) -> (upcoming: [NotchCalendarEvent], month: [NotchCalendarEvent]) {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return ([], []) }
+        let upcoming = events(in: dates.upcoming, after: now)
+        let month = dates.needsSeparateMonthQuery ? events(in: dates.month, after: now) : upcoming.filter {
+            NotchAgendaDates.overlaps(start: $0.startDate, end: $0.endDate, range: dates.month)
+        }
+        return (upcoming.prefix(6).map(eventSummary), month.map(eventSummary))
+    }
+    private func events(in range: DateInterval, after now: Date) -> [EKEvent] {
+        let predicate = store.predicateForEvents(withStart: range.start, end: range.end, calendars: nil)
+        return store.events(matching: predicate).filter { $0.endDate > now && $0.status != .canceled }
             .sorted { $0.startDate < $1.startDate }
-            .prefix(24).map { event in
-                NotchCalendarEvent(id: (event.eventIdentifier ?? "event") + "-" + String(event.startDate.timeIntervalSince1970),
-                                   title: event.title?.isEmpty == false ? event.title! : "Sin título",
-                                   calendar: event.calendar?.title ?? "Calendario", start: event.startDate,
-                                   end: event.endDate, allDay: event.isAllDay,
-                                   meetingURL: NotchMeetingDetector.extractURL(url: event.url, location: event.location, notes: event.notes))
-            }
+    }
+    private func eventSummary(_ event: EKEvent) -> NotchCalendarEvent {
+        NotchCalendarEvent(id: (event.eventIdentifier ?? "event") + "-" + String(event.startDate.timeIntervalSince1970),
+                           title: event.title?.isEmpty == false ? event.title! : "Sin título",
+                           calendar: event.calendar?.title ?? "Calendario", start: event.startDate,
+                           end: event.endDate, allDay: event.isAllDay,
+                           meetingURL: NotchMeetingDetector.extractURL(url: event.url, location: event.location, notes: event.notes))
     }
 }
 
@@ -41,6 +44,9 @@ private actor NotchCalendarReader {
 final class NotchAgenda {
     private(set) var enabled = LumaEnvironment.preferences.bool(forKey: "notchAgendaEnabled")
     private(set) var events: [NotchCalendarEvent] = []
+    private(set) var monthEvents: [NotchCalendarEvent] = []
+    private(set) var monthOffset = 0
+    private(set) var today = Calendar.current.startOfDay(for: Date())
     private(set) var requesting = false
     private(set) var loading = false
     private(set) var access = EKEventStore.authorizationStatus(for: .event)
@@ -50,23 +56,32 @@ final class NotchAgenda {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var refreshTimer: Timer?
-    @ObservationIgnored private var observer: NSObjectProtocol?
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     func setActive(_ value: Bool) {
         active = value
         task?.cancel(); generation += 1; loading = false
         refreshTimer?.invalidate(); refreshTimer = nil
-        if let observer { NotificationCenter.default.removeObserver(observer); self.observer = nil }
-        guard value else { events.removeAll(); return }
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        guard value else { events.removeAll(); monthEvents.removeAll(); monthOffset = 0; return }
         access = EKEventStore.authorizationStatus(for: .event)
-        guard enabled, access == .fullAccess else { events.removeAll(); return }
-        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+        guard enabled else { events.removeAll(); monthEvents.removeAll(); return }
+        for name in [Notification.Name.EKEventStoreChanged, .NSCalendarDayChanged, .NSSystemClockDidChange,
+                     .NSSystemTimeZoneDidChange, NSApplication.didBecomeActiveNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refresh() }
+            })
         }
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         timer.tolerance = 5; refreshTimer = timer; RunLoop.main.add(timer, forMode: .common)
+        refresh()
+    }
+    func showMonth(_ offset: Int) {
+        guard monthOffset != offset, offset >= 0 else { return }
+        monthOffset = offset; monthEvents.removeAll()
         refresh()
     }
     func connect(controller: NotchController) {
@@ -95,16 +110,26 @@ final class NotchAgenda {
     func refresh() {
         guard active, enabled else { return }
         access = EKEventStore.authorizationStatus(for: .event)
-        guard access == .fullAccess else { events.removeAll(); setActive(active); return }
-        task?.cancel(); generation += 1
+        task?.cancel(); task = nil; generation += 1
+        guard access == .fullAccess else {
+            events.removeAll(); monthEvents.removeAll(); loading = false; return
+        }
+        let calendar = Calendar.current, now = Date()
+        today = calendar.startOfDay(for: now)
+        guard let dates = NotchAgendaDates(now: now, monthOffset: monthOffset, calendar: calendar) else {
+            events.removeAll(); monthEvents.removeAll(); loading = false; return
+        }
         let serial = generation
         loading = true
         task = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
             guard let self else { return }
-            let result = await self.reader.upcoming(now: Date())
+            let result = await self.reader.read(now: now, dates: dates)
             guard !Task.isCancelled, self.active, self.enabled, self.generation == serial else { return }
-            self.events = result; self.loading = false; self.task = nil
+            self.access = EKEventStore.authorizationStatus(for: .event)
+            self.events = self.access == .fullAccess ? result.upcoming : []
+            self.monthEvents = self.access == .fullAccess ? result.month : []
+            self.loading = false; self.task = nil
         }
     }
     func stop() { setActive(false) }
@@ -123,7 +148,6 @@ final class NotchAgenda {
 struct NotchAgendaView: View {
     let agenda: NotchAgenda
     let controller: NotchController
-    @State private var monthOffset = 0
     @State private var selectedDay: Date?
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -144,7 +168,9 @@ struct NotchAgendaView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(alignment: .top, spacing: 12) {
-                    NotchMonthCalendar(events: agenda.events, monthOffset: $monthOffset, selectedDay: $selectedDay)
+                    NotchMonthCalendar(events: agenda.monthEvents, today: agenda.today,
+                                       monthOffset: Binding(get: { agenda.monthOffset }, set: { agenda.showMonth($0) }),
+                                       selectedDay: $selectedDay)
                         .frame(width: 146)
                     Rectangle().fill(.white.opacity(0.08)).frame(width: 1).padding(.vertical, 2)
                     eventsColumn.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -163,13 +189,17 @@ struct NotchAgendaView: View {
                 Text(agenda.message).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        .onChange(of: agenda.today) { oldDay, newDay in
+            if let selectedDay, selectedDay < newDay || !Calendar.current.isDate(oldDay, equalTo: newDay, toGranularity: .month) {
+                self.selectedDay = nil
+            }
+        }
     }
     private var visibleEvents: [NotchCalendarEvent] {
-        guard let selectedDay else { return Array(agenda.events.prefix(6)) }
+        guard let selectedDay else { return agenda.events }
         let cal = Calendar.current
-        let dayStart = cal.startOfDay(for: selectedDay)
-        let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
-        return agenda.events.filter { $0.start < dayEnd && $0.end > dayStart }
+        guard let range = cal.dateInterval(of: .day, for: selectedDay), range.start >= agenda.today else { return [] }
+        return agenda.monthEvents.filter { NotchAgendaDates.overlaps(start: $0.start, end: $0.end, range: range) }
     }
     @ViewBuilder private var eventsColumn: some View {
         let items = visibleEvents
@@ -179,13 +209,13 @@ struct NotchAgendaView: View {
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
             }
-            if agenda.loading && agenda.events.isEmpty {
+            if agenda.loading && items.isEmpty {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if items.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(selectedDay == nil ? Date().formatted(.dateTime.weekday(.wide).day().month(.wide)) : "Día libre")
+                    Text(selectedDay == nil ? agenda.today.formatted(.dateTime.weekday(.wide).day().month(.wide)) : "Sin eventos por delante")
                         .font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-                    Text(selectedDay == nil ? "Sin eventos próximos en tu calendario." : "No hay eventos programados para este día.")
+                    Text(selectedDay == nil ? "Sin eventos próximos en tu calendario." : "No quedan eventos programados para este día.")
                         .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
@@ -223,19 +253,18 @@ struct NotchAgendaView: View {
 
 private struct NotchMonthCalendar: View {
     let events: [NotchCalendarEvent]
+    let today: Date
     @Binding var monthOffset: Int
     @Binding var selectedDay: Date?
-    private let calendar: Calendar = {
+    private var calendar: Calendar {
         var cal = Calendar.current
         cal.firstWeekday = 2 // Lunes
         return cal
-    }()
+    }
     private let weekdays = ["L", "M", "M", "J", "V", "S", "D"]
     private var displayedMonth: Date {
-        let now = Date()
-        let comps = calendar.dateComponents([.year, .month], from: now)
-        let start = calendar.date(from: comps) ?? now
-        return calendar.date(byAdding: .month, value: monthOffset, to: start) ?? now
+        let start = calendar.dateInterval(of: .month, for: today)?.start ?? today
+        return calendar.date(byAdding: .month, value: monthOffset, to: start) ?? today
     }
     private var monthTitle: String {
         displayedMonth.formatted(.dateTime.month(.wide).year()).capitalized
@@ -254,9 +283,8 @@ private struct NotchMonthCalendar: View {
         return result
     }
     private func hasEvents(on date: Date) -> Bool {
-        let dayStart = calendar.startOfDay(for: date)
-        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
-        return events.contains { $0.start < dayEnd && $0.end > dayStart }
+        guard let range = calendar.dateInterval(of: .day, for: date) else { return false }
+        return events.contains { NotchAgendaDates.overlaps(start: $0.start, end: $0.end, range: range) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -267,10 +295,10 @@ private struct NotchMonthCalendar: View {
                     Text(monthTitle).font(.system(size: 10, weight: .semibold)).lineLimit(1)
                 }.buttonStyle(.plain).help("Volver al mes actual")
                 Spacer(minLength: 2)
-                Button { monthOffset -= 1 } label: {
+                Button { monthOffset -= 1; selectedDay = nil } label: {
                     Image(systemName: "chevron.left").font(.system(size: 9, weight: .medium)).frame(width: 16, height: 16)
-                }.buttonStyle(.plain).help("Mes anterior")
-                Button { monthOffset += 1 } label: {
+                }.buttonStyle(.plain).help("Mes anterior").disabled(monthOffset == 0)
+                Button { monthOffset += 1; selectedDay = nil } label: {
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .medium)).frame(width: 16, height: 16)
                 }.buttonStyle(.plain).help("Mes siguiente")
             }
@@ -286,7 +314,8 @@ private struct NotchMonthCalendar: View {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(Array(daysGrid.enumerated()), id: \.offset) { _, date in
                     if let date {
-                        let isToday = calendar.isDateInToday(date)
+                        let isToday = calendar.isDate(date, inSameDayAs: today)
+                        let isPast = date < today
                         let isSelected = selectedDay.map { calendar.isDate($0, inSameDayAs: date) } ?? false
                         let marked = hasEvents(on: date)
                         Button {
@@ -309,6 +338,10 @@ private struct NotchMonthCalendar: View {
                                 }
                             }
                         }.buttonStyle(.plain)
+                            .disabled(isPast).opacity(isPast ? 0.42 : 1)
+                            .accessibilityLabel(date.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                            .accessibilityValue(marked ? "Con eventos" : "")
+                            .accessibilityAddTraits(isSelected ? .isSelected : [])
                     } else {
                         Color.clear.frame(width: 19, height: 18)
                     }
