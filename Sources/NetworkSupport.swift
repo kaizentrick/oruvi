@@ -56,8 +56,16 @@ struct HTTPReply: Sendable {
     let status: Int
     let data: Data
     let retryAfter: String?
+
+    var retryDeadline: TimeInterval? {
+        guard status == 429 || (status == 503 && retryAfter != nil) else { return nil }
+        return ProcessInfo.processInfo.systemUptime + BoundedHTTPClient.retryDelay(retryAfter)
+    }
 }
-enum RemoteError: Error { case invalidURL, invalidResponse, oversized, unavailable }
+enum RemoteError: Error {
+    case invalidURL, invalidResponse, oversized, unavailable
+    case rateLimited(until: TimeInterval)
+}
 
 final class BoundedHTTPClient: @unchecked Sendable {
     private let session: URLSession
@@ -90,10 +98,10 @@ final class BoundedHTTPClient: @unchecked Sendable {
             }
         }, onCancel: { transfer.cancel() })
     }
-    static func retryDate(_ value: String?, now: Date = Date()) -> Date {
-        if let value, let seconds = Double(value), seconds.isFinite {
-            return now.addingTimeInterval(max(1, min(seconds, 86400)))
-        }
-        return value.flatMap { retryFormatter.date(from: $0) } ?? now.addingTimeInterval(60)
+    static func retryDelay(_ value: String?, now: Date = Date()) -> TimeInterval {
+        let text = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let seconds = text.flatMap(Double.init).flatMap { $0.isFinite ? $0 : nil }
+        let delay = seconds ?? text.flatMap { retryFormatter.date(from: $0)?.timeIntervalSince(now) } ?? 60
+        return max(1, min(delay, 86400))
     }
 }

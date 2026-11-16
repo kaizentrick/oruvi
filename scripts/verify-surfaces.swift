@@ -263,7 +263,49 @@ struct VerifySurfaces {
         }
         expect(ArtworkFixture.requestCount("/api/get") == beforeInstrumental + 2,
                "clearing the cache resets the confirmed absence of lyrics")
+
+        let referenceTime = Date(timeIntervalSince1970: 1_767_225_600)
+        expect(BoundedHTTPClient.retryDelay(" 120 ", now: referenceTime) == 120
+               && BoundedHTTPClient.retryDelay("Thu, 01 Jan 2026 00:02:00 GMT", now: referenceTime) == 120
+               && BoundedHTTPClient.retryDelay("Wed, 31 Dec 2025 23:59:59 GMT", now: referenceTime) == 1
+               && BoundedHTTPClient.retryDelay(nil, now: referenceTime) == 60,
+               "Retry-After supports seconds and HTTP dates with a bounded fallback")
+        let rateTrack = TrackIdentity(id: "rate-qa", title: "Rate QA", artist: "QA Artist", album: "QA Album", duration: 120)
+        let rateLyrics = LyricsRepository(root: support, client: client)
+        let rateArtwork = ArtworkRepository(root: support, client: client)
+        let lyricsBeforeLimit = ArtworkFixture.requestCount("/api/get")
+        guard case .rateLimited(let lyricsDeadline) = await rateLyrics.load(for: rateTrack, allowNetwork: true),
+              case .rateLimited(let repeatedDeadline) = await rateLyrics.load(for: rateTrack, allowNetwork: true) else {
+            preconditionFailure("LRCLIB 429 with a large declared body must retain its retry deadline")
+        }
+        expect(lyricsDeadline == repeatedDeadline && lyricsDeadline > ProcessInfo.processInfo.systemUptime + 30
+               && ArtworkFixture.requestCount("/api/get") == lyricsBeforeLimit + 1,
+               "LRCLIB returns the existing deadline without sending a second request")
+        let appleBeforeLimit = ArtworkFixture.requestCount("/search")
+        let fallbackBeforeLimit = ArtworkFixture.requestCount("/rate/100x100bb.png")
+        let appleDeadline = try await rateLimit { _ = try await rateArtwork.load(for: rateTrack) }
+        let repeatedAppleDeadline = try await rateLimit { _ = try await rateArtwork.load(for: rateTrack) }
+        expect(appleDeadline == repeatedAppleDeadline && ArtworkFixture.requestCount("/search") == appleBeforeLimit + 1
+               && ArtworkFixture.requestCount("/rate/100x100bb.png") == fallbackBeforeLimit,
+               "an Apple image-host 503 with Retry-After stops both fallback and repeated catalog requests")
+        let independentCover = try await rateArtwork.loadSpotify("https://i.scdn.co/independent")
+        expect(independentCover != nil, "Apple's cooldown does not block Spotify artwork")
+        let spotifyBeforeLimit = ArtworkFixture.requestCount("/spotify-limited")
+        let spotifyDeadline = try await rateLimit { _ = try await rateArtwork.loadSpotify("https://i.scdn.co/spotify-limited") }
+        let repeatedSpotifyDeadline = try await rateLimit { _ = try await rateArtwork.loadSpotify("https://i.scdn.co/spotify-limited") }
+        expect(spotifyDeadline == repeatedSpotifyDeadline && ArtworkFixture.requestCount("/spotify-limited") == spotifyBeforeLimit + 1,
+               "Spotify respects its own deadline across artwork requests")
+        applySpotify("spotify-limited", id: "spotify:track:rate")
+        await until { covers.artworkStatus.contains("limitó temporalmente") }
+        applySpotify("spotify-limited", id: "spotify:track:rate")
+        expect(covers.artworkStatus.contains("limitó temporalmente"), "the model keeps the rate-limit state on the next playback sample")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
+    }
+
+    @MainActor private static func rateLimit(_ operation: () async throws -> Void) async throws -> TimeInterval {
+        do { try await operation() }
+        catch RemoteError.rateLimited(let deadline) { return deadline }
+        preconditionFailure("expected a rate-limit deadline")
     }
 
     @MainActor private static func until(_ condition: () async -> Bool) async {
@@ -306,23 +348,31 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
     }
     private func reply() {
         let url = request.url!
+        let parameters = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let rateTrack = parameters.contains { $0.value?.hasPrefix("Rate QA") == true }
+        let status: Int
+        if url.path == "/spotify-limited" || (url.path == "/api/get" && rateTrack) { status = 429 }
+        else if url.path == "/rate/600x600bb.png" { status = 503 }
+        else { status = 200 }
+        let headers = status == 200 ? nil : ["Retry-After": "120", "Content-Length": "9000000"]
         let data: Data
         switch url.path {
         case "/api/get":
-            let isInstrumental = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-                .contains(URLQueryItem(name: "track_name", value: "Instrumental QA")) == true
+            let isInstrumental = parameters.contains(URLQueryItem(name: "track_name", value: "Instrumental QA"))
             let json = isInstrumental
                 ? #"{"trackName":"Instrumental QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"instrumental":true}"#
                 : #"{"trackName":"Cache QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"syncedLyrics":"[00:00.00]Test lyrics"}"#
             data = Data(json.utf8)
         case "/search":
-            data = Data(#"{"results":[{"trackName":"Cache QA","artistName":"QA Artist","collectionName":"QA Album","trackTimeMillis":120000,"artworkUrl100":"https://is1-ssl.mzstatic.com/100x100bb.png"}]}"#.utf8)
+            let suffix = rateTrack ? "rate/100x100bb.png" : "100x100bb.png"
+            let title = rateTrack ? "Rate QA" : "Cache QA"
+            data = Data(#"{"results":[{"trackName":"\#(title)","artistName":"QA Artist","collectionName":"QA Album","trackTimeMillis":120000,"artworkUrl100":"https://is1-ssl.mzstatic.com/\#(suffix)"}]}"#.utf8)
         default:
             data = Self.png
         }
-        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
+        if status == 200 { client?.urlProtocol(self, didLoad: data) }
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

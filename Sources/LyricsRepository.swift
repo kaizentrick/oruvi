@@ -5,6 +5,7 @@ enum LyricsResult: Sendable {
     case message
     case unavailable
     case retry
+    case rateLimited(until: TimeInterval)
 }
 
 actor LyricsRepository {
@@ -13,8 +14,8 @@ actor LyricsRepository {
     private let client: BoundedHTTPClient
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
-    private var blockedUntil = Date.distantPast
-    private var lastRequest = Date.distantPast
+    private var blockedUntil: TimeInterval = 0
+    private var lastRequest: TimeInterval = -.infinity
     private var misses: [String: Date] = [:]
     private var cacheGeneration = 0
 
@@ -56,15 +57,19 @@ actor LyricsRepository {
         return LumaEnvironment.removeDownloadedCache(in: root)
     }
     private func request(_ endpoint: String, items: [URLQueryItem]) async throws -> HTTPReply {
-        guard Date() >= blockedUntil else { throw RemoteError.unavailable }
-        let pause = 0.65 - Date().timeIntervalSince(lastRequest)
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= blockedUntil else { throw RemoteError.rateLimited(until: blockedUntil) }
+        let pause = 0.65 - (now - lastRequest)
         if pause > 0 { try await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000)) }
         try Task.checkCancellation()
         var url = URLComponents(string: "https://lrclib.net/api/" + endpoint)!
         url.queryItems = items
-        lastRequest = Date()
+        lastRequest = ProcessInfo.processInfo.systemUptime
         let reply = try await client.get(url.url!)
-        if reply.status == 429 { blockedUntil = BoundedHTTPClient.retryDate(reply.retryAfter) }
+        if let deadline = reply.retryDeadline {
+            blockedUntil = deadline
+            throw RemoteError.rateLimited(until: deadline)
+        }
         return reply
     }
     func load(for track: TrackIdentity, allowNetwork: Bool) async -> LyricsResult {
@@ -87,7 +92,6 @@ actor LyricsRepository {
                 URLQueryItem(name: "track_name", value: track.title), URLQueryItem(name: "artist_name", value: track.artist),
                 URLQueryItem(name: "album_name", value: track.album), URLQueryItem(name: "duration", value: String(Int(track.duration.rounded())))
             ])
-            if reply.status == 429 { return .retry }
             guard reply.status == 200 || reply.status == 404 else { return .retry }
             var records: [RemoteLyrics] = []
             if reply.status == 200 { records = [try JSONDecoder().decode(RemoteLyrics.self, from: reply.data)] }
@@ -105,7 +109,6 @@ actor LyricsRepository {
                 URLQueryItem(name: "track_name", value: track.title),
                 URLQueryItem(name: "artist_name", value: RecordingMatcher.primaryArtist(track.artist))
             ])
-            if search.status == 429 { return .retry }
             guard search.status == 200 else { return .retry }
             records = try JSONDecoder().decode([RemoteLyrics].self, from: search.data)
                 .filter { $0.matches(track) }
@@ -123,7 +126,8 @@ actor LyricsRepository {
             }
             rememberMiss(name, generation: generation)
             return .unavailable
-        } catch is CancellationError { return .message }
+        } catch RemoteError.rateLimited(let deadline) { return .rateLimited(until: deadline) }
+        catch is CancellationError { return .message }
         catch { return .retry }
     }
     private func downloadedResult(_ name: String) -> LyricsResult? {

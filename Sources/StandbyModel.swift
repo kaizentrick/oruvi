@@ -701,6 +701,11 @@ final class StandbyModel {
                     self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.updateCue(); self.lyricsTask = nil; return
                 case .unavailable: self.lyricsAvailability = .unavailable; self.lyricsTask = nil; return
                 case .message: self.lyricsAvailability = allowed ? .offline : .disabled; self.lyricsTask = nil; return
+                case .rateLimited(let deadline):
+                    self.lyricsAvailability = .offline
+                    self.lyricsRetryAt = deadline
+                    self.lyricsTask = nil
+                    return
                 case .retry: self.lyricsAvailability = .offline
                 }
             }
@@ -761,6 +766,12 @@ final class StandbyModel {
                                 self.artworkStatus = "Portada de Spotify"; self.artworkTask = nil; return
                             }
                         }
+                    } catch RemoteError.rateLimited(let deadline) {
+                        guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
+                        self.artworkStatus = "Spotify limitó temporalmente las descargas de portadas."
+                        self.artworkRetryAt = deadline
+                        self.artworkTask = nil
+                        return
                     } catch { if Task.isCancelled { return } }
                     continue
                 }

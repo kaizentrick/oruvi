@@ -12,8 +12,9 @@ actor ArtworkRepository {
     private let client: BoundedHTTPClient
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
-    private var lastRequest = Date.distantPast
-    private var blockedUntil = Date.distantPast
+    private var lastRequest: TimeInterval = -.infinity
+    private var appleBlockedUntil: TimeInterval = 0
+    private var spotifyBlockedUntil: TimeInterval = 0
     private var cacheGeneration = 0
 
     #if LUMA_QA
@@ -48,9 +49,10 @@ actor ArtworkRepository {
         defer { releaseSlot() }
         try Task.checkCancellation()
         if waited, let cached = cachedArtwork(at: file) { return cached }
-        guard Date() >= blockedUntil else { throw RemoteError.unavailable }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= appleBlockedUntil else { throw RemoteError.rateLimited(until: appleBlockedUntil) }
         // Apple's documented Search API limit is roughly 20 calls/minute; stay below it.
-        let wait = 3.2 - Date().timeIntervalSince(lastRequest)
+        let wait = 3.2 - (now - lastRequest)
         if wait > 0 { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
         try Task.checkCancellation()
         var components = URLComponents(string: "https://itunes.apple.com/search")!
@@ -60,9 +62,9 @@ actor ArtworkRepository {
             URLQueryItem(name: "limit", value: "10"),
             URLQueryItem(name: "country", value: Locale.current.region?.identifier ?? "MX")
         ]
-        lastRequest = Date()
+        lastRequest = ProcessInfo.processInfo.systemUptime
         let reply = try await client.get(components.url!)
-        if reply.status == 429 { blockedUntil = BoundedHTTPClient.retryDate(reply.retryAfter); throw RemoteError.unavailable }
+        try checkAppleLimit(reply)
         guard reply.status == 200 else { throw RemoteError.unavailable }
         let matches = try JSONDecoder().decode(CatalogResults.self, from: reply.data).results
             .filter { RecordingMatcher.matches(track: track, title: $0.trackName ?? "", artist: $0.artistName ?? "", duration: ($0.trackTimeMillis ?? 0) / 1000) }
@@ -82,8 +84,10 @@ actor ArtworkRepository {
         let imageURL = RecordingMatcher.appleArtworkURL(larger) ?? original
         var image = try? await client.get(imageURL, maxBytes: 4_000_000)
         try Task.checkCancellation()
+        try checkAppleLimit(image)
         if (image?.status != 200 || !Self.isImage(image?.data ?? Data())), imageURL != original {
             image = try await client.get(original, maxBytes: 4_000_000)
+            try checkAppleLimit(image)
         }
         guard let image, image.status == 200, Self.isImage(image.data) else { throw RemoteError.invalidResponse }
         let link = record.trackViewUrl.flatMap(URL.init(string:)).flatMap { url -> URL? in
@@ -98,6 +102,12 @@ actor ArtworkRepository {
         }
         return payload
     }
+    private func checkAppleLimit(_ reply: HTTPReply?) throws {
+        if let deadline = reply?.retryDeadline {
+            appleBlockedUntil = deadline
+            throw RemoteError.rateLimited(until: deadline)
+        }
+    }
     private func cachedArtwork(at file: URL) -> ArtworkPayload? {
         guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 6_000_000,
               let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode(ArtworkPayload.self, from: data),
@@ -109,7 +119,14 @@ actor ArtworkRepository {
     func loadSpotify(_ text: String) async throws -> ArtworkPayload? {
         guard let url = ArtworkURLPolicy.spotify(text) else { return nil }
         try Task.checkCancellation()
+        guard ProcessInfo.processInfo.systemUptime >= spotifyBlockedUntil else {
+            throw RemoteError.rateLimited(until: spotifyBlockedUntil)
+        }
         let result = try await client.get(url, maxBytes: 4_000_000)
+        if let deadline = result.retryDeadline {
+            spotifyBlockedUntil = max(spotifyBlockedUntil, deadline)
+            throw RemoteError.rateLimited(until: spotifyBlockedUntil)
+        }
         guard result.status == 200, Self.isImage(result.data) else { throw RemoteError.invalidResponse }
         return ArtworkPayload(data: result.data, link: nil, savedAt: Date())
     }

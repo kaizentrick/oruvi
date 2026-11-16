@@ -37,12 +37,12 @@ final class BoundedRequest: NSObject, URLSessionDataDelegate, @unchecked Sendabl
         guard let http = response as? HTTPURLResponse else {
             completionHandler(.cancel); finish(.failure(RemoteError.invalidResponse)); return
         }
-        guard http.expectedContentLength <= limit else {
-            completionHandler(.cancel); finish(.failure(RemoteError.oversized)); return
-        }
         if http.statusCode != 200 {
             let reply = HTTPReply(status: http.statusCode, data: Data(), retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
             finish(.success(reply)); completionHandler(.cancel); return
+        }
+        guard http.expectedContentLength <= limit else {
+            completionHandler(.cancel); finish(.failure(RemoteError.oversized)); return
         }
         lock.lock()
         let active = !finished
