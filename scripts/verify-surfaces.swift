@@ -535,6 +535,24 @@ struct VerifySurfaces {
                "closing Conexiones keeps its cached quota without continuing to poll")
         cursor.setEnabled(false)
         expect(cursor.currentSnapshot == nil && cursor.summary == "Sin conectar", "disconnecting clears the displayed Cursor quota")
+
+        var codexAttempts = 0
+        let codex = CodexUsageController(locateExecutable: { codexAttempts += 1; return nil })
+        codex.connect()
+        codex.start()
+        defer { codex.disconnect(); codex.stop() }
+        expect(codexAttempts == 1 && codex.error == .missingCLI, "Codex tries promptly when first connected")
+        let workspaceNotifications = NSWorkspace.shared.notificationCenter
+        workspaceNotifications.post(name: NSWorkspace.willSleepNotification, object: nil)
+        workspaceNotifications.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        workspaceNotifications.post(name: NSWorkspace.didWakeNotification, object: nil)
+        expect(codex.status.contains("En pausa") && codexAttempts == 1,
+               "waking the Mac does not start a Codex read while its display sleeps")
+        workspaceNotifications.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        expect(codexAttempts == 1, "waking again within five seconds does not bypass the query cooldown")
+        await until { codexAttempts == 2 }
+        expect(codex.error == .missingCLI && !codex.refreshing,
+               "after a quick wake, Codex rechecks when the cooldown ends instead of waiting for a full polling interval")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 

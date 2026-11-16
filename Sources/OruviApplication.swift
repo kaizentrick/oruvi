@@ -50,7 +50,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         notch = notchController
         notchController.start()
         NativeWidgetController.shared.start()
-        CodexUsageController.shared.start()
+        if !LumaEnvironment.isTesting { CodexUsageController.shared.start() }
         didFinishLaunching = true
         if let route = pendingWidgetRoute { pendingWidgetRoute = nil; openWidgetRoute(route) }
         OruviUpdates.shared.startIfConfigured()

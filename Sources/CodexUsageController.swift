@@ -26,6 +26,12 @@ final class CodexUsageController {
     @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var lastAttemptUptime = -Double.infinity
     @ObservationIgnored private var failures = 0
+    @ObservationIgnored private let locateExecutable: () -> URL?
+    private static let minimumRefreshInterval: TimeInterval = 5
+
+    init(locateExecutable: @escaping () -> URL? = CodexExecutable.locate) {
+        self.locateExecutable = locateExecutable
+    }
 
     var selectedBucket: CodexUsageBucket? {
         snapshot?.buckets.first { $0.id == selectedBucketID }
@@ -54,7 +60,7 @@ final class CodexUsageController {
     var compactHelp: String { "\(selectedBucket?.title ?? "Codex") · \(status). Abrir conexiones." }
 
     func start() {
-        guard !started, !LumaEnvironment.isTesting else { return }; started = true
+        guard !started else { return }; started = true
         let workspace = NSWorkspace.shared.notificationCenter
         for (block, sleep, wake) in [
             ("system", NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
@@ -90,15 +96,27 @@ final class CodexUsageController {
     private func reschedule() {
         timer?.invalidate(); timer = nil; updateDisplayClock()
         guard started, enabled, blocks.isEmpty else { return }
-        refresh()
-        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }; self.now = Date()
-                let delay: TimeInterval = self.failures == 0 ? 50 : (self.failures < 3 ? 120 : 300)
-                if ProcessInfo.processInfo.systemUptime - self.lastAttemptUptime >= delay { self.refresh() }
-            }
+        let elapsed = ProcessInfo.processInfo.systemUptime - lastAttemptUptime
+        if elapsed >= Self.minimumRefreshInterval {
+            refresh()
+        } else {
+            scheduleRefresh(after: Self.minimumRefreshInterval - elapsed)
         }
-        timer.tolerance = 10; self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+    }
+    private func scheduleRefresh(after delay: TimeInterval) {
+        timer?.invalidate(); timer = nil
+        guard started, enabled, blocks.isEmpty else { return }
+        let timer = Timer(timeInterval: max(0, delay), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reschedule() }
+        }
+        timer.tolerance = min(delay * 0.1, 10)
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+    private func scheduleNextPoll() {
+        let interval: TimeInterval = failures == 0 ? 60 : (failures < 3 ? 120 : 300)
+        let elapsed = ProcessInfo.processInfo.systemUptime - lastAttemptUptime
+        scheduleRefresh(after: max(0, interval - elapsed))
     }
     private func updateDisplayClock() {
         displayTimer?.invalidate(); displayTimer = nil
@@ -113,10 +131,12 @@ final class CodexUsageController {
     }
     func refresh() {
         let uptime = ProcessInfo.processInfo.systemUptime
-        guard started, enabled, blocks.isEmpty, !refreshing, uptime - lastAttemptUptime >= 5 else { return }
+        guard started, enabled, blocks.isEmpty, !refreshing,
+              uptime - lastAttemptUptime >= Self.minimumRefreshInterval else { return }
+        timer?.invalidate(); timer = nil
         now = Date(); lastAttemptUptime = uptime
-        guard let executable = CodexExecutable.locate() else {
-            error = .missingCLI; failures += 1; updateDisplayClock(); return
+        guard let executable = locateExecutable() else {
+            error = .missingCLI; failures += 1; updateDisplayClock(); scheduleNextPoll(); return
         }
         refreshing = true; generation += 1
         let serial = generation, request = CodexUsageRequest(); self.request = request
@@ -131,6 +151,7 @@ final class CodexUsageController {
             }
             guard let self, self.generation == serial else { return }
             self.updateDisplayClock(); self.refreshing = false; self.task = nil; self.request = nil
+            self.scheduleNextPoll()
         }
     }
     private func cancel() {
