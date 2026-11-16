@@ -53,7 +53,6 @@ final class AmbientRuntime {
         mediaSerial += 1; mediaCheck?.cancel(); mediaCheck = nil
         model.automaticActivationStatus = automatic ? "Presentación automática" : "Presentación manual"
         model.automaticSession = automatic
-        model.notch?.hideForPresentation()
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? window.screen ?? NSScreen.main
         if let screen {
             window.setFrame(screen.frame, display: true)
@@ -71,7 +70,6 @@ final class AmbientRuntime {
         NSApp.activate()
         applySystemPresentation()
         model.refreshVisibility()
-        refreshPhrases()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, self.presentationSerial == serial, self.window.isVisible, !self.isBlocked else { return }
             self.applySystemPresentation()
@@ -88,14 +86,14 @@ final class AmbientRuntime {
     func dismiss() {
         presentationSerial += 1
         model.settingsOpen = false
+        model.notch?.resumeDesktop()
         window.orderOut(nil)
         window.level = .normal
         if let savedPresentation { NSApp.presentationOptions = savedPresentation; self.savedPresentation = nil }
         lastDismissed = ProcessInfo.processInfo.systemUptime
         model.automaticSession = false
         model.refreshVisibility()
-        model.notch?.resumeDesktop()
-        refreshPhrases(); rescheduleIdle()
+        rescheduleIdle()
     }
     func rescheduleIdle() {
         idleTimer?.invalidate(); idleTimer = nil

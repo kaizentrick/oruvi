@@ -67,23 +67,22 @@ final class StandbyModel {
         activePlayer = value.source ?? lastSurfacePlayers[surface] ?? .music
         connectMusic()
     }
-    /// There is only one visible playback surface. Switch the sampler before its
-    /// next read and invalidate old callbacks; never run a second player polling loop.
-    private func updatePlaybackSurface() {
+    /// Returns whether the new surface requires a different playback session.
+    private func updatePlaybackSurface() -> Bool {
         let next: PlaybackSurface = isVisible ? .standby : .notch
-        guard next != playbackSurface else { return }
+        guard next != playbackSurface else { return false }
         lastSurfacePlayers[playbackSurface] = activePlayer
         let previousPreference = effectivePlayerPreference
-        playbackSurface = next; generation += 1
-        guard !demoMode else { return }
-        if connected && prefs.bool(forKey: next.enabledKey) && previousPreference == effectivePlayerPreference {
-            stopLyricsUpdates()
-            return
-        }
+        playbackSurface = next
+        guard !demoMode else { return false }
+        let nextConnected = prefs.bool(forKey: next.enabledKey)
+        if connected && nextConnected && previousPreference == effectivePlayerPreference { return false }
+        generation += 1
         clearTrack()
         activePlayer = effectivePlayerPreference.source ?? lastSurfacePlayers[next] ?? .music
-        connected = prefs.bool(forKey: next.enabledKey)
+        connected = nextConnected
         connectionStatus = connected ? "Actualizando reproductor de " + next.title + "…" : "Conecta el reproductor de " + next.title
+        return true
     }
     var notchEnabled = true {
         didSet { prefs.set(notchEnabled, forKey: "notchEnabled"); notch?.reconcile() }
@@ -322,7 +321,10 @@ final class StandbyModel {
     }
     func refreshVisibility() {
         let visible = (mainWindow?.isVisible ?? false) && (mainWindow?.occlusionState.contains(.visible) ?? false) && !(mainWindow?.isMiniaturized ?? false) && !NSApp.isHidden && !screenSleeping
-        if visible != isVisible { isVisible = visible; notch?.reconcile(); policyChanged() }
+        guard visible != isVisible else { return }
+        isVisible = visible
+        if visible { notch?.hideForPresentation() } else { notch?.reconcile() }
+        policyChanged()
     }
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping () -> Void) {
         let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in action() }
@@ -381,19 +383,24 @@ final class StandbyModel {
     }
     private func policyChanged() {
         let previousSurface = playbackSurface
-        updatePlaybackSurface()
+        let sessionChanged = updatePlaybackSurface()
+        let previousDemand = lastPlaybackDemand
         let demand = needsPlayback
-        let playbackChanged = previousSurface != playbackSurface || lastPlaybackDemand != demand
         lastPlaybackDemand = demand
         updateDisplayAssertion()
 
-        guard playbackChanged else {
+        guard previousSurface != playbackSurface || previousDemand != demand else {
             if pollTimer != nil && scheduledPollInterval != playbackPollInterval { schedulePoll() }
             return
         }
         runtime?.refreshPhrases()
         if demand && connected && !demoMode {
-            refreshPlayback()
+            if previousDemand && !sessionChanged {
+                updateLyricsVisibility()
+                readMusic()
+            } else {
+                refreshPlayback()
+            }
         } else {
             suspendPlaybackSampling()
             if demoMode { updateCue() }

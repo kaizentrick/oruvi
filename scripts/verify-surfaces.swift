@@ -67,6 +67,20 @@ struct VerifySurfaces {
         expect(model.currentLyricText == "Synthetic lyric", "power notifications preserve the visible lyric and playback anchor")
         model.energyMode = .saver
         expect(model.currentLyricText == "Synthetic lyric", "changing cadence does not put playback back in recovery")
+        defaults.set(true, forKey: "musicEnabled")
+        defaults.set(true, forKey: "notchMusicEnabled")
+        model.notchPlayerPreference = .spotify
+        let beforeHandoff = model.anchor
+        model.setNotchVisible(true)
+        model.isVisible = false; model.refreshPower()
+        expect(model.playbackSurface == .notch && model.connected && model.hasTrack && !model.isResynchronizing,
+               "returning to the same opted-in provider keeps its active playback")
+        model.isVisible = true; model.setNotchVisible(false); model.refreshPower()
+        expect(model.playbackSurface == .standby && model.anchor == beforeHandoff && model.currentLyricText == "Synthetic lyric",
+               "opening Standby for the same provider keeps its position and the current lyric")
+        model.notchPlayerPreference = .automatic
+        defaults.set(false, forKey: "musicEnabled")
+        defaults.set(false, forKey: "notchMusicEnabled")
         model.apply(["status": "stopped"])
         expect(model.hasTrack && model.isResynchronizing, "a single stopped result retains the recording")
         model.refreshPower()
