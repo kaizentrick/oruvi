@@ -245,6 +245,10 @@ final class StandbyModel {
     @ObservationIgnored private var pollTimer: Timer?
     @ObservationIgnored private var scheduledPollInterval = 0.0
     @ObservationIgnored private var cueTimer: Timer?
+    @ObservationIgnored private var cueDeadline: TimeInterval?
+    #if LUMA_QA
+    var scheduledLyricCue: Timer? { cueTimer }
+    #endif
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var artworkTask: Task<Void, Never>?
     @ObservationIgnored private var notificationTokens: [(NotificationCenter, NSObjectProtocol)] = []
@@ -461,7 +465,7 @@ final class StandbyModel {
         lyricsRetryAt = 0; artworkRetryAt = 0
         playbackReadMilliseconds = nil
         recovery.invalidate(); isResynchronizing = true
-        cueTimer?.invalidate(); cueTimer = nil
+        cancelCueTimer()
         if reading { pendingMusicHint = true } else { readMusic() }
     }
     func connectMusic() {
@@ -488,7 +492,7 @@ final class StandbyModel {
         lyricsRetryAt = 0; artworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
         playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
-        cueTimer?.invalidate(); cueTimer = nil
+        cancelCueTimer()
     }
     private func readMusic() {
         guard !LumaEnvironment.isTesting, connected, needsPlayback, !reading, !demoMode else { return }
@@ -757,7 +761,7 @@ final class StandbyModel {
         }
     }
     private func stopLyricsUpdates() {
-        cueTimer?.invalidate(); cueTimer = nil
+        cancelCueTimer()
         if lyricsTask != nil { lyricsTask?.cancel(); lyricsTask = nil; lyricsRetryAt = 0 }
     }
     private func updateLyricsVisibility() {
@@ -853,17 +857,35 @@ final class StandbyModel {
     private func setPalette(_ value: [RGB]) {
         palette = value // Interpolate only the mesh, not every view in the application.
     }
-    private func updateCue() {
+    private func cancelCueTimer() {
         cueTimer?.invalidate(); cueTimer = nil
-        guard lyricsSurfaceVisible, !isResynchronizing else { return }
+        cueDeadline = nil
+    }
+    private func updateCue() {
+        guard lyricsSurfaceVisible, !isResynchronizing else { cancelCueTimer(); return }
         let now = ProcessInfo.processInfo.systemUptime
         let position = anchor.value(at: now) + lyricOffset
         let index = LRCParser.index(at: position, in: lines)
         if activeLine != index { activeLine = index }
         let next = (index ?? -1) + 1
-        guard next < lines.count, let delay = anchor.delay(until: lines[next].time - lyricOffset, at: now) else { return }
-        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.updateCue() } }
-        timer.tolerance = 0.012; cueTimer = timer; RunLoop.main.add(timer, forMode: .common)
+        guard next < lines.count, let delay = anchor.delay(until: lines[next].time - lyricOffset, at: now) else {
+            cancelCueTimer(); return
+        }
+        let deadline = now + delay
+        let tolerance = 0.012
+        // A consistent playback sample predicts the same cue, so leave its timer armed.
+        if let cueTimer, cueTimer.isValid, let cueDeadline, abs(cueDeadline - deadline) <= tolerance { return }
+        cancelCueTimer()
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] fired in
+            MainActor.assumeIsolated {
+                guard let self, self.cueTimer === fired else { return }
+                self.cancelCueTimer()
+                self.updateCue()
+            }
+        }
+        timer.tolerance = tolerance
+        cueTimer = timer; cueDeadline = deadline
+        RunLoop.main.add(timer, forMode: .common)
     }
     func clearLyricsCache() {
         guard !isClearingDownloadCache else { return }
@@ -952,7 +974,7 @@ final class StandbyModel {
     }
     func shutdown() {
         suspendPlaybackSampling()
-        cueTimer?.invalidate(); lyricsTask?.cancel(); artworkTask?.cancel(); toastTask?.cancel(); runtime?.stop(); notch?.stop()
+        cancelCueTimer(); lyricsTask?.cancel(); artworkTask?.cancel(); toastTask?.cancel(); runtime?.stop(); notch?.stop()
         for (center, token) in notificationTokens { center.removeObserver(token) }; notificationTokens.removeAll()
         if let powerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes) }
         if hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }

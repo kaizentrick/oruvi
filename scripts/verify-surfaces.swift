@@ -92,6 +92,34 @@ struct VerifySurfaces {
         model.isVisible = true; model.setNotchVisible(false); model.refreshPower()
         expect(model.playbackSurface == .standby && model.anchor == beforeHandoff && model.currentLyricText == "Synthetic lyric",
                "opening Standby for the same provider keeps its position and the current lyric")
+        model.musicShowsLyrics = true
+        model.lines = [LyricLine(id: 0, time: 0, text: "Current"), LyricLine(id: 1, time: 42, text: "Next")]
+        var cueSample: [String: Any] = ["status": "ok", "source": "com.spotify.client", "id": "spotify:qa",
+                                        "title": "QA song", "duration": 120, "position": 12, "playing": true,
+                                        "sampleUptime": ProcessInfo.processInfo.systemUptime]
+        model.apply(cueSample)
+        guard let firstCue = model.scheduledLyricCue else { preconditionFailure("visible playback should schedule a cue") }
+        let firstDeadline = firstCue.fireDate
+        for _ in 0..<20 { model.apply(cueSample) }
+        expect(model.scheduledLyricCue === firstCue && firstCue.isValid, "consistent samples keep the real cue timer armed")
+        cueSample["playbackRate"] = 2
+        model.apply(cueSample)
+        expect(model.scheduledLyricCue !== firstCue && !firstCue.isValid
+               && (model.scheduledLyricCue?.fireDate ?? .distantFuture) < firstDeadline,
+               "a new playback speed moves the real cue deadline")
+        cueSample["playing"] = false
+        model.apply(cueSample)
+        expect(model.scheduledLyricCue == nil && model.currentLyricText == "Current", "pausing cancels the timer and keeps the current lyric")
+        model.lines = [LyricLine(id: 0, time: 0, text: "Current"), LyricLine(id: 1, time: 12.15, text: "Next")]
+        cueSample["playing"] = true
+        cueSample["sampleUptime"] = ProcessInfo.processInfo.systemUptime
+        model.apply(cueSample)
+        await until { model.currentLyricText == "Next" }
+        expect(model.scheduledLyricCue == nil, "the one-shot timer advances the lyric and clears its own deadline")
+        model.lines = [LyricLine(id: 0, time: 0, text: "Current"), LyricLine(id: 1, time: 121, text: "Unreachable")]
+        cueSample["position"] = 120
+        model.apply(cueSample)
+        expect(model.scheduledLyricCue == nil, "a line past the known end of the track never schedules a wake")
         model.notchPlayerPreference = .automatic
         defaults.set(false, forKey: "musicEnabled")
         defaults.set(false, forKey: "notchMusicEnabled")
