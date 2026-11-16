@@ -42,19 +42,29 @@ struct SmoothMesh: View, Animatable {
         vector = PaletteVector(palette); self.framesPerSecond = framesPerSecond; self.light = light
     }
     var body: some View {
-        TimelineView(.animation(minimumInterval: framesPerSecond > 0 ? 1 / framesPerSecond : 1, paused: framesPerSecond <= 0)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate * 0.085
-            let points: [SIMD2<Float>] = [[0, 0], [0.5, 0], [1, 0],
-                [0, Float(0.51 + 0.12 * sin(t * 0.67))],
-                [Float(0.5 + 0.16 * sin(t * 0.81)), Float(0.52 + 0.15 * cos(t * 0.59))],
-                [1, Float(0.50 + 0.13 * sin(t * 0.79))],
-                [0, 1], [0.5, 1], [1, 1]]
-            let c = vector.colors
-            MeshGradient(width: 3, height: 3, points: points,
-                         colors: [c[0], c[1], c[0], c[3], c[2], c[1], c[0], c[3], c[0]], smoothsColors: true)
-                .overlay(light ? Color.white.opacity(0.74) : Color.black.opacity(0.38))
-                .overlay(LinearGradient(colors: [.clear, .black.opacity(light ? 0.015 : 0.25)], startPoint: .top, endPoint: .bottom))
+        let colors = vector.colors
+        let stops = [colors[0], colors[1], colors[0], colors[3], colors[2], colors[1], colors[0], colors[3], colors[0]]
+        Group {
+            if framesPerSecond > 0 {
+                TimelineView(.animation(minimumInterval: 1 / framesPerSecond)) { _ in
+                    let phase = ProcessInfo.processInfo.systemUptime * 0.085
+                    let points = Self.points(leftY: Float(0.51 + 0.12 * sin(phase * 0.67)),
+                                             center: [Float(0.5 + 0.16 * sin(phase * 0.81)), Float(0.52 + 0.15 * cos(phase * 0.59))],
+                                             rightY: Float(0.50 + 0.13 * sin(phase * 0.79)))
+                    MeshGradient(width: 3, height: 3, points: points, colors: stops)
+                }
+            } else {
+                MeshGradient(width: 3, height: 3, points: Self.staticPoints, colors: stops)
+            }
         }
+        .overlay(light ? Color.white.opacity(0.74) : Color.black.opacity(0.38))
+        .overlay(LinearGradient(colors: [.clear, .black.opacity(light ? 0.015 : 0.25)], startPoint: .top, endPoint: .bottom))
         .ignoresSafeArea().accessibilityHidden(true).allowsHitTesting(false)
+    }
+
+    private static let staticPoints = points(leftY: 0.51, center: [0.5, 0.52], rightY: 0.50)
+
+    private static func points(leftY: Float, center: SIMD2<Float>, rightY: Float) -> [SIMD2<Float>] {
+        [[0, 0], [0.5, 0], [1, 0], [0, leftY], center, [1, rightY], [0, 1], [0.5, 1], [1, 1]]
     }
 }
