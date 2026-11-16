@@ -30,8 +30,7 @@ final class AmbientRuntime {
     private var stopped = false
     private var presentationSerial = 0
     private var savedPresentation: NSApplication.PresentationOptions?
-    private var mediaCheck: Task<Void, Never>?
-    private var mediaSerial = 0
+    private var mediaCheck = IdleMediaCheckState.idle
     private var wasMediaProtected = false
     private var lastMediaProtected = -Double.greatestFiniteMagnitude
     var isBlocked: Bool { model.screenSleeping || sessionInactive || locked }
@@ -49,7 +48,7 @@ final class AmbientRuntime {
         // an AirDrop recipient picker or an agenda permission prompt automatically.
         if automatic && model.notch?.preventsAutomaticStandby == true { rescheduleIdle(); return }
         idleTimer?.invalidate(); idleTimer = nil
-        mediaSerial += 1; mediaCheck?.cancel(); mediaCheck = nil
+        mediaCheck.invalidate()
         model.automaticActivationStatus = automatic ? "Presentación automática" : "Presentación manual"
         model.automaticSession = automatic
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? window.screen ?? NSScreen.main
@@ -96,7 +95,7 @@ final class AmbientRuntime {
     }
     func rescheduleIdle() {
         idleTimer?.invalidate(); idleTimer = nil
-        mediaSerial += 1; mediaCheck?.cancel(); mediaCheck = nil
+        mediaCheck.invalidate()
         if !model.idleEnabled { model.automaticActivationStatus = "Activación automática desactivada" }
         guard !stopped, !LumaEnvironment.isTesting, model.idleEnabled, !isBlocked else { return }
         if let until = model.autoPausedUntil, until > Date() {
@@ -130,14 +129,19 @@ final class AmbientRuntime {
     }
     private func checkMediaBeforeActivation() {
         guard model.avoidMedia else { activate(automatic: true); return }
-        let serial = mediaSerial
+        model.automaticActivationStatus = "Comprobando reproducción"
+        guard mediaCheck.begin() else { return }
         let foreground = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let pid = ProcessInfo.processInfo.processIdentifier
-        model.automaticActivationStatus = "Comprobando reproducción"
-        mediaCheck = Task { [weak self] in
+        Task { [weak self] in
             let result = await Task.detached(priority: .utility) { MediaProtection.sample(frontmostBundleID: foreground, ownPID: pid) }.value
-            guard !Task.isCancelled, let self, self.mediaSerial == serial, !self.stopped, !self.isBlocked, !self.window.isVisible, self.model.idleEnabled else { return }
-            self.mediaCheck = nil
+            guard let self else { return }
+            switch self.mediaCheck.complete() {
+            case .waitingToRetry: self.rescheduleIdle(); return
+            case .checking: break
+            case .invalidated, .idle: return
+            }
+            guard !self.stopped, !self.isBlocked, !self.window.isVisible, self.model.idleEnabled else { return }
             // Another app could become active while a system query is in flight.
             guard foreground == (NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "") else { self.rescheduleIdle(); return }
             if result.shouldProtect(enabled: self.model.avoidMedia, conservativeBrowsers: self.model.protectBrowsers) {
@@ -232,7 +236,7 @@ final class AmbientRuntime {
     }
     func stop() {
         stopped = true; idleTimer?.invalidate(); phraseTimer?.invalidate()
-        mediaSerial += 1; mediaCheck?.cancel(); mediaCheck = nil
+        mediaCheck.invalidate()
         if let localEvents { NSEvent.removeMonitor(localEvents); self.localEvents = nil }
         for (center, token) in tokens { center.removeObserver(token) }; tokens.removeAll()
         presentationSerial += 1

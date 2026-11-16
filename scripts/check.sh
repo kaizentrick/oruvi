@@ -5,7 +5,7 @@ mkdir -p "$ROOT/.tmp/codex"
 WORK="$(mktemp -d "$ROOT/.tmp/codex/verify.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
-    Sources/Core.swift Sources/PlaybackRecovery.swift Sources/Typography.swift Sources/UpdateConfiguration.swift scripts/verify.swift \
+    Sources/Core.swift Sources/AmbientCore.swift Sources/PlaybackRecovery.swift Sources/Typography.swift Sources/UpdateConfiguration.swift scripts/verify.swift \
     -framework AppKit -framework SwiftUI -o "$WORK/verify"
 "$WORK/verify"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \

@@ -22,6 +22,29 @@ struct IdleActivationPolicy {
     }
 }
 
+/// Tracks a synchronous system probe that cannot be interrupted once launched.
+enum IdleMediaCheckState: Equatable {
+    case idle, checking, invalidated, waitingToRetry
+
+    mutating func begin() -> Bool {
+        if self == .idle {
+            self = .checking
+            return true
+        }
+        if self == .invalidated { self = .waitingToRetry }
+        return false
+    }
+
+    mutating func invalidate() {
+        if self != .idle { self = .invalidated }
+    }
+
+    mutating func complete() -> Self {
+        defer { self = .idle }
+        return self
+    }
+}
+
 enum MotivationalPhrases {
     // Original short copy. No invented attribution to real people.
     static let all = [

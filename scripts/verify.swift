@@ -9,6 +9,20 @@ struct ReleaseVerification {
             count += 1
             guard value else { fputs("FAIL: \(name)\n", stderr); exit(1) }
         }
+        var mediaCheck = IdleMediaCheckState.idle
+        check(mediaCheck.begin() && !mediaCheck.begin(), "a Standby media probe runs once until it completes")
+        var duplicateProbes = 0
+        for _ in 0..<60 {
+            mediaCheck.invalidate()
+            if mediaCheck.begin() { duplicateProbes += 1 }
+        }
+        check(duplicateProbes == 0 && mediaCheck.complete() == .waitingToRetry, "foreground changes request one fresh check after the old one finishes")
+        check(mediaCheck.begin() && mediaCheck.complete() == .checking, "a fresh probe can finish normally after coalescing")
+        check(mediaCheck.begin(), "a new idle period permits another probe")
+        mediaCheck.invalidate()
+        _ = mediaCheck.begin()
+        mediaCheck.invalidate()
+        check(mediaCheck.complete() == .invalidated, "disabling, locking or using Standby cancels a deferred recheck")
         let cues = LRCParser.parse("[00:00.00]One\n[00:01.50]Two\n[00:03.00]\n[00:04.00]Three")
         check(cues.count == 4, "timed cue parsing")
         check(LRCParser.index(at: 1.5, in: cues) == 1, "cue boundary")
