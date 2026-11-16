@@ -15,11 +15,16 @@ actor ArtworkRepository {
     private var lastRequest = Date.distantPast
     private var blockedUntil = Date.distantPast
     private var cacheGeneration = 0
+
+    #if LUMA_QA
+    var queuedLookupCount: Int { waiters.count }
+    #endif
     private static let sizePattern = try! NSRegularExpression(pattern: #"/[0-9]+x[0-9]+bb\."#)
 
-    private func acquireSlot() async {
-        guard busy else { busy = true; return }
+    private func acquireSlot() async -> Bool {
+        guard busy else { busy = true; return false }
         await withCheckedContinuation { waiters.append($0) }
+        return true
     }
     private func releaseSlot() {
         if waiters.isEmpty { busy = false }
@@ -36,14 +41,13 @@ actor ArtworkRepository {
     }
     func load(for track: TrackIdentity) async throws -> ArtworkPayload? {
         let file = root.appendingPathComponent(LumaEnvironment.cacheName(track) + ".json")
-        if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 6_000_000,
-           let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode(ArtworkPayload.self, from: data),
-           Self.isImage(cached.data), (0..<30 * 86400).contains(Date().timeIntervalSince(cached.savedAt)) { return cached }
+        if let cached = cachedArtwork(at: file) { return cached }
         guard track.duration.isFinite, track.duration > 0, !track.artist.isEmpty else { return nil }
         let generation = cacheGeneration
-        await acquireSlot()
+        let waited = await acquireSlot()
         defer { releaseSlot() }
         try Task.checkCancellation()
+        if waited, let cached = cachedArtwork(at: file) { return cached }
         guard Date() >= blockedUntil else { throw RemoteError.unavailable }
         // Apple's documented Search API limit is roughly 20 calls/minute; stay below it.
         let wait = 3.2 - Date().timeIntervalSince(lastRequest)
@@ -93,6 +97,12 @@ actor ArtworkRepository {
             prune()
         }
         return payload
+    }
+    private func cachedArtwork(at file: URL) -> ArtworkPayload? {
+        guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 6_000_000,
+              let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode(ArtworkPayload.self, from: data),
+              (0..<30 * 86400).contains(Date().timeIntervalSince(cached.savedAt)), Self.isImage(cached.data) else { return nil }
+        return cached
     }
     /// Spotify supplies its own artwork URL. Never substitute a different catalog image.
     /// Keep only the current decoded image in the model; Spotify artwork is not persisted here.

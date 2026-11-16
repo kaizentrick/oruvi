@@ -217,8 +217,26 @@ struct VerifySurfaces {
         let manager = FileManager.default
         expect(!manager.fileExists(atPath: lyricFile.path) && !manager.fileExists(atPath: artworkFile.path),
                "downloads that started before clearing must not recreate either cache file")
-        guard case .available = await lyricRepository.load(for: track, allowNetwork: true),
-              try await artworkRepository.load(for: track) != nil else { preconditionFailure("fresh downloads must still work") }
+        let priorLyricsRequests = ArtworkFixture.requestCount("/api/get")
+        let priorArtworkRequests = ArtworkFixture.requestCount("/search")
+        ArtworkFixture.holdNext("/api/get")
+        ArtworkFixture.holdNext("/600x600bb.png")
+        async let freshLyrics = lyricRepository.load(for: track, allowNetwork: true)
+        async let freshArtwork = artworkRepository.load(for: track)
+        await until { ArtworkFixture.isHolding("/api/get") && ArtworkFixture.isHolding("/600x600bb.png") }
+        async let repeatedLyrics = lyricRepository.load(for: track, allowNetwork: true)
+        async let repeatedArtwork = artworkRepository.load(for: track)
+        await until { await lyricRepository.queuedLookupCount == 1 }
+        await until { await artworkRepository.queuedLookupCount == 1 }
+        ArtworkFixture.release("/api/get")
+        ArtworkFixture.release("/600x600bb.png")
+        guard case .available = await freshLyrics, case .available = await repeatedLyrics,
+              try await freshArtwork != nil, try await repeatedArtwork != nil else {
+            preconditionFailure("downloaded media must be available to both callers")
+        }
+        expect(ArtworkFixture.requestCount("/api/get") == priorLyricsRequests + 1
+               && ArtworkFixture.requestCount("/search") == priorArtworkRequests + 1,
+               "queued requests reuse a freshly saved result for the same recording")
         expect(manager.fileExists(atPath: lyricFile.path) && manager.fileExists(atPath: artworkFile.path),
                "downloads starting after clearing may populate the cache")
         let imported = support.appendingPathComponent("ImportedLyrics")
@@ -231,12 +249,26 @@ struct VerifySurfaces {
         expect(covers.cacheClearStatus.contains("vacía") && manager.fileExists(atPath: importedFile.path)
                && !manager.fileExists(atPath: lyricFile.path) && !manager.fileExists(atPath: artworkFile.path),
                "settings confirm that both downloaded caches were cleared and imported lyrics remain")
+        let instrumental = TrackIdentity(id: "instrumental-qa", title: "Instrumental QA", artist: "QA Artist", album: "QA Album", duration: 120)
+        let beforeInstrumental = ArtworkFixture.requestCount("/api/get")
+        guard case .unavailable = await lyricRepository.load(for: instrumental, allowNetwork: true),
+              case .unavailable = await lyricRepository.load(for: instrumental, allowNetwork: true) else {
+            preconditionFailure("an explicitly instrumental track has no synchronized lyrics")
+        }
+        expect(ArtworkFixture.requestCount("/api/get") == beforeInstrumental + 1,
+               "replaying a confirmed instrumental track reuses the cached absence of lyrics")
+        _ = await lyricRepository.clearDownloadedCache()
+        guard case .unavailable = await lyricRepository.load(for: instrumental, allowNetwork: true) else {
+            preconditionFailure("a renewed lookup for the instrumental track must finish")
+        }
+        expect(ArtworkFixture.requestCount("/api/get") == beforeInstrumental + 2,
+               "clearing the cache resets the confirmed absence of lyrics")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 
-    @MainActor private static func until(_ condition: () -> Bool) async {
-        let deadline = ContinuousClock.now + .seconds(5)
-        while !condition() {
+    @MainActor private static func until(_ condition: () async -> Bool) async {
+        let deadline = ContinuousClock.now + .seconds(8)
+        while !(await condition()) {
             precondition(ContinuousClock.now < deadline, "timed out waiting for the media state")
             try? await Task.sleep(for: .milliseconds(10))
         }
@@ -248,8 +280,11 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
     private static let pending = OSAllocatedUnfairLock(initialState: false)
     private static let held = OSAllocatedUnfairLock(initialState: [String: ArtworkFixture]())
     private static let released = OSAllocatedUnfairLock(initialState: Set<String>())
+    private static let requests = OSAllocatedUnfairLock(initialState: [String: Int]())
     static var usedPendingRequest: Bool { pending.withLock { $0 } }
     static func isHolding(_ path: String) -> Bool { held.withLock { $0[path] != nil } }
+    static func requestCount(_ path: String) -> Int { requests.withLock { $0[path, default: 0] } }
+    static func holdNext(_ path: String) { _ = released.withLock { $0.remove(path) } }
     static func release(_ path: String) {
         _ = released.withLock { $0.insert(path) }
         held.withLock { $0.removeValue(forKey: path) }?.reply()
@@ -258,6 +293,7 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let url = request.url!
+        Self.requests.withLock { $0[url.path, default: 0] += 1 }
         if url.path == "/pending" {
             Self.pending.withLock { $0 = true }
             return
@@ -273,7 +309,12 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
         let data: Data
         switch url.path {
         case "/api/get":
-            data = Data(#"{"trackName":"Cache QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"syncedLyrics":"[00:00.00]Test lyrics"}"#.utf8)
+            let isInstrumental = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .contains(URLQueryItem(name: "track_name", value: "Instrumental QA")) == true
+            let json = isInstrumental
+                ? #"{"trackName":"Instrumental QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"instrumental":true}"#
+                : #"{"trackName":"Cache QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"syncedLyrics":"[00:00.00]Test lyrics"}"#
+            data = Data(json.utf8)
         case "/search":
             data = Data(#"{"results":[{"trackName":"Cache QA","artistName":"QA Artist","collectionName":"QA Album","trackTimeMillis":120000,"artworkUrl100":"https://is1-ssl.mzstatic.com/100x100bb.png"}]}"#.utf8)
         default:

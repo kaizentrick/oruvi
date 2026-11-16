@@ -18,9 +18,14 @@ actor LyricsRepository {
     private var misses: [String: Date] = [:]
     private var cacheGeneration = 0
 
-    private func acquireSlot() async {
-        guard busy else { busy = true; return }
+    #if LUMA_QA
+    var queuedLookupCount: Int { waiters.count }
+    #endif
+
+    private func acquireSlot() async -> Bool {
+        guard busy else { busy = true; return false }
         await withCheckedContinuation { waiters.append($0) }
+        return true
     }
     private func releaseSlot() {
         if waiters.isEmpty { busy = false }
@@ -66,17 +71,18 @@ actor LyricsRepository {
         let name = filename(track)
         if let saved = read(local.appendingPathComponent(name)) { return .available(saved) }
         guard allowNetwork else { return .message }
-        if let saved = read(root.appendingPathComponent(name), maxAge: 30 * 86400) { return .available(saved) }
+        if let cached = downloadedResult(name) { return cached }
         guard !track.id.isEmpty, !track.title.isEmpty, !track.artist.isEmpty,
               track.duration.isFinite, track.duration >= 1, track.duration <= 3600 else {
             return .message
         }
-        if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable }
         let generation = cacheGeneration
         do {
-            await acquireSlot()
+            let waited = await acquireSlot()
             defer { releaseSlot() }
             try Task.checkCancellation()
+            // The preceding request may have finished looking up this same track.
+            if waited, let cached = downloadedResult(name) { return cached }
             let reply = try await request("get", items: [
                 URLQueryItem(name: "track_name", value: track.title), URLQueryItem(name: "artist_name", value: track.artist),
                 URLQueryItem(name: "album_name", value: track.album), URLQueryItem(name: "duration", value: String(Int(track.duration.rounded())))
@@ -85,7 +91,10 @@ actor LyricsRepository {
             guard reply.status == 200 || reply.status == 404 else { return .retry }
             var records: [RemoteLyrics] = []
             if reply.status == 200 { records = [try JSONDecoder().decode(RemoteLyrics.self, from: reply.data)] }
-            if let record = records.first, record.matches(track), record.instrumental == true { return .unavailable }
+            if let record = records.first, record.matches(track), record.instrumental == true {
+                rememberMiss(name, generation: generation)
+                return .unavailable
+            }
             if let record = records.first, record.matches(track), let payload = payload(record) {
                 save(payload, name: name, generation: generation)
                 return .available(payload)
@@ -112,10 +121,15 @@ actor LyricsRepository {
                     return .available(payload)
                 }
             }
-            if generation == cacheGeneration && !Task.isCancelled { rememberMiss(name) }
+            rememberMiss(name, generation: generation)
             return .unavailable
         } catch is CancellationError { return .message }
         catch { return .retry }
+    }
+    private func downloadedResult(_ name: String) -> LyricsResult? {
+        if let saved = read(root.appendingPathComponent(name), maxAge: 30 * 86400) { return .available(saved) }
+        if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable }
+        return nil
     }
     private func payload(_ record: RemoteLyrics) -> LyricsPayload? {
         let lines = LRCParser.parse(record.syncedLyrics ?? "")
@@ -129,7 +143,8 @@ actor LyricsRepository {
             pruneCache()
         }
     }
-    private func rememberMiss(_ name: String) {
+    private func rememberMiss(_ name: String, generation: Int) {
+        guard generation == cacheGeneration, !Task.isCancelled else { return }
         if misses.count >= 128, let oldest = misses.min(by: { $0.value < $1.value })?.key { misses.removeValue(forKey: oldest) }
         misses[name] = Date()
     }
