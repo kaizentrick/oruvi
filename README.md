@@ -136,7 +136,7 @@ Se emplean fuentes nativas del sistema; no se incluyen ni descargan archivos de 
 
 ## Energía y privacidad
 
-No hay captura de pantalla, cámara, micrófono, audio, historial o pestañas; tampoco telemetría propia, Electron ni WebView. La nota musical es un estado, no un visualizador. Las letras no se consultan para el notch compacto.
+No hay captura de pantalla, cámara, micrófono, audio, historial o pestañas; tampoco telemetría propia, Electron ni WebView. La nota musical es un estado, no un visualizador. En el notch las letras se consultan solo con la pestaña Música abierta.
 
 Fuera de Standby, las consultas musicales se espacian aproximadamente 3 segundos con corriente y 5 en batería mientras reproduce, y más al pausar; las notificaciones pueden anticipar actualizaciones. En Automático se comprueban ambos proveedores en ejecución, a diferencia de las versiones anteriores que se detenían en el primero. La detección del puntero no ejecuta consultas de reproducción por movimiento.
 

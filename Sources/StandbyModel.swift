@@ -102,10 +102,14 @@ final class StandbyModel {
     @ObservationIgnored private var appliedSystemArtwork: Data?
     @ObservationIgnored private var retainedArtwork: (track: TrackIdentity, image: NSImage, palette: [RGB], link: URL?, systemData: Data?, spotifyURL: String?)?
     var notchVisible = false
-    var notchExpanded = false {
+    var notchMusicVisible = false {
         didSet {
-            guard started, oldValue != notchExpanded else { return }
+            guard oldValue != notchMusicVisible else { return }
             updateLyricsVisibility()
+            if notchMusicVisible, playbackSurface == .notch, !recovery.waiting,
+               ProcessInfo.processInfo.systemUptime - lastPlaybackReadStartedAt >= 1 {
+                readMusic()
+            }
         }
     }
     @ObservationIgnored private var playerArtworkURL = ""
@@ -115,8 +119,8 @@ final class StandbyModel {
     var hasLyrics: Bool { hasTrack && !lines.isEmpty }
     var visibleLyrics: Bool { musicShowsLyrics && hasLyrics }
     private var standbyCanShowLyrics: Bool { isVisible && layout != .clock }
-    private var notchCanShowLyrics: Bool { notchVisible && notchExpanded }
-    private var lyricsLookupVisible: Bool { (standbyCanShowLyrics || notchCanShowLyrics) && !screenSleeping }
+    private var notchCanShowLyrics: Bool { notchVisible && notchMusicVisible }
+    var lyricsLookupVisible: Bool { (standbyCanShowLyrics || notchCanShowLyrics) && !screenSleeping }
     private var lyricsSurfaceVisible: Bool { ((standbyCanShowLyrics && visibleLyrics) || notchCanShowLyrics) && !screenSleeping }
     var currentLyricText: String? {
         guard !isResynchronizing, let activeLine, lines.indices.contains(activeLine) else { return nil }
@@ -262,6 +266,7 @@ final class StandbyModel {
     @ObservationIgnored private var lastAppliedSnapshotSequence: UInt64 = 0
     @ObservationIgnored private var lastPlaybackDemand = false
     @ObservationIgnored private var reading = false
+    @ObservationIgnored private var lastPlaybackReadStartedAt = -Double.infinity
     @ObservationIgnored private var pendingMusicHint = false
     @ObservationIgnored private var lastMusicHint: Double = 0
     @ObservationIgnored private var started = false
@@ -486,7 +491,7 @@ final class StandbyModel {
             hasAssertion = IOPMAssertionCreateWithName(kIOPMAssertionTypeNoDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Oruvi: pantalla ambiental con corriente" as CFString, &assertion) == kIOReturnSuccess
         } else if !effectiveAwake && hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }
     }
-    /// Every reveal, wake and explicit reconnect requests fresh metadata AND position.
+    /// A new session, wake or explicit reconnect requests fresh metadata and position.
     func refreshPlayback(restartingSystem: Bool = false) {
         guard connected, !demoMode, needsPlayback else { return }
         SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic,
@@ -526,6 +531,7 @@ final class StandbyModel {
     }
     private func readMusic() {
         guard !LumaEnvironment.isTesting, connected, needsPlayback, !reading, !demoMode else { return }
+        lastPlaybackReadStartedAt = ProcessInfo.processInfo.systemUptime
         reading = true; pollTimer?.invalidate(); pollTimer = nil
         let session = generation, preference = effectivePlayerPreference, preferred = activePlayer
         musicQueue.async { [weak self, playerRouter, playbackGeneration] in

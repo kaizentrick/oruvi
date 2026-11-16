@@ -178,7 +178,7 @@ final class NotchController {
             panel.acceptsKeyboard = false; panel.ignoresMouseEvents = true
             agenda.setActive(false); dragMonitor?.stop(); pointerMonitor?.stop()
             if sessionBlocked || stopped { shelf.cancelChooser() }
-            panel.orderOut(nil); model.notchExpanded = false; model.setNotchVisible(false); return
+            panel.orderOut(nil); model.notchMusicVisible = false; model.setNotchVisible(false); return
         }
         countdown.finishIfDue()
         let screens = NSScreen.screens
@@ -187,7 +187,7 @@ final class NotchController {
         let chosen = NotchDisplayPolicy.select(options: options, preference: selectedDisplayID, main: NSScreen.main.map { NotchDisplays.identifier($0) })
         guard let screen = screens.first(where: { NotchDisplays.identifier($0) == chosen }) else {
             surface.stop(); panel.ignoresMouseEvents = true; panel.orderOut(nil)
-            input.suspend(); model.notchExpanded = false; model.setNotchVisible(false)
+            input.suspend(); model.notchMusicVisible = false; model.setNotchVisible(false)
             agenda.setActive(false); dragMonitor?.stop(); pointerMonitor?.stop(); dismissNotice(); return
         }
         let wasVisible = input.visible
@@ -274,6 +274,7 @@ final class NotchController {
     func select(_ value: NotchTab) {
         guard tab != value else { return }
         tab = value; agenda.setActive(expanded && value == .agenda)
+        model.notchMusicVisible = expanded && value == .music
         userHaptic(); updateFrame(animated: !draggingFiles)
     }
     func handleKey(_ event: NSEvent) -> Bool {
@@ -306,14 +307,11 @@ final class NotchController {
     }
     func setExpanded(_ value: Bool, animated: Bool = true) {
         guard (!value || input.visible), expanded != value else { return }
-        input.expanded = value; model.notchExpanded = value
+        input.expanded = value; model.notchMusicVisible = value && tab == .music
         if !value { input.keyboardPinned = false; panel?.acceptsKeyboard = false; panel?.resignKey() }
         agenda.setActive(value && tab == .agenda)
         updateFrame(animated: animated)
-        if value {
-            if input.pointerInside || input.keyboardPinned || input.fileDragActive { userHaptic() }
-            InstalledPlayers.shared.refresh(); model.refreshPlayback()
-        }
+        if value && (input.pointerInside || input.keyboardPinned || input.fileDragActive) { userHaptic() }
         model.runtime?.rescheduleIdle()
     }
     private func userHaptic() {
@@ -382,7 +380,7 @@ final class NotchController {
         stopped = true; cancelHover(); input.suspend(); surface.stop(); surface.onStep = nil; dismissNotice()
         dragMonitor?.stop(); pointerMonitor?.stop(); panel?.ignoresMouseEvents = true; panel?.orderOut(nil)
         agenda.stop(); countdown.stop(); shelf.cancelChooser(); shelf.clear()
-        model.notchExpanded = false; model.setNotchVisible(false)
+        model.notchMusicVisible = false; model.setNotchVisible(false)
         for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
         trackingMenus.removeAll(); pendingMenuAction = nil; panel = nil
     }

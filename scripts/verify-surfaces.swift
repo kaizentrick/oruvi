@@ -89,6 +89,15 @@ struct VerifySurfaces {
         model.isVisible = false; model.refreshPower()
         expect(model.playbackSurface == .notch && model.connected && model.hasTrack && !model.isResynchronizing,
                "returning to the same opted-in provider keeps its active playback")
+        for _ in 0..<4 {
+            model.notchMusicVisible = true
+            expect(model.lyricsLookupVisible && model.anchor == beforeHandoff &&
+                   !model.isResynchronizing && model.currentLyricText == "Synthetic lyric",
+                   "revealing Notch music leaves the existing session, position and lyric usable")
+            model.notchMusicVisible = false
+            expect(!model.lyricsLookupVisible && model.needsPlayback,
+                   "leaving Notch music suspends lyric lookups while the compact player remains current")
+        }
         model.isVisible = true; model.setNotchVisible(false); model.refreshPower()
         expect(model.playbackSurface == .standby && model.anchor == beforeHandoff && model.currentLyricText == "Synthetic lyric",
                "opening Standby for the same provider keeps its position and the current lyric")
