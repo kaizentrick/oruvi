@@ -45,6 +45,16 @@ struct PlayerCandidate: Equatable {
     let status: String
     let playing: Bool
 }
+struct PlaybackCommandTarget {
+    let source: PlayerSource
+    let trackID: String
+
+    func matches(source currentSource: PlayerSource, trackID currentID: String?, requireSameTrack: Bool) -> Bool {
+        guard source == currentSource else { return false }
+        if source == .system || requireSameTrack { return !trackID.isEmpty && trackID == currentID }
+        return true
+    }
+}
 enum PlayerSelectionPolicy {
     static func options(installed: Set<PlayerSource>) -> [PlayerPreference] {
         [.automatic] + PlayerPreference.allCases.filter { $0.source.map(installed.contains) ?? false }

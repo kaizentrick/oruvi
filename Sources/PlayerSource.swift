@@ -78,30 +78,24 @@ final class PlayerRouter: @unchecked Sendable {
     }
     func command(_ command: String, position: Double, source: PlayerSource,
                  preference: PlayerPreference, expectedTrackID: String, requireSameTrack: Bool = false) -> [String: Any] {
-        let system = preference == .automatic ? SystemMediaBridge.shared.readNow() : nil
-        // If a visible system session cannot be revalidated, fail rather than
-        // accidentally pausing Music/Spotify behind a browser video.
-        if preference == .automatic, source == .system, system == nil {
-            return ["status": "transition", "message": "El sistema está actualizando el contenido. Vuelve a intentarlo."]
+        let displayed = PlaybackCommandTarget(source: source, trackID: expectedTrackID)
+        if source == .system, preference == .automatic {
+            // Now Playing commands are global. Validate the displayed item immediately
+            // before dispatch, even when another tab uses the same browser.
+            return SystemMediaBridge.shared.send(command, position: position, target: displayed)
         }
+        let system = preference == .automatic ? SystemMediaBridge.shared.readNow() : nil
         let current = resolve(preference: preference, preferred: source, system: system)
         guard current["status"] as? String == "ok",
               let target = PlayerSource(rawValue: current["source"] as? String ?? "") else { return current }
-        if (command == "seek" || requireSameTrack) && (target != source || current["id"] as? String != expectedTrackID) {
-            return ["status": "transition", "message": "El contenido cambió; vuelve a ajustar su posición."]
+        guard displayed.matches(source: target, trackID: current["id"] as? String,
+                                requireSameTrack: command == "seek" || requireSameTrack) else {
+            return ["status": "transition", "message": "El contenido cambió. Vuelve a pulsar el control."]
         }
-        if target == .system, let system {
-            return SystemMediaBridge.shared.send(command, position: position, expected: system)
-        }
-        return self.command(command, position: position, source: target)
-    }
-    func command(_ command: String, position: Double, source: PlayerSource) -> [String: Any] {
-        switch source {
+        switch target {
         case .music: return LumaMusicCommand(command, position)
         case .spotify: return OruviSpotifyCommand(command, position)
-        case .system:
-            guard let current = SystemMediaBridge.shared.readNow() else { return ["status": "notRunning"] }
-            return SystemMediaBridge.shared.send(command, position: position, expected: current)
+        case .system: return ["status": "notRunning"]
         }
     }
 }

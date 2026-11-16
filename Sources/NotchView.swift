@@ -212,8 +212,13 @@ struct NotchView: View {
                     Text(model.hasTrack ? model.track.title : (model.connected ? "Nada en reproducción" : "Conecta tu música"))
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         .help(model.hasTrack ? model.track.title : model.connectionStatus)
-                    Text(model.hasTrack ? model.track.artist : (model.connected ? model.connectionStatus : "Ahora suena · Music · Spotify"))
-                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                    if let message = model.toastMessage {
+                        Text(message).font(.system(size: 11)).foregroundStyle(.white.opacity(0.82))
+                            .lineLimit(1).help(message)
+                    } else {
+                        Text(model.hasTrack ? model.track.artist : (model.connected ? model.connectionStatus : "Ahora suena · Music · Spotify"))
+                            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                    }
                     if let lyric = model.currentLyricText {
                         Text("♪ " + lyric)
                             .font(LyricTypography.font(model.lyricTypeface, baseSize: 10, sizePercent: model.lyricSizePercent)

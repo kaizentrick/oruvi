@@ -118,10 +118,12 @@ final class SystemMediaBridge: @unchecked Sendable {
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return SystemMediaSnapshot(payload: payload, uptime: ProcessInfo.processInfo.systemUptime, epoch: Date().timeIntervalSince1970)
     }
-    func send(_ command: String, position: Double, expected: SystemMediaSnapshot) -> [String: Any] {
-        // Recheck immediately before dispatch; never seek or skip an unrelated item.
-        guard let fresh = readNow(), fresh.id == expected.id, fresh.bundleID == expected.bundleID else {
-            return ["status": "transition", "message": "El contenido cambió; vuelve a pulsar el control."]
+    func send(_ command: String, position: Double, target: PlaybackCommandTarget) -> [String: Any] {
+        guard let fresh = readNow() else {
+            return ["status": "transition", "message": "El sistema está actualizando el contenido. Vuelve a intentarlo."]
+        }
+        guard target.matches(source: .system, trackID: fresh.id, requireSameTrack: true) else {
+            return ["status": "transition", "message": "El contenido cambió. Vuelve a pulsar el control."]
         }
         let arguments: [String]
         switch command {

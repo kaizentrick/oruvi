@@ -528,7 +528,7 @@ final class StandbyModel {
             lyricsRetryAt = 0; artworkRetryAt = 0
             track = next; artwork = nil; artworkLink = nil
             appliedSystemArtwork = nil
-            toastTask?.cancel(); toastMessage = nil; lyricsAvailability = .idle
+            lyricsAvailability = .idle
             artworkStatus = ""
             if let retainedArtwork, PlaybackRecovery.sameRecording(retainedArtwork.track, next),
                retainedArtwork.track.sourceID == next.sourceID {
@@ -583,6 +583,7 @@ final class StandbyModel {
         timer.tolerance = 0.1; pollTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func control(_ command: String, position: Double = 0) {
+        guard hasTrack, position.isFinite else { return }
         if command == "seek" && !canSeek { return }
         if (command == "next" || command == "previous") && !canSkip { return }
         if demoMode {
@@ -593,14 +594,18 @@ final class StandbyModel {
             else { anchor = PlaybackAnchor(position: command == "seek" && position.isFinite ? max(0, min(track.duration, position)) : 0, uptime: now, duration: track.duration, playing: anchor.playing) }
             updateCue(); return
         }
-        guard connected, position.isFinite else { return }
+        guard connected else { return }
         let session = generation, source = activePlayer, target = min(max(0, position), track.duration > 0 ? track.duration : max(0, position))
         let preference = effectivePlayerPreference, expectedTrackID = track.id
         musicQueue.async { [weak self, playerRouter] in
             let result = playerRouter.command(command, position: target, source: source, preference: preference, expectedTrackID: expectedTrackID)
             DispatchQueue.main.async {
                 guard let self, session == self.generation, self.connected else { return }
-                if result["status"] as? String != "ok" { self.connectionStatus = result["message"] as? String ?? "Abre tu reproductor para usar los controles." }
+                if result["status"] as? String != "ok" {
+                    let message = result["message"] as? String ?? "Abre tu reproductor para usar los controles."
+                    self.connectionStatus = message
+                    self.showToast(message)
+                }
                 if self.reading { self.pendingMusicHint = true } else { self.readMusic() }
             }
         }

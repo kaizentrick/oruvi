@@ -58,6 +58,15 @@ struct VerifyPlayerHover {
         expect(PlayerSelectionPolicy.choose([music, spotify], preference: .automatic, preferred: .spotify, previouslyPlaying: [.spotify]) == .music, "newly playing Music wins")
         expect(PlayerSelectionPolicy.choose([PlayerCandidate(source: .music, status: "ok", playing: false), spotify], preference: .automatic, preferred: .music, previouslyPlaying: []) == .spotify, "paused cannot mask playing")
         expect(PlayerSelectionPolicy.choose([], preference: .automatic, preferred: .music, previouslyPlaying: []) == nil, "no invented player")
+        let displayedMusic = PlaybackCommandTarget(source: .music, trackID: "track-A")
+        expect(!displayedMusic.matches(source: .spotify, trackID: "track-A", requireSameTrack: false), "play or skip cannot move to a different app")
+        expect(!displayedMusic.matches(source: .system, trackID: "track-A", requireSameTrack: false), "native control cannot pause browser content")
+        expect(displayedMusic.matches(source: .music, trackID: "track-B", requireSameTrack: false), "consecutive native transport actions stay with the same app")
+        expect(!displayedMusic.matches(source: .music, trackID: "track-B", requireSameTrack: true), "seeks and widget actions require the displayed recording")
+        let displayedVideo = PlaybackCommandTarget(source: .system, trackID: "tab-A")
+        expect(!displayedVideo.matches(source: .system, trackID: "tab-B", requireSameTrack: false), "a new system item cannot receive a stale global command")
+        expect(displayedVideo.matches(source: .system, trackID: "tab-A", requireSameTrack: false), "the displayed system item can receive a command")
+        expect(!displayedVideo.matches(source: .system, trackID: nil, requireSameTrack: false), "missing system identity is never a valid destination")
         for x: CGFloat in [0, -1512, 1920] {
             for y: CGFloat in [0, -982, 1080] {
                 let screen = CGRect(x: x, y: y, width: 1512, height: 982)
