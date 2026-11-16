@@ -147,6 +147,9 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         switch route {
         case .standby: StandbyModel.shared.showWindow()
         case .widgets: StandbyModel.shared.showNativeWidgetSettings()
+        case .player: StandbyModel.shared.openInstalledPlayer()
+        case .music: StandbyModel.shared.openMusic(source: .music)
+        case .spotify: StandbyModel.shared.openMusic(source: .spotify)
         }
     }
     @objc private func toggleAutomatic() { StandbyModel.shared.idleEnabled.toggle() }

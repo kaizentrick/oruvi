@@ -55,18 +55,50 @@ struct OruviNowPlayingWidget: Widget {
 struct OruviWidgetView: View {
     let snapshot: WidgetSnapshot
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.widgetRenderingMode) private var renderingMode
+    @Environment(\.redactionReasons) private var redactionReasons
     private var small: Bool { family == .systemSmall }
     var body: some View {
         Group { if small { compact } else { regular } }
-            .containerBackground(for: .widget) { Color(nsColor: .windowBackgroundColor) }
-            .widgetURL(snapshot.canControl ? OruviWidgetIdentity.standbyURL : OruviWidgetIdentity.settingsURL)
+            .containerBackground(for: .widget) { background }
+            .widgetURL(playerURL)
+    }
+    private var playerURL: URL {
+        switch snapshot.sourceID {
+        case "com.apple.Music": return OruviWidgetIdentity.musicURL
+        case "com.spotify.client": return OruviWidgetIdentity.spotifyURL
+        default: return OruviWidgetIdentity.playerURL
+        }
+    }
+    @ViewBuilder private var background: some View {
+        if renderingMode == .fullColor, !redactionReasons.contains(.privacy),
+           let palette = snapshot.artworkPalette, palette.count == 4 {
+            let colors = palette.map(backgroundColor)
+            MeshGradient(width: 3, height: 3,
+                         points: [[0, 0], [0.43, 0], [1, 0], [0, 0.62], [0.36, 0.42], [1, 0.55], [0, 1], [0.57, 1], [1, 1]],
+                         colors: [colors[0], colors[2], colors[1], colors[2], colors[1], colors[3], colors[0], colors[3], colors[0]],
+                         smoothsColors: true)
+                .privacySensitive()
+        } else {
+            Color(nsColor: .windowBackgroundColor)
+        }
+    }
+    private func backgroundColor(_ rgb: UInt32) -> Color {
+        let light = colorScheme == .light
+        let base = light ? 0.98 : 0.05
+        let amount = light ? 0.32 : 0.43
+        func channel(_ shift: UInt32) -> Double {
+            let value = Double((rgb >> shift) & 255) / 255
+            return base + (value - base) * amount
+        }
+        return Color(red: channel(16), green: channel(8), blue: channel(0))
     }
     private var compact: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .top) {
-                cover.frame(width: 46, height: 46)
+                cover.frame(width: 42, height: 42)
                 Spacer(minLength: 4)
-                refreshButton
                 standbyLink
             }
             heading
@@ -79,9 +111,8 @@ struct OruviWidgetView: View {
             cover.frame(width: 94, height: 94)
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 5) {
-                    Text(snapshot.sourceName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                    sourceLabel
                     Spacer(minLength: 4)
-                    refreshButton
                     standbyLink
                 }
                 heading
@@ -90,12 +121,22 @@ struct OruviWidgetView: View {
             }
         }
     }
+    @ViewBuilder private var sourceLabel: some View {
+        if !snapshot.displaySourceName.isEmpty {
+            Text(snapshot.displaySourceName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .privacySensitive()
+        }
+    }
     private var heading: some View {
         VStack(alignment: .leading, spacing: 3) {
+            if small { sourceLabel }
             Text(snapshot.title).font(.system(size: small ? 13 : 15, weight: .semibold))
                 .lineLimit(small ? 1 : 2).minimumScaleFactor(0.85)
             Text(snapshot.message.isEmpty ? snapshot.artist : snapshot.message)
-                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(small && snapshot.state == .ready ? 1 : 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .privacySensitive(snapshot.state == .ready)
@@ -104,21 +145,18 @@ struct OruviWidgetView: View {
     private var cover: some View {
         Group {
             if let data = snapshot.artwork, let image = NSImage(data: data) {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                Image(nsImage: image)
+                    .resizable()
+                    .widgetAccentedRenderingMode(.fullColor)
+                    .aspectRatio(contentMode: .fit)
             } else {
                 RoundedRectangle(cornerRadius: 10).fill(.primary.opacity(0.06))
                     .overlay { Image(systemName: "music.note").font(.system(size: small ? 23 : 35, weight: .light)).foregroundStyle(.secondary) }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityLabel("Portada de " + snapshot.title)
-        .privacySensitive(snapshot.state == .ready)
-    }
-    private var refreshButton: some View {
-        Button(intent: OruviWidgetPlaybackIntent(.refresh, snapshot: snapshot)) {
-            Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)).frame(width: 24, height: 28)
-        }.buttonStyle(.plain).disabled(!snapshot.canRefresh)
-            .accessibilityLabel("Conectar y actualizar reproducción sin reproducir ni pausar")
+        .accessibilityLabel(snapshot.state == .idle && snapshot.artwork != nil ? "Última portada reproducida" : "Portada de " + snapshot.title)
+        .privacySensitive(snapshot.artwork != nil)
     }
     private var standbyLink: some View {
         Link(destination: OruviWidgetIdentity.standbyURL) {
@@ -132,12 +170,6 @@ struct OruviWidgetView: View {
                 control(.toggle, symbol: snapshot.playing ? "pause.fill" : "play.fill", title: snapshot.playing ? "Pausar" : "Reproducir")
                 control(.next, symbol: "forward.end.fill", title: "Siguiente")
             }.frame(maxWidth: .infinity)
-        } else {
-            Button(intent: OruviWidgetPlaybackIntent(.refresh, snapshot: snapshot)) {
-                Label(snapshot.state == .closed || snapshot.state == .disconnected ? "Conectar" : "Actualizar", systemImage: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity, minHeight: 30)
-            }.buttonStyle(.bordered).disabled(!snapshot.canRefresh)
-                .accessibilityLabel("Conectar y actualizar Oruvi")
         }
     }
     private func control(_ action: OruviWidgetCommand, symbol: String, title: String) -> some View {

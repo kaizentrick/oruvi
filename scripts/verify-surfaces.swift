@@ -17,6 +17,17 @@ struct VerifySurfaces {
             count += 1; precondition(condition(), message)
         }
         model.automaticLyrics = false; model.automaticArtwork = false
+        model.contentTypeface = .rounded
+        expect(model.lyricTypeface == .rounded && model.lyricSizePercent == 100, "existing preferences are inherited at the original size")
+        model.lyricTypefaceOverride = .monospaced
+        expect(model.lyricTypeface == .monospaced && model.contentTypeface == .rounded, "lyric fonts are independent and persistent")
+        expect(defaults.string(forKey: "lyricTypeface") == "monospaced", "store the explicit lyric family")
+        model.lyricTypefaceOverride = nil
+        expect(model.lyricTypeface == .rounded && defaults.object(forKey: "lyricTypeface") == nil, "reset restores inheritance")
+        model.lyricSizePercent = 200
+        expect(model.lyricSizePercent == 135 && defaults.double(forKey: "lyricSizePercent") == 135, "save the bounded lyric size")
+        model.lyricSizePercent = .nan
+        expect(model.lyricSizePercent == 100 && defaults.double(forKey: "lyricSizePercent") == 100, "invalid lyric sizes reset safely")
         model.notchPlayerPreference = .spotify
         expect(model.playerPreference == .music, "Notch leaves Standby selection intact")
         expect(model.effectivePlayerPreference == .spotify, "desktop uses Notch preference")
@@ -52,6 +63,15 @@ struct VerifySurfaces {
         expect(!model.playbackOptionsAvailable, "system cannot invent shuffle/repeat support")
         model.fetchLyrics()
         expect(model.lyricsAvailability == .unavailable, "video metadata never requests music lyrics")
+        model.musicShowsLyrics = true
+        expect(!model.hasLyrics && !model.visibleLyrics, "a saved lyrics preference cannot show an empty pane")
+        model.toggleLyrics()
+        expect(model.musicShowsLyrics, "the unavailable control cannot overwrite the saved preference")
+        model.lines = [LyricLine(id: 0, time: 0, text: "Synthetic lyric")]
+        expect(model.hasLyrics && model.visibleLyrics, "available lyrics follow the saved preference")
+        model.toggleLyrics()
+        expect(model.hasLyrics && !model.visibleLyrics, "the button can still hide a real lyric")
+        model.lines = []
         expect(model.playerPreference == .spotify && model.notchPlayerPreference == .automatic, "system playback preserves independent selectors")
         let widgets = NativeWidgetController(model: model)
         model.connected = true

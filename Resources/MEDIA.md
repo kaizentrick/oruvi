@@ -6,7 +6,7 @@ Instala Oruvi en Aplicaciones y abre la app al menos una vez. Haz clic secundari
 
 Desde 0.10.0 no existe la tarjeta AppKit de 0.9.0/0.9.1. Se retiraron Mostrar, Mantener al frente y arrastre propio. Añadir o quitar widgets siempre es decisión del usuario desde macOS.
 
-En 0.10.1, si falta estado, pulsa **Conectar** o la **flecha circular** del widget. También está en **Oruvi → Widgets de macOS → Conectar y actualizar widgets**. La acción conecta la selección actual y espera la lectura antes de terminar el App Intent, pero no reproduce, pausa ni salta contenido. No cambia ningún selector. No es necesario eliminar los widgets para recuperar el estado.
+El widget se actualiza automáticamente. Si necesitas restablecer la conexión, abre **Oruvi → Widgets de macOS → Conectar y actualizar widgets**.
 
 Si macOS pide acceso a datos compartidos, autoriza Oruvi. Ausencia de archivo, caducidad, corrupción y acceso denegado se presentan como estados distintos, no como el mismo mensaje de app cerrada. Ajustes muestra la fecha de la última escritura leída de vuelta correctamente por la app; esto no certifica por sí solo que macOS ya haya mostrado esa instantánea en pantalla.
 
@@ -14,7 +14,7 @@ Si macOS pide acceso a datos compartidos, autoriza Oruvi. Ausencia de archivo, c
 
 La extensión es un target WidgetKit real, sandboxed, con `NSExtensionPointIdentifier=com.apple.widgetkit-extension`. El pipeline genera un proyecto Xcode determinista en el directorio temporal de compilación. Xcode compila la app y la extensión, genera App Intents metadata en ambos targets y empotra la extensión. Las firmas se realizan desde los componentes internos hasta la app, antes del DMG.
 
-`AudioPlaybackIntent` ejecuta los comandos en la aplicación contenedora, sobre el router y la cola de reproducción existentes. No se incluye ScriptingBridge, MediaRemote Adapter ni Sparkle en el widget. El enlace `oruvi://standby` abre la pantalla completa; los botones de transporte no la abren. Las rutas URL admitidas son solo navegación: no aceptan comandos, archivos ni scripts.
+`AudioPlaybackIntent` ejecuta los comandos en la aplicación contenedora. El cuerpo del widget abre el reproductor con `oruvi://player`. El botón de la esquina abre la pantalla completa con `oruvi://standby`. Los botones de transporte conservan su acción.
 
 El widget refleja la superficie de reproducción activa de Oruvi. Se conservan las preferencias independientes Notch y Standby y sus selectores Automático/Apple Music/Spotify. Un botón verifica sesión, pista y selección antes de actuar. Si la representación quedó obsoleta, se recupera el estado real antes de pedir otro clic; no se controla una grabación diferente por accidente.
 
@@ -34,7 +34,7 @@ Los controles esperan una lectura real y una escritura atómica antes de termina
 
 App Group: `group.com.kaizentrick.Oruvi`, declarado en entitlements y plists de ambos targets. Se accede por `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`, sin construir rutas a otros contenedores ni usar excepciones de sandbox.
 
-Una única instantánea JSON contiene los metadatos actuales y su miniatura JPEG de hasta 192 píxeles y 256 KiB. Límite total: 512 KiB; escritura atómica, permisos privados, exclusión de copias de seguridad y caducidad de una hora. El archivo puede mantenerse mientras Oruvi está abierta aunque la enumeración de widgets esté vacía: así una respuesta tardía no destruye datos que un widget instalado necesita. No se almacena un historial. Desconexión y reposo reemplazan el contenido por estados sin metadatos privados ni transporte habilitado; cerrar Oruvi elimina el archivo.
+Una única instantánea JSON contiene los metadatos actuales, una miniatura JPEG de hasta 192 píxeles y 256 KiB, y su paleta. Al detener la reproducción, se reutilizan la última miniatura disponible de Apple Music o Spotify y su paleta. El widget informa que no hay reproducción y oculta el transporte. El archivo tiene un límite de 512 KiB, escritura atómica, permisos privados, exclusión de copias de seguridad y caducidad de una hora. Se mantiene con Oruvi abierta aunque la enumeración de widgets esté vacía. La desconexión descarta la portada retenida, el reposo oculta el contenido y cerrar Oruvi elimina el archivo.
 
 WidgetKit conserva representaciones bajo control de macOS. Oruvi no promete borrado o sustitución instantáneos de todas las representaciones ya archivadas por el sistema.
 

@@ -25,7 +25,7 @@ struct MusicPlayerView: View {
                         .frame(width: metrics.playerWidth)
                         .offset(x: metrics.split ? metrics.playerShift : 0)
                         .animation(model.reduceMotion ? nil : .smooth(duration: 0.32, extraBounce: 0), value: model.visibleLyrics)
-                    if metrics.supportsSidebar {
+                    if metrics.supportsSidebar && model.hasLyrics {
                         LyricsStage(model: model, compact: metrics.compact)
                             .frame(width: metrics.lyricsWidth)
                             .offset(x: metrics.lyricsShift + (model.visibleLyrics ? 0 : 14))
@@ -54,7 +54,7 @@ struct MusicPlayerView: View {
                     .opacity(model.visibleLyrics && !metrics.supportsSidebar ? 0 : 1)
                     .allowsHitTesting(!model.visibleLyrics || metrics.supportsSidebar)
                     .accessibilityHidden(model.visibleLyrics && !metrics.supportsSidebar)
-                if !metrics.supportsSidebar {
+                if !metrics.supportsSidebar && model.hasLyrics {
                     LyricsStage(model: model, compact: metrics.compact)
                         .frame(width: max(0, metrics.playerWidth - 8), height: metrics.cover)
                         .opacity(model.visibleLyrics ? 1 : 0)
@@ -79,7 +79,6 @@ struct MusicPlayerView: View {
                         PlayerSourceMenuItems(selection: $model.playerPreference, surface: .standby, activePlayer: model.activePlayer)
                     }
                     Button("Actualizar sincronización") { model.refreshPlayback() }.disabled(!model.connected)
-                    Button("Importar letra LRC…") { model.importLRC() }
                     if !model.lyricSource.isEmpty { Text(model.lyricSource) }
                 } label: { Image(systemName: "ellipsis").font(.system(size: 16, weight: .medium)).frame(width: 32, height: 34) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Opciones de reproducción")

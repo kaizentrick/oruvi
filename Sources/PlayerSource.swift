@@ -30,18 +30,34 @@ final class PlayerRouter: @unchecked Sendable {
                          system: SystemMediaSnapshot?) -> [String: Any] {
         if let explicit = preference.source { return native(explicit) }
         // Follow the same session as Control Center, not the frontmost window.
+        var stoppedSession: PlayerSource?
         if let system {
             if let source = PlayerSource(rawValue: system.bundleID), source != .system {
-                let value = native(source)
-                if value["status"] as? String == "ok" { return value }
+                var value = native(source)
+                if value["status"] as? String == "ok" {
+                    let duration = (value["duration"] as? NSNumber)?.doubleValue ?? 0
+                    if let artwork = system.artwork,
+                       RecordingMatcher.normalized(value["title"] as? String ?? "") == RecordingMatcher.normalized(system.title),
+                       RecordingMatcher.normalized(value["artist"] as? String ?? "") == RecordingMatcher.normalized(system.artist),
+                       RecordingMatcher.normalized(value["album"] as? String ?? "") == RecordingMatcher.normalized(system.album),
+                       abs(duration - system.duration) <= 2.1 {
+                        value["systemArtwork"] = artwork
+                    }
+                    return value
+                }
+                // A stopped player can remain in the system cache during a queue transition.
+                // Keep checking the other player instead of publishing the cached song again.
+                if value["status"] as? String == "stopped" { stoppedSession = source }
             }
-            return system.dictionary(at: ProcessInfo.processInfo.systemUptime)
+            if stoppedSession == nil { return system.dictionary(at: ProcessInfo.processInfo.systemUptime) }
         }
         // A missing/private API must never remove the existing native integrations.
         let tie = lastAutomaticSource ?? preferred
         let preferred: PlayerSource = tie == .system ? .music : tie
         let sources: [PlayerSource] = [preferred, preferred == .music ? .spotify : .music]
-        let results = sources.map { ($0, native($0)) }
+        let results = sources.map { source in
+            (source, source == stoppedSession ? ["status": "stopped"] : native(source))
+        }
         let candidates = results.map { PlayerCandidate(source: $0.0, status: $0.1["status"] as? String ?? "error",
                                                        playing: ($0.1["playing"] as? NSNumber)?.boolValue ?? false) }
         let chosen = PlayerSelectionPolicy.choose(candidates, preference: .automatic, preferred: preferred, previouslyPlaying: previouslyPlaying)
@@ -92,13 +108,4 @@ final class PlayerRouter: @unchecked Sendable {
 
 enum LyricsAvailability: Equatable {
     case idle, loading, ready, unavailable, offline, disabled
-    var notification: String {
-        switch self {
-        case .ready: return ""
-        case .loading, .idle: return "Buscando la letra de esta canción…"
-        case .offline: return "No se pudo consultar la letra. Se reintentará automáticamente."
-        case .disabled: return "Activa las letras automáticas en Ajustes o importa un archivo LRC."
-        case .unavailable: return "Esta canción no tiene letra sincronizada disponible."
-        }
-    }
 }

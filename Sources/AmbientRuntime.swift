@@ -71,7 +71,6 @@ final class AmbientRuntime {
         NSApp.activate()
         applySystemPresentation()
         model.refreshVisibility()
-        model.refreshPlayback()
         refreshPhrases()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, self.presentationSerial == serial, self.window.isVisible, !self.isBlocked else { return }
@@ -237,7 +236,6 @@ final class AmbientRuntime {
             if flags.contains(.command) && text == "," { model.settingsOpen = true; return nil }
             if flags.contains(.command) && text == "w" { dismiss(); return nil }
             if flags.contains(.command) && text == "q" { NSApp.terminate(nil); return nil }
-            if flags.contains(.command) && text == "o" { model.importLRC(); return nil }
         }
         return event
     }

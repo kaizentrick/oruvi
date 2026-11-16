@@ -1,15 +1,17 @@
 import SwiftUI
 
 /// OFF is genuinely transparent; hover is transient; ON has a solid contrasting surface.
-/// The state denotes whether the pane is visible, not whether lyrics exist for this recording.
 struct LyricsVisibilityButton: View {
     let model: StandbyModel
     @Environment(\.colorScheme) private var scheme
     @State private var hovering = false
     var body: some View {
+        if model.hasLyrics { button }
+    }
+    private var button: some View {
         let selected = model.visibleLyrics
         let foreground: Color = selected ? (scheme == .dark ? .black : .white) : (scheme == .dark ? .white : .black)
-        Button { model.toggleLyrics() } label: {
+        return Button { model.toggleLyrics() } label: {
             Image(systemName: "text.quote")
                 .font(.system(size: 16, weight: selected ? .semibold : .regular))
                 .foregroundStyle(foreground.opacity(selected ? 1 : 0.72))
@@ -20,7 +22,6 @@ struct LyricsVisibilityButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(!model.hasTrack)
         .onHover { hovering = $0 }
         .animation(model.reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
         .animation(model.reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)

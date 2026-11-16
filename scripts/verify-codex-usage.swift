@@ -89,6 +89,31 @@ import Foundation
         check(CodexExecutable.validatedHome(safeHome.path + "/../safe-home") == nil, "traversal CODEX_HOME rejected")
         check(CodexExecutable.validatedHome("relative/path") == nil, "relative CODEX_HOME rejected")
         print("PASS: \(checks) Codex usage checks: buckets, freshness, quotas, real stdio handshake, timeout, cancellation, executable/home hardening and output bounds.")
+
+        let cursor = try CursorUsageSnapshot.decode("""
+        Opened a background tab.
+        ORUVI_CURSOR_USAGE {"status":"ok","usedPercent":1,"resetLabel":"Nov 21"}
+        Background tab closed.
+        """, at: now)
+        checks = 0
+        check(cursor.remainingPercent == 99 && cursor.resetLabel == "Nov 21" && cursor.fetchedAt == now,
+              "Cursor usage survives Aside's tab messages and keeps the dashboard reset date")
+        for reading in [
+            #"{"status":"ok","usedPercent":-1,"resetLabel":"Nov 21"}"#,
+            #"{"status":"ok","usedPercent":101,"resetLabel":"Nov 21"}"#,
+            #"{"status":"ok","usedPercent":1}"#,
+            #"{"status":"unavailable"}"#
+        ] {
+            do {
+                _ = try CursorUsageSnapshot.decode("ORUVI_CURSOR_USAGE " + reading)
+                preconditionFailure("Missing or invalid data must not become a valid quota")
+            } catch CursorUsageError.dashboardUnavailable { checks += 1 }
+        }
+        do {
+            _ = try CursorUsageSnapshot.decode(#"ORUVI_CURSOR_USAGE {"status":"signIn"}"#)
+            preconditionFailure("A signed-out dashboard must not publish a quota")
+        } catch CursorUsageError.signInRequired { checks += 1 }
+        print("PASS: \(checks) Cursor usage checks: dashboard data, invalid quotas and sign-in.")
     }
     static func tryFrames(_ frames: inout CodexUsageFrames, _ bytes: Data) -> [Data] { try! frames.append(bytes) }
 }

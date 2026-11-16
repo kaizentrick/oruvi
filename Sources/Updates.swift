@@ -51,6 +51,7 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
     func checkNow() {
         guard configured else {
             StandbyModel.shared.showWindow()
+            StandbyModel.shared.settingsSection = .updates
             StandbyModel.shared.settingsOpen = true
             status = "Primero configura el repositorio publicado"; return
         }
@@ -85,12 +86,13 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
 
 struct UpdatesSettings: View {
     @ObservedObject private var updates = OruviUpdates.shared
-    @State private var draft = ""
+    @Binding var draft: String
     var body: some View {
         Section("Actualizaciones") {
             Text(updates.status).font(.callout)
             LabeledContent("Repositorio público") {
-                TextField("propietario/oruvi", text: $draft).textFieldStyle(.roundedBorder).frame(width: 220)
+                TextField("Repositorio público", text: $draft, prompt: Text("propietario/oruvi"))
+                    .labelsHidden().textFieldStyle(.roundedBorder).frame(width: 220)
             }
             HStack {
                 Button("Guardar repositorio") { updates.configure(repository: draft) }
@@ -104,6 +106,5 @@ struct UpdatesSettings: View {
             Text("Se comprueban versiones publicadas, no commits sueltos. Sparkle verifica la firma del feed y del instalador antes de instalar. Las comprobaciones usan GitHub y no envían datos de Música. No se fuerza el reinicio durante una reproducción.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        .onAppear { draft = updates.repository }
     }
 }

@@ -27,11 +27,13 @@ assert int(e.get('length', '-1')) == p.stat().st_size, 'Installer size differs f
 assert len(base64.b64decode(e.get(ns + 'edSignature', ''), validate=True)) == 64, 'Missing update signature'
 PY
 [[ "$(gh api "repos/$REPO" --jq '.private')" == false ]] || { echo 'This distribution requires a public repository.'; exit 1; }
-WORK="$(mktemp -d "$ROOT/.build.publish.XXXXXX")"
+mkdir -p "$ROOT/.tmp/codex"
+WORK="$(mktemp -d "$ROOT/.tmp/codex/publish.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 cp "$DMG" "$WORK/Oruvi.dmg"; cmp -s "$DMG" "$WORK/Oruvi.dmg"
 DIGEST="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 printf '%s  %s\n%s  Oruvi.dmg\n' "$DIGEST" "$NAME" "$DIGEST" > "$WORK/SHA256SUMS.txt"
+CHANGES="$(awk -v version="$VERSION" '$1 == "##" { if (found) exit; found = ($2 == version); next } found { print }' CHANGELOG.md)"
 {
   printf '## Descargar Oruvi\n\n'
   printf '**[Descargar Oruvi.dmg](https://github.com/%s/releases/download/%s/Oruvi.dmg)**\n\n' "$REPO" "$TAG"
@@ -41,6 +43,9 @@ printf '%s  %s\n%s  Oruvi.dmg\n' "$DIGEST" "$NAME" "$DIGEST" > "$WORK/SHA256SUMS
   printf '3. Autoriza Automatización para el reproductor que utilices en este Mac.\n'
   printf '4. En Ajustes → Actualizaciones, deja activada la búsqueda automática. Las nuevas releases se verifican e instalan desde la propia app.\n\n'
   printf 'Incluye notch, Standby, Automático con Ahora suena, Apple Music y Spotify.\n\n'
+  if [[ -n "$CHANGES" ]]; then
+    printf '### Novedades en %s\n%s\n\n' "$VERSION" "$CHANGES"
+  fi
   printf '### Widget nativo de macOS\n\n'
   printf 'Abre Oruvi desde Aplicaciones al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → Oruvi → Música y Standby**. Elige pequeño o mediano. Incluye portada, controles interactivos y enlace a Standby.\n\n'
   printf 'La tarjeta flotante anterior se ha retirado. WidgetKit gestiona colocación y refrescos; no se simula un widget con otra ventana. Si tenías la build de prueba sin feed, reemplázala por este DMG público.\n\n'

@@ -27,9 +27,9 @@ La protección conservadora puede esperar mientras un navegador esté al frente;
 se puede ajustar sin desactivar toda la protección multimedia.
 
 LETRAS Y MALLA
-Sin letra, el disco permanece centrado. El botón de comillas muestra un aviso
-temporal si no hay una letra disponible. Los fallos de red se indican aparte.
-Las letras provienen de LRCLIB o LRC local y se sincronizan por línea.
+Sin letra, la vista Música centra el reproductor. El botón de comillas aparece
+cuando hay letra. Las letras de LRCLIB y de archivos locales ya guardados
+se sincronizan por línea.
 La malla Aurora es la predeterminada; los colores pueden seguir la portada.
 No hay grabación de audio ni análisis del ritmo.
 

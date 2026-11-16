@@ -42,7 +42,7 @@ struct StandbyView: View {
             let compact = geometry.size.height < 710
             ZStack {
                 SmoothMesh(palette: model.meshPalette, framesPerSecond: model.policy.framesPerSecond, light: scheme == .light)
-                    .animation(model.reduceMotion ? nil : .easeInOut(duration: 1.2), value: model.meshPalette)
+                    .animation(model.policy.framesPerSecond > 0 ? .easeOut(duration: 0.28) : nil, value: model.meshPalette)
                 VStack(spacing: 0) {
                     topBar
                     Spacer(minLength: compact ? 12 : 26)
@@ -82,7 +82,10 @@ struct StandbyView: View {
             } else if model.layout == .clock {
                 EditorialClock(model: model, large: true, compact: compact)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if model.hasTrack { compactTrack }
+                if model.hasTrack {
+                    compactTrack
+                    TransportBar(model: model).frame(maxWidth: 500)
+                } else { connectBar }
             } else {
                 HStack(alignment: .center, spacing: min(70, size.width * 0.05)) {
                     EditorialClock(model: model, compact: compact)
@@ -90,15 +93,12 @@ struct StandbyView: View {
                     VStack(alignment: .leading, spacing: compact ? 16 : 26) {
                         if model.hasTrack {
                             TrackHeading(model: model, compact: compact)
-                            if !model.lines.isEmpty { LyricsStage(model: model, compact: compact) }
-                            else { LyricsVisibilityButton(model: model) }
-                        }
+                            TransportBar(model: model).frame(maxWidth: 500)
+                            LyricsVisibilityButton(model: model)
+                            if model.visibleLyrics { LyricsStage(model: model, compact: compact) }
+                        } else { connectBar }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.frame(maxWidth: 1240, maxHeight: .infinity)
-            }
-            if model.layout != .listening {
-                if model.hasTrack { TransportBar(model: model).frame(maxWidth: 500) }
-                else { connectBar }
             }
         }
     }
@@ -224,28 +224,18 @@ struct LyricsStage: View {
     var compact = false
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 12 : 19) {
-            if model.isResynchronizing && !model.demoMode && model.hasTrack {
-                ProgressView().controlSize(.small).accessibilityLabel("Sincronizando canción")
+            if model.isResynchronizing && !model.demoMode {
+                ProgressView("Sincronizando canción…").controlSize(.small)
                     .frame(height: compact ? 180 : 230)
-            } else if model.lines.isEmpty {
-                Text(model.hasTrack ? model.lyricStatus : "Abre Música para empezar.")
-                    .font(.system(size: 14)).lineSpacing(5).opacity(0.72).fixedSize(horizontal: false, vertical: true)
-                if model.hasTrack && !model.demoMode {
-                    HStack(spacing: 15) {
-                        if !model.automaticLyrics {
-                            Button("Activar letras") { model.settingsOpen = true }.buttonStyle(.glass)
-                        }
-                        Button("Importar .lrc") { model.importLRC() }.buttonStyle(.plain).opacity(0.65)
-                    }.padding(.top, 8)
-                }
             } else {
                 let index = model.activeLine ?? -1
                 if !compact {
                     cue(index - 1, prominence: 0.48, size: 19)
                         .frame(height: 45, alignment: .bottomLeading)
                 }
-                Text(index >= 0 && index < model.lines.count && !model.lines[index].text.isEmpty ? model.lines[index].text : "♪")
-                .font(model.contentTypeface.font(size: compact ? 29 : (model.layout == .listening ? 39 : 36), emphasized: true))
+                Text(model.currentLyricText ?? "♪")
+                .font(LyricTypography.font(model.lyricTypeface, baseSize: compact ? 29 : (model.layout == .listening ? 39 : 36),
+                                           sizePercent: model.lyricSizePercent, emphasized: true))
                 .tracking(-0.6).lineSpacing(3).lineLimit(4).minimumScaleFactor(0.65)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: compact ? 100 : 144, alignment: .leading)
@@ -262,8 +252,10 @@ struct LyricsStage: View {
         if index >= 0 && index < model.lines.count {
             Button { model.control("seek", position: max(0, model.lines[index].time - model.lyricOffset)) } label: {
                 Text(model.lines[index].text.isEmpty ? "♪" : model.lines[index].text)
-                    .font(model.contentTypeface.font(size: size)).lineLimit(2).multilineTextAlignment(.leading).opacity(prominence)
+                    .font(LyricTypography.font(model.lyricTypeface, baseSize: size, sizePercent: model.lyricSizePercent))
+                    .lineLimit(2).multilineTextAlignment(.leading).opacity(prominence)
             }.buttonStyle(.plain).help("Ir a este momento de la canción")
+                .disabled(model.track.duration <= 0 || model.isResynchronizing)
         } else { Text(" ").font(.system(size: size)) }
     }
 }
@@ -271,17 +263,26 @@ struct LyricsStage: View {
 private struct TransportBar: View {
     let model: StandbyModel
     var body: some View {
-        HStack(spacing: 22) {
+        ViewThatFits(in: .horizontal) {
             HStack(spacing: 22) {
-                control("backward.end.fill", name: "Anterior", command: "previous", size: 16)
-                control(model.anchor.playing ? "pause.fill" : "play.fill", name: model.anchor.playing ? "Pausar" : "Reproducir", command: "toggle", size: 22)
-                control("forward.end.fill", name: "Siguiente", command: "next", size: 16)
+                buttons
+                Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 24)
+                TrackProgress(model: model)
             }
-            Rectangle().fill(.primary.opacity(0.15)).frame(width: 1, height: 24)
-            TrackProgress(model: model)
+            VStack(spacing: 8) {
+                buttons
+                TrackProgress(model: model)
+            }
         }
         .padding(.horizontal, 24).padding(.vertical, 15)
         .lumaGlass(model: model, radius: 36)
+    }
+    private var buttons: some View {
+        HStack(spacing: 22) {
+            control("backward.end.fill", name: "Anterior", command: "previous", size: 16)
+            control(model.anchor.playing ? "pause.fill" : "play.fill", name: model.anchor.playing ? "Pausar" : "Reproducir", command: "toggle", size: 22)
+            control("forward.end.fill", name: "Siguiente", command: "next", size: 16)
+        }
     }
     private func control(_ symbol: String, name: String, command: String, size: Double) -> some View {
         Button { model.control(command) } label: {
@@ -344,150 +345,6 @@ struct TrackProgress: View {
     private static func time(_ seconds: Double) -> String {
         guard seconds.isFinite else { return "0:00" }
         let value = Int(max(0, seconds)); return String(format: "%d:%02d", value / 60, value % 60)
-    }
-}
-
-private struct SettingsPanel: View {
-    @Bindable var model: StandbyModel
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Ajustes").font(.system(size: 26, weight: .semibold))
-                    Text(OruviRelease.title + " · Compilación " + OruviRelease.build).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Listo") { dismiss() }.buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
-            }.padding(26)
-            Form {
-                UpdatesSettings()
-                NativeWidgetSettings()
-                Section("Conexión con Codex") { CodexConnectionView(usage: .shared) }
-                Section("Notch y reproductores") {
-                    Toggle("Abrir Oruvi al iniciar sesión", isOn: Binding(
-                        get: { LaunchAtLogin.shared.enabled },
-                        set: { LaunchAtLogin.shared.setEnabled($0) }
-                    ))
-                    if !LaunchAtLogin.shared.message.isEmpty {
-                        Text(LaunchAtLogin.shared.message).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Toggle("Mostrar notch en el escritorio", isOn: $model.notchEnabled)
-                    LabeledContent("Reproductor del Notch") {
-                        PlayerSourcePicker(selection: $model.notchPlayerPreference, surface: .notch, activePlayer: nil)
-                    }
-                    LabeledContent("Reproductor de Standby") {
-                        PlayerSourcePicker(selection: $model.playerPreference, surface: .standby,
-                                           activePlayer: model.hasTrack ? model.activePlayer : nil)
-                    }
-                    Text("Selecciones independientes. Automático sigue Ahora suena de macOS para apps y navegadores compatibles; Apple Music y Spotify permanecen como opciones manuales cuando están instaladas. Cambiar el Notch no cambia Standby. El notch también abre sobre el centro de la cámara y permanece disponible sin reproducción.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Activación automática") {
-                    Toggle("Activar después de un tiempo sin actividad", isOn: $model.idleEnabled)
-                    LabeledContent("Tiempo sin actividad") {
-                        HStack(spacing: 8) {
-                            TextField("Minutos", value: $model.idleMinutes, format: .number.precision(.fractionLength(0)))
-                                .labelsHidden().textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing).frame(width: 62)
-                                .accessibilityLabel("Minutos sin actividad, de 1 a 120")
-                            Text("min").fixedSize().foregroundStyle(.secondary)
-                            Stepper("Minutos", value: $model.idleMinutes, in: 1...120, step: 1).labelsHidden()
-                        }.fixedSize()
-                    }.disabled(!model.idleEnabled)
-                    Text("Entre 1 y 120 minutos. Oruvi permanece solo en la barra superior y se abre siempre a pantalla completa en la pantalla donde esté el puntero. Pulsa Esc para volver. No impide que macOS bloquee o duerma la pantalla: elige un tiempo menor que el reposo del sistema.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("No interrumpir contenido") {
-                    Toggle("Pausar activación durante reproducción", isOn: $model.avoidMedia)
-                    Toggle("Protección conservadora en navegadores y reproductores", isOn: $model.protectBrowsers).disabled(!model.avoidMedia)
-                    Text("Comprueba bloqueos de reposo y procesos con salida de audio, sin grabar ni leer pestañas. Música por sí sola no bloquea Oruvi. El modo conservador también espera mientras un navegador o reproductor de vídeo esté al frente, incluso si está pausado: protege vídeos silenciosos que no anuncien su estado.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text(model.automaticActivationStatus).font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Tipografías") {
-                    Picker("Reloj", selection: $model.clockTypeface) {
-                        ForEach(AmbientTypeface.allCases.filter(\.installed)) { Text($0.name).tag($0) }
-                    }
-                    EditorialTime(text: "13:36", maximumSize: 68, centered: true, typeface: model.clockTypeface, weight: model.clockWeight).frame(height: 82)
-                    Picker("Grosor del reloj", selection: $model.clockWeight) {
-                        ForEach(ClockWeight.allCases) { Text($0.name).tag($0) }
-                    }
-                    Picker("Canción, letras y frases", selection: $model.contentTypeface) {
-                        ForEach(AmbientTypeface.allCases.filter(\.installed)) { Text($0.name).tag($0) }
-                    }
-                    Text("Aa · Música, tiempo y calma").font(model.contentTypeface.font(size: 23)).padding(.vertical, 6)
-                    Text("SF Pro, SF Pro Rounded, SF Mono y New York usan las fuentes del sistema. Las variantes condensada y expandida también se resuelven de forma nativa. No se descargan ni distribuyen archivos de fuentes.").font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Frases") {
-                    Toggle("Mostrar frases motivacionales", isOn: $model.showPhrases)
-                    Picker("Cambiar cada", selection: $model.phraseInterval) {
-                        Text("15 segundos").tag(15.0)
-                        Text("30 segundos").tag(30.0)
-                        Text("1 minuto").tag(60.0)
-                        Text("2 minutos").tag(120.0)
-                        Text("5 minutos").tag(300.0)
-                        Text("10 minutos").tag(600.0)
-                    }.disabled(!model.showPhrases)
-                    Text("24 frases originales, sin repetir la anterior. El temporizador se detiene cuando Oruvi está oculta o las frases están apagadas.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Reproducción de Standby") {
-                    Text(model.connectionStatus).font(.callout)
-                    HStack {
-                        Button(model.connected ? "Reconectar Standby" : "Conectar Standby") { model.connectMusic() }
-                        Button("Abrir reproductor") { model.openInstalledPlayer() }
-                        if model.connected || model.demoMode { Button("Desconectar Standby") { model.disconnectMusic() } }
-                    }
-                    Text("Requiere permiso de Automatización. La conexión del Notch se activa desde su propio reproductor. No lee contraseñas, no modifica tu biblioteca y no detecta música reproducida únicamente en el iPhone o Apple TV.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Portada y letras automáticas") {
-                    Toggle("Recuperar portada del catálogo Apple cuando falte", isOn: $model.automaticArtwork)
-                    Text("Se intenta primero la portada de Música y se reintenta si aún no está lista. Si falta, la búsqueda envía título y artista a Apple. La portada solo se asigna si coinciden la canción, el artista y la duración.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text(model.artworkStatus).font(.caption).foregroundStyle(.secondary)
-                    Text(model.lyricSource).font(.caption).foregroundStyle(.secondary)
-                    Toggle("Buscar letras sincronizadas en LRCLIB", isOn: $model.automaticLyrics)
-                    Text("La recuperación automática viene activa en esta actualización y se puede desactivar. Para las letras se envían título, artista, álbum y duración a lrclib.net; cada proveedor recibe tu IP. No son las letras oficiales de Apple. Se sincronizan por línea y su disponibilidad depende de la grabación.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Importar .lrc local…") { model.importLRC() }.disabled(!model.hasTrack)
-                        Button("Vaciar caché de letras y portadas") { model.clearLyricsCache() }
-                    }
-                    HStack {
-                        Text("Ajuste de sincronía")
-                        Slider(value: $model.lyricOffset, in: -2...2, step: 0.05)
-                        Text(String(format: "%+.2f s", model.lyricOffset)).monospacedDigit().frame(width: 65)
-                    }
-                    Text("Un valor positivo adelanta la letra. Ajusta también la latencia de Bluetooth o AirPlay; no se puede garantizar desfase cero.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Diseño y energía") {
-                    Picker("Malla predeterminada", selection: $model.meshTheme) {
-                        ForEach(MeshTheme.allCases) { Text($0.name).tag($0) }
-                    }
-                    Toggle("Adaptar fluid mesh a la portada de la canción", isOn: $model.meshFollowsMusic)
-                    Text("Transición de colores al cambiar de canción. No escucha ni graba audio; no es un visualizador de ritmo. Si aún no hay portada, usa una paleta provisional por artista y álbum.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Picker("Apariencia", selection: $model.appearance) { ForEach(["Sistema", "Oscuro", "Claro"], id: \.self) { Text($0).tag($0) } }
-                    Picker("Renderizado", selection: $model.energyMode) { ForEach(EnergyMode.allCases) { Text($0.rawValue).tag($0) } }
-                    Toggle("Reloj de 24 horas", isOn: $model.twentyFourHour)
-                    Toggle("Mantener pantalla encendida, solo con corriente", isOn: $model.keepAwake)
-                    Text("Automático: malla a 24 fps con corriente, estática en batería. Fluido: hasta 30 fps con corriente y 12 en batería. Ahorro, baja energía, calor o Reducir movimiento detienen la malla. Mantener la pantalla encendida consume energía y está desactivado inicialmente.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    LabeledContent("Estado", value: model.energyLabel)
-                    LabeledContent("Lectura reciente de Música", value: String(format: "%.0f ms (no es latencia de audio)", model.syncRoundTrip * 1000))
-                }
-                Section("Acerca de esta versión") {
-                    Text("Oruvi · reloj, música y ambiente. Aplicación independiente de Apple, nativa SwiftUI / AppKit, sin navegador integrado ni telemetría. Pantalla completa sin bordes; no sustituye la pantalla de bloqueo. Conserva los ajustes de las versiones anteriores de Luma.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("Copyright © 2026 KaizenTrick · Licencia MIT").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .formStyle(.grouped)
-        }
-        .frame(width: 610, height: min(740, (NSScreen.main?.visibleFrame.height ?? 820) - 70))
     }
 }
 

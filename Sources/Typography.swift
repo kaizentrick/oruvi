@@ -84,6 +84,15 @@ enum ClockWeight: String, CaseIterable, Identifiable {
     }
 }
 
+enum LyricTypography {
+    static let sizeRange = 75.0...135.0
+    static let defaultSize = 100.0
+
+    static func font(_ typeface: AmbientTypeface, baseSize: CGFloat, sizePercent: Double, emphasized: Bool = false) -> Font {
+        typeface.font(size: baseSize * sizePercent / 100, emphasized: emphasized)
+    }
+}
+
 /// Geometry is independent of the lyrics switch. Only positions and opacities animate.
 /// No text, cover or control is resized halfway through opening the lyric pane.
 struct MusicLayoutMetrics {

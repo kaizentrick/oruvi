@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 struct ArtworkPayload: Codable, Sendable {
     var data: Data
@@ -36,7 +37,7 @@ actor ArtworkRepository {
         let file = root.appendingPathComponent(LumaEnvironment.cacheName(track) + ".json")
         if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 6_000_000,
            let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode(ArtworkPayload.self, from: data),
-           !cached.data.isEmpty, cached.data.count <= 4_000_000, Date().timeIntervalSince(cached.savedAt) < 30 * 86400 { return cached }
+           Self.isImage(cached.data), (0..<30 * 86400).contains(Date().timeIntervalSince(cached.savedAt)) { return cached }
         guard track.duration.isFinite, track.duration > 0, !track.artist.isEmpty else { return nil }
         await acquireSlot()
         defer { releaseSlot() }
@@ -62,17 +63,23 @@ actor ArtworkRepository {
             .sorted {
                 let a = RecordingMatcher.normalized($0.collectionName ?? "") == RecordingMatcher.normalized(track.album)
                 let b = RecordingMatcher.normalized($1.collectionName ?? "") == RecordingMatcher.normalized(track.album)
-                return a && !b
+                if a != b { return a }
+                return abs(($0.trackTimeMillis ?? 0) / 1000 - track.duration) <
+                    abs(($1.trackTimeMillis ?? 0) / 1000 - track.duration)
             }
-        guard let record = matches.first, let original = record.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) else { return nil }
+        guard let record = matches.first(where: { $0.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) != nil }),
+              let original = record.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) else { return nil }
         // The returned URL is the fallback if this image service doesn't accept a larger rendition.
         let sourceURL = original.absoluteString
         let larger = Self.sizePattern.stringByReplacingMatches(
             in: sourceURL, range: NSRange(sourceURL.startIndex..<sourceURL.endIndex, in: sourceURL), withTemplate: "/600x600bb.")
         let imageURL = RecordingMatcher.appleArtworkURL(larger) ?? original
-        var image = try await client.get(imageURL, maxBytes: 4_000_000)
-        if image.status != 200 && imageURL != original { image = try await client.get(original, maxBytes: 4_000_000) }
-        guard image.status == 200, !image.data.isEmpty else { throw RemoteError.unavailable }
+        var image = try? await client.get(imageURL, maxBytes: 4_000_000)
+        try Task.checkCancellation()
+        if (image?.status != 200 || !Self.isImage(image?.data ?? Data())), imageURL != original {
+            image = try await client.get(original, maxBytes: 4_000_000)
+        }
+        guard let image, image.status == 200, Self.isImage(image.data) else { throw RemoteError.invalidResponse }
         let link = record.trackViewUrl.flatMap(URL.init(string:)).flatMap { url -> URL? in
             guard url.scheme == "https", let host = url.host?.lowercased(), ["music.apple.com", "itunes.apple.com"].contains(host) else { return nil }
             return url
@@ -87,8 +94,17 @@ actor ArtworkRepository {
         guard let url = ArtworkURLPolicy.spotify(text) else { return nil }
         try Task.checkCancellation()
         let result = try await client.get(url, maxBytes: 4_000_000)
-        guard result.status == 200, !result.data.isEmpty else { throw RemoteError.unavailable }
+        guard result.status == 200, Self.isImage(result.data) else { throw RemoteError.invalidResponse }
         return ArtworkPayload(data: result.data, link: nil, savedAt: Date())
+    }
+    private static func isImage(_ data: Data) -> Bool {
+        guard !data.isEmpty, data.count <= 4_000_000,
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 32,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary) != nil && CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete
     }
     func clearCache() {
         guard let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }

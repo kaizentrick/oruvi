@@ -28,6 +28,7 @@ final class NativeWidgetController {
     @ObservationIgnored private var store: WidgetSnapshotStore?
     @ObservationIgnored private var lastImage: NSImage?
     @ObservationIgnored private var thumbnail: Data?
+    @ObservationIgnored private var lastMusicCover: (artwork: Data, palette: [UInt32]?)?
     @ObservationIgnored private var serial = 0
     @ObservationIgnored private var dirty = false
     @ObservationIgnored private var pendingForce = false
@@ -147,15 +148,17 @@ final class NativeWidgetController {
     func makeSnapshot(at now: Date = Date()) -> WidgetSnapshot {
         var value = WidgetSnapshot(); value.generatedAt = now; value.session = session
         value.preference = model.effectivePlayerPreference.rawValue
-        value.sourceName = model.effectivePlayerPreference == .automatic ? "Automático · " + model.activePlayer.name : model.activePlayer.name
         if model.screenSleeping {
             value.state = .sleeping; value.title = "Oruvi en reposo"; value.artist = "La reproducción se actualizará al volver."
         } else if !model.connected || model.demoMode {
-            value.state = .disconnected; value.title = "Conectar reproducción"; value.artist = "Pulsa Conectar en este widget."
+            value.state = .disconnected; value.title = "Reproductor desconectado"; value.artist = "Conéctalo en los ajustes de Oruvi."
         } else if !model.hasTrack {
-            value.state = .idle; value.title = "Nada en reproducción"; value.artist = "Reproduce contenido en tu Mac o pulsa Actualizar."
+            value.state = .idle; value.title = "Nada en reproducción"; value.artist = "Elige una canción en tu reproductor."
         } else {
             value.state = .ready; value.trackID = model.track.id; value.sourceID = model.activePlayer.rawValue
+            let source = model.activePlayer
+            let systemApp = source == .system ? NSRunningApplication.runningApplications(withBundleIdentifier: model.activeSystemBundleID).first : nil
+            value.sourceName = String((systemApp?.localizedName ?? source.name).prefix(512))
             value.title = String(model.track.title.prefix(512))
             value.artist = String((model.track.artist.isEmpty ? model.activePlayer.name : model.track.artist).prefix(512))
             value.playing = model.anchor.playing; value.canSkip = !model.systemProhibitsSkip
@@ -167,6 +170,16 @@ final class NativeWidgetController {
         serial += 1; let work = serial
         var value = makeSnapshot(); value.message = message
         if value.state == .ready, let image = model.artwork {
+            let palette = model.palette
+            let artworkSource = model.activePlayer == .system ? model.activeSystemBundleID : value.sourceID
+            if palette.count == 4 {
+                value.artworkPalette = palette.map { color in
+                    let red = UInt32((color.r * 255).rounded())
+                    let green = UInt32((color.g * 255).rounded())
+                    let blue = UInt32((color.b * 255).rounded())
+                    return (red << 16) | (green << 8) | blue
+                }
+            }
             if lastImage !== image {
                 var rect = NSRect(origin: .zero, size: image.size)
                 let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
@@ -175,7 +188,18 @@ final class NativeWidgetController {
                 lastImage = image; thumbnail = decoded
             }
             value.artwork = thumbnail
-        } else { lastImage = nil; thumbnail = nil }
+            if let thumbnail, artworkSource == PlayerSource.music.rawValue || artworkSource == PlayerSource.spotify.rawValue {
+                lastMusicCover = (thumbnail, value.artworkPalette)
+            }
+        } else {
+            lastImage = nil; thumbnail = nil
+            if value.state == .idle {
+                value.artwork = lastMusicCover?.artwork
+                value.artworkPalette = lastMusicCover?.palette
+            } else if value.state == .disconnected {
+                lastMusicCover = nil
+            }
+        }
         guard !stopped, !Task.isCancelled, work == serial, policy.needsWrite(value, force: force) else { return }
         let existingStore = store
         let result: (WidgetSnapshotStore, Bool) = await withCheckedContinuation { continuation in
