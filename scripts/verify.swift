@@ -123,8 +123,20 @@ struct ReleaseVerification {
                 check(off.cover == on.cover && off.playerWidth == on.playerWidth && off.spacing == on.spacing, "toggle must not resize text or artwork")
                 check(on.cover >= 0 && on.cover.isFinite, "finite geometry")
                 if on.supportsSidebar { check(on.playerWidth + on.gap + on.lyricsWidth <= width + 1, "sidebar fits viewport") }
+                else {
+                    let stage = LyricsStageMetrics(compact: on.compact, heightBudget: on.cover)
+                    let cues = CGFloat((stage.previous > 0 ? 1 : 0) + (stage.next > 0 ? 1 : 0))
+                    check(stage.active + stage.previous + stage.next + stage.spacing * cues <= on.cover &&
+                          stage.loading <= on.cover, "lyrics replacing the cover fit the artwork area")
+                }
             }
         }
+        let smallLyrics = LyricsStageMetrics(compact: true, heightBudget: 52)
+        check(smallLyrics.active == 52 && smallLyrics.previous == 0 && smallLyrics.next == 0 && smallLyrics.activeLineLimit == 2,
+              "a short artwork area keeps the active lyric legible before adding neighboring lines")
+        let fullLyrics = LyricsStageMetrics(compact: false)
+        check(fullLyrics.previous == 45 && fullLyrics.active == 144 && fullLyrics.next == 55,
+              "the normal sidebar keeps both neighboring cues")
         let narrowColumns = EditorialLayoutMetrics(windowWidth: 480, inset: 28)
         check(narrowColumns.width == 424 && narrowColumns.musicWidth > 200,
               "the clock and music columns retain usable space at the minimum window width")

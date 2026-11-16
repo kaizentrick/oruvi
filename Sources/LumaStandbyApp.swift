@@ -226,27 +226,31 @@ private struct TrackHeading: View {
 struct LyricsStage: View {
     let model: StandbyModel
     var compact = false
+    var heightBudget: CGFloat? = nil
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 12 : 19) {
+        let metrics = LyricsStageMetrics(compact: compact, heightBudget: heightBudget)
+        VStack(alignment: .leading, spacing: metrics.spacing) {
             if model.isResynchronizing && !model.demoMode {
                 ProgressView("Sincronizando canción…").controlSize(.small)
-                    .frame(height: compact ? 180 : 230)
-            } else {
+                    .frame(height: metrics.loading)
+            } else if metrics.active > 0 {
                 let index = model.activeLine ?? -1
-                if !compact {
+                if metrics.previous > 0 {
                     cue(index - 1, prominence: 0.48, size: 19)
-                        .frame(height: 45, alignment: .bottomLeading)
+                        .frame(height: metrics.previous, alignment: .bottomLeading)
                 }
                 Text(model.currentLyricText ?? "♪")
                 .font(LyricTypography.font(model.lyricTypeface, baseSize: compact ? 29 : (model.layout == .listening ? 39 : 36),
                                            sizePercent: model.lyricSizePercent, emphasized: true))
-                .tracking(-0.6).lineSpacing(3).lineLimit(4).minimumScaleFactor(0.65)
+                .tracking(-0.6).lineSpacing(3).lineLimit(metrics.activeLineLimit).minimumScaleFactor(0.65)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: compact ? 100 : 144, alignment: .leading)
+                .frame(height: metrics.active, alignment: .leading)
                 .contentTransition(.opacity)
                 .animation(model.reduceMotion ? nil : .easeOut(duration: 0.16), value: model.activeLine)
-                cue(index + 1, prominence: 0.55, size: compact ? 18 : 21)
-                    .frame(height: compact ? 50 : 55, alignment: .topLeading)
+                if metrics.next > 0 {
+                    cue(index + 1, prominence: 0.55, size: compact ? 18 : 21)
+                        .frame(height: metrics.next, alignment: .topLeading)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

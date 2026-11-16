@@ -55,8 +55,9 @@ struct MusicPlayerView: View {
                     .allowsHitTesting(!model.visibleLyrics || metrics.supportsSidebar)
                     .accessibilityHidden(model.visibleLyrics && !metrics.supportsSidebar)
                 if !metrics.supportsSidebar && model.hasLyrics {
-                    LyricsStage(model: model, compact: metrics.compact)
+                    LyricsStage(model: model, compact: metrics.compact, heightBudget: metrics.cover)
                         .frame(width: max(0, metrics.playerWidth - 8), height: metrics.cover)
+                        .clipped()
                         .opacity(model.visibleLyrics ? 1 : 0)
                         .allowsHitTesting(model.visibleLyrics).accessibilityHidden(!model.visibleLyrics)
                 }

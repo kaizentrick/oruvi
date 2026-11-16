@@ -124,6 +124,28 @@ enum LyricTypography {
     }
 }
 
+/// The active line gets first use of the height when lyrics replace artwork.
+struct LyricsStageMetrics {
+    let spacing: CGFloat
+    let previous: CGFloat
+    let active: CGFloat
+    let next: CGFloat
+    let loading: CGFloat
+    var activeLineLimit: Int { active < 64 ? 2 : 4 }
+
+    init(compact: Bool, heightBudget: CGFloat? = nil) {
+        let budget = max(0, heightBudget ?? .infinity)
+        spacing = compact ? 12 : 19
+        let preferredActive: CGFloat = compact ? 100 : 144
+        let preferredNext: CGFloat = compact ? 50 : 55
+        let twoLines = preferredActive + spacing + preferredNext
+        previous = !compact && budget >= twoLines + spacing + 45 ? 45 : 0
+        next = budget >= twoLines ? preferredNext : 0
+        active = min(budget, preferredActive)
+        loading = min(budget, compact ? 180 : 230)
+    }
+}
+
 /// Geometry is independent of the lyrics switch. Only positions and opacities animate.
 /// No text, cover or control is resized halfway through opening the lyric pane.
 struct MusicLayoutMetrics {
