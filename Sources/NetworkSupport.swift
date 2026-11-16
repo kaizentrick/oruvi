@@ -1,6 +1,52 @@
 import Foundation
 import CryptoKit
 
+/// Serializes catalog lookups without retaining tasks that are cancelled while
+/// waiting. A caller that acquires the slot must release it even on cancellation.
+final class MediaLookupQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var busy = false
+    private var waiters: [(id: UUID, continuation: CheckedContinuation<Bool, Error>)] = []
+
+    #if LUMA_QA
+    var waitingCount: Int { lock.withLock { waiters.count } }
+    #endif
+
+    func acquire() async throws -> Bool {
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let result: Result<Bool, Error>? = lock.withLock {
+                    guard !Task.isCancelled else { return .failure(CancellationError()) }
+                    if busy {
+                        waiters.append((id, continuation))
+                        return nil
+                    }
+                    busy = true
+                    return .success(false)
+                }
+                if let result { continuation.resume(with: result) }
+            }
+        } onCancel: {
+            let waiter = self.lock.withLock {
+                self.waiters.firstIndex { $0.id == id }.map { self.waiters.remove(at: $0).continuation }
+            }
+            waiter?.resume(throwing: CancellationError())
+        }
+    }
+
+    func release() {
+        let next: CheckedContinuation<Bool, Error>? = lock.withLock {
+            if waiters.isEmpty {
+                busy = false
+                return nil
+            }
+            return waiters.removeFirst().continuation
+        }
+        next?.resume(returning: true)
+    }
+}
+
 /// QA launches use an isolated preferences domain and data directory, never the user's settings.
 enum LumaEnvironment {
     #if LUMA_QA

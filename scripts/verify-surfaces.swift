@@ -339,10 +339,25 @@ struct VerifySurfaces {
         async let freshLyrics = lyricRepository.load(for: track, allowNetwork: true)
         async let freshArtwork = artworkRepository.load(for: track)
         await until { ArtworkFixture.isHolding("/api/get") && ArtworkFixture.isHolding("/600x600bb.png") }
-        async let repeatedLyrics = lyricRepository.load(for: track, allowNetwork: true)
-        async let repeatedArtwork = artworkRepository.load(for: track)
+        let obsoleteLyrics = Task { await lyricRepository.load(for: track, allowNetwork: true) }
+        let obsoleteArtwork = Task { try await artworkRepository.load(for: track) }
         await until { await lyricRepository.queuedLookupCount == 1 }
         await until { await artworkRepository.queuedLookupCount == 1 }
+        async let repeatedLyrics = lyricRepository.load(for: track, allowNetwork: true)
+        async let repeatedArtwork = artworkRepository.load(for: track)
+        await until { await lyricRepository.queuedLookupCount == 2 }
+        await until { await artworkRepository.queuedLookupCount == 2 }
+        obsoleteLyrics.cancel()
+        obsoleteArtwork.cancel()
+        await until { await lyricRepository.queuedLookupCount == 1 }
+        await until { await artworkRepository.queuedLookupCount == 1 }
+        guard case .message = await obsoleteLyrics.value else { preconditionFailure("Cancelled lyrics should return promptly") }
+        do {
+            _ = try await obsoleteArtwork.value
+            preconditionFailure("Cancelled artwork should return promptly")
+        } catch is CancellationError {}
+        expect(ArtworkFixture.isHolding("/api/get") && ArtworkFixture.isHolding("/600x600bb.png"),
+               "cancelling queued lyrics and artwork does not wait for or interrupt the active requests")
         ArtworkFixture.release("/api/get")
         ArtworkFixture.release("/600x600bb.png")
         guard case .available = await freshLyrics, case .available = await repeatedLyrics,

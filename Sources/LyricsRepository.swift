@@ -12,26 +12,15 @@ actor LyricsRepository {
     private let root: URL
     private let local: URL
     private let client: BoundedHTTPClient
-    private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let lookupQueue = MediaLookupQueue()
     private var blockedUntil: TimeInterval = 0
     private var lastRequest: TimeInterval = -.infinity
     private var misses: [String: Date] = [:]
     private var cacheGeneration = 0
 
     #if LUMA_QA
-    var queuedLookupCount: Int { waiters.count }
+    var queuedLookupCount: Int { lookupQueue.waitingCount }
     #endif
-
-    private func acquireSlot() async -> Bool {
-        guard busy else { busy = true; return false }
-        await withCheckedContinuation { waiters.append($0) }
-        return true
-    }
-    private func releaseSlot() {
-        if waiters.isEmpty { busy = false }
-        else { waiters.removeFirst().resume() }
-    }
 
     init(root: URL = LumaEnvironment.supportDirectory, client: BoundedHTTPClient = BoundedHTTPClient()) {
         self.root = root.appendingPathComponent("LyricsCache", isDirectory: true)
@@ -84,8 +73,8 @@ actor LyricsRepository {
         }
         let generation = cacheGeneration
         do {
-            let waited = await acquireSlot()
-            defer { releaseSlot() }
+            let waited = try await lookupQueue.acquire()
+            defer { lookupQueue.release() }
             try Task.checkCancellation()
             // The preceding request may have finished looking up this same track.
             if waited, let cached = downloadedResult(name) { return cached }

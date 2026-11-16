@@ -10,8 +10,7 @@ struct ArtworkPayload: Codable, Sendable {
 actor ArtworkRepository {
     private let root: URL
     private let client: BoundedHTTPClient
-    private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let lookupQueue = MediaLookupQueue()
     private var lastRequest: TimeInterval = -.infinity
     private var appleBlockedUntil: TimeInterval = 0
     private var spotifyBlockedUntil: TimeInterval = 0
@@ -19,19 +18,9 @@ actor ArtworkRepository {
     private var catalogMisses: [String: TimeInterval] = [:]
 
     #if LUMA_QA
-    var queuedLookupCount: Int { waiters.count }
+    var queuedLookupCount: Int { lookupQueue.waitingCount }
     #endif
     private static let sizePattern = try! NSRegularExpression(pattern: #"/[0-9]+x[0-9]+bb\."#)
-
-    private func acquireSlot() async -> Bool {
-        guard busy else { busy = true; return false }
-        await withCheckedContinuation { waiters.append($0) }
-        return true
-    }
-    private func releaseSlot() {
-        if waiters.isEmpty { busy = false }
-        else { waiters.removeFirst().resume() }
-    }
 
     init(root: URL = LumaEnvironment.supportDirectory, client: BoundedHTTPClient = BoundedHTTPClient()) {
         self.root = root.appendingPathComponent("ArtworkCache", isDirectory: true)
@@ -48,8 +37,8 @@ actor ArtworkRepository {
         if hasRecentMiss(name) { return nil }
         guard track.duration.isFinite, track.duration > 0, !track.artist.isEmpty else { return nil }
         let generation = cacheGeneration
-        let waited = await acquireSlot()
-        defer { releaseSlot() }
+        let waited = try await lookupQueue.acquire()
+        defer { lookupQueue.release() }
         try Task.checkCancellation()
         if waited {
             if let cached = cachedArtwork(at: file) { return cached }
