@@ -293,8 +293,11 @@ final class NotchController {
             if let index = tabs.firstIndex(of: tab) { select(tabs[(index + 1) % tabs.count]) }
             return true
         case 49:
-            if tab == .music && model.hasTrack { model.control("toggle"); return true }
-            if tab == .timer { countdown.toggle(); return true }
+            if tab == .music { return model.handlePlaybackShortcut(isRepeat: event.isARepeat) }
+            if tab == .timer {
+                if !event.isARepeat { countdown.toggle() }
+                return true
+            }
             return false
         default: return false
         }

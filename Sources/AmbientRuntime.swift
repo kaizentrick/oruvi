@@ -243,7 +243,7 @@ final class AmbientRuntime {
         if flags.isDisjoint(with: [.command, .control, .option]) {
             if event.keyCode == 123 { model.cycleLayout(-1); return nil }
             if event.keyCode == 124 { model.cycleLayout(1); return nil }
-            if event.keyCode == 49 { model.control("toggle"); return nil }
+            if event.keyCode == 49, model.handlePlaybackShortcut(isRepeat: event.isARepeat) { return nil }
         }
         if flags.isDisjoint(with: [.control, .option]), let text = event.charactersIgnoringModifiers {
             if let digit = Int(text), (1...3).contains(digit) { model.selectLayout(LayoutMode.allCases[digit - 1]); return nil }

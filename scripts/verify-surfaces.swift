@@ -196,10 +196,26 @@ struct VerifySurfaces {
         expect(widgets.makeSnapshot().state == .disconnected, "disconnect cannot show playable media")
         model.connected = true; model.track = .empty
         expect(widgets.makeSnapshot().state == .idle, "empty session is not fabricated playback")
+        expect(!model.handlePlaybackShortcut(isRepeat: false), "without a track, Space stays available to other controls")
         expect(model.playerPreference == .spotify && model.notchPlayerPreference == .automatic, "widget never rewrites independent selectors")
         expect(!model.nativeWidgetInUse, "removing widget releases its sampler demand")
         model.useDemo()
         expect(model.canSkip && model.canSeek, "demo clears restrictions inherited from the last video")
+        func space(repeatKey: Bool) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                             context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: repeatKey,
+                             keyCode: 49)!
+        }
+        expect(model.handlePlaybackShortcut(isRepeat: space(repeatKey: false).isARepeat) && !model.anchor.playing,
+               "an initial Space event pauses playback")
+        let repeatedSpace = space(repeatKey: true)
+        let pausedAnchor = model.anchor
+        let holdsWereConsumed = (0..<20).allSatisfy { _ in
+            model.handlePlaybackShortcut(isRepeat: repeatedSpace.isARepeat) && model.anchor == pausedAnchor
+        }
+        expect(holdsWereConsumed, "repeat Space events are consumed and leave playback paused")
+        expect(model.handlePlaybackShortcut(isRepeat: space(repeatKey: false).isARepeat) && model.anchor.playing,
+               "another discrete press resumes playback")
         model.anchor.duration = 210
         model.control("seek", position: 220)
         expect(model.anchor.position == 210 && model.track.duration == 214,
