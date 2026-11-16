@@ -8,7 +8,7 @@ struct NativeWidgetSettings: View {
             Label("Oruvi · Música y Standby", systemImage: "square.grid.2x2")
             Text("Clic secundario en el escritorio → Editar widgets → busca Oruvi. Elige el tamaño pequeño o mediano.").font(.callout)
             Text(widgets.status).font(.caption).foregroundStyle(.secondary)
-            if let date = widgets.lastPublishedAt {
+            if widgets.sharingVerified, let date = widgets.lastPublishedAt {
                 LabeledContent("Último estado compartido", value: date.formatted(date: .omitted, time: .standard)).font(.caption)
             }
             Button("Conectar y actualizar widgets") { widgets.refreshNow() }

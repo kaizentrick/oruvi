@@ -72,7 +72,8 @@ struct NotchConnectionsView: View {
                         connection("Calendario", detail: controller.agenda.enabled ? "Revisar agenda y permisos" : "Sin conectar · solo lectura", symbol: "calendar", ready: controller.agenda.enabled && controller.agenda.access == .fullAccess)
                     }.buttonStyle(.plain)
                     Button { controller.afterMenu { model.showNativeWidgetSettings() } } label: {
-                        connection("Widgets de macOS", detail: widgets.storageError.isEmpty ? (widgets.installedCount > 0 ? "\(widgets.installedCount) añadidos" : "Añadir al escritorio") : "Revisar acceso a datos", symbol: "square.grid.2x2", ready: widgets.installedCount > 0 && widgets.storageError.isEmpty)
+                        connection("Widgets de macOS", detail: widgets.connectionSummary, symbol: "square.grid.2x2",
+                                   ready: widgets.installedCount > 0 && widgets.sharingVerified)
                     }.buttonStyle(.plain)
                 }
             }.padding(.vertical, 2).padding(.trailing, 4)

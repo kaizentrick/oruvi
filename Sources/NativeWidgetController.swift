@@ -84,8 +84,18 @@ final class NativeWidgetController {
     private(set) var installedCount = 0
     private(set) var lastPublishedAt: Date?
     private(set) var storageError = ""
-    private(set) var configurationStatus = "Comprobando widgets de macOS…"
-    var status: String { storageError.isEmpty ? configurationStatus : storageError }
+    private var configurationStatus = "Comprobando widgets de macOS…"
+    var sharingVerified: Bool { lastPublishedAt != nil && storageError.isEmpty }
+    var status: String {
+        if !storageError.isEmpty { return storageError }
+        if !sharingVerified { return "Comprobando los datos compartidos de Oruvi…" }
+        return configurationStatus
+    }
+    var connectionSummary: String {
+        if !storageError.isEmpty { return "Revisar sincronización" }
+        if !sharingVerified { return "Comprobando sincronización…" }
+        return installedCount > 0 ? "\(installedCount) añadidos" : "Añadir al escritorio"
+    }
     private let model: StandbyModel
     let session = UUID().uuidString
     @ObservationIgnored private var started = false
@@ -174,7 +184,7 @@ final class NativeWidgetController {
         let changed = installedCount != count
         installedCount = max(0, count); presence.receivedCount(count)
         model.setNativeWidgetPresence(presence.active(at: date))
-        configurationStatus = count > 0 ? "Widget nativo añadido · \(count)" : "Añade Oruvi desde Editar widgets. El estado actual ya se comparte."
+        configurationStatus = count > 0 ? "Widget nativo añadido · \(count)" : "Añade Oruvi desde Editar widgets."
         // A stale zero from WidgetCenter is not proof that all widgets vanished.
         // Keep one bounded snapshot; clear private media on disconnect/sleep/quit.
         requestPublication(force: changed && count > 0)
@@ -190,7 +200,7 @@ final class NativeWidgetController {
                 switch result {
                 case .success(let widgets): self.acceptConfigurationCount(widgets.filter { $0.kind == OruviWidgetIdentity.kind }.count)
                 case .failure:
-                    self.configurationStatus = "macOS aún no informa de los widgets añadidos. La sincronización sigue disponible."
+                    self.configurationStatus = "macOS aún no informa de los widgets añadidos."
                     self.requestPublication()
                 }
             }

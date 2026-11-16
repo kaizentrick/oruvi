@@ -22,8 +22,14 @@ import os
         model.connected = true
         model.apply(["status":"ok", "source":"oruvi.system", "id":"browser-A", "title":"Video A", "artist":"Channel A", "album":"", "duration":100, "position":12, "playing":true])
         controller.startForVerification { reloads += 1 }
+        controller.acceptConfigurationCount(0)
+        check(!controller.sharingVerified && controller.status.contains("Comprobando") &&
+              controller.connectionSummary.contains("Comprobando"),
+              "An early WidgetCenter count cannot report a successful publication before read-back")
         try await settle()
         check(store.read()?.title == "Video A", "Bootstrap writes before WidgetCenter reports any widgets")
+        check(controller.sharingVerified && controller.connectionSummary == "Añadir al escritorio",
+              "Verified sharing and widget placement remain separate signals")
         check(store.read()?.displaySourceName == "Ahora suena", "The widget source label omits the automatic selection mode")
         check(store.read()?.playing == true, "Playback state crosses actual async pipeline")
         check(reloads == 1, "First reload occurs only after verified write")
@@ -164,6 +170,9 @@ import os
         try await settle()
         check(recovery.storageError.contains("estado válido") && resolutions.withLock { $0 } == 3,
               "Invalid data is not diagnosed as denied access or a stale container")
+        check(!recovery.sharingVerified && recovery.lastPublishedAt != nil &&
+              recovery.connectionSummary == "Revisar sincronización",
+              "An earlier successful publication cannot make a current synchronization failure look healthy")
         print("PASS: \(count) actual async widget pipeline checks, including bootstrap, enumeration races, cover, pause, sleep and shutdown.")
     }
 }
