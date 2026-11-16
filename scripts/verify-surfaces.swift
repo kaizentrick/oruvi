@@ -135,8 +135,22 @@ struct VerifySurfaces {
         expect(ready.state == .ready && ready.canControl, "native snapshot has real content")
         expect(ready.trackID == model.track.id && ready.sourceID == "oruvi.system", "snapshot preserves active identity")
         expect(ready.preference == "automatic", "native widget preserves automatic selection")
-        model.track.duration = 120
-        expect(model.canSkip && model.canSeek, "known duration and a permitted session enable seeking")
+        var followup: [String: Any] = ["status": "ok", "source": "oruvi.system", "id": "system:qa", "title": "QA video",
+                                       "artist": "", "album": "", "duration": 0.25, "position": 0.1, "playing": true,
+                                       "systemBundleID": "com.example.Player"]
+        model.apply(followup)
+        expect(model.canSkip && model.canSeek && model.track.duration == 0 && model.anchor.duration == 0.25,
+               "a newly known duration enables seeking without altering the track identity")
+        followup["duration"] = 120
+        model.apply(followup)
+        let originalTrack = model.track
+        model.lines = [LyricLine(id: 0, time: 0, text: "Stable lyric")]
+        followup["duration"] = 120.4
+        followup["position"] = 120.2
+        model.apply(followup)
+        expect(model.track == originalTrack && model.anchor.duration == 120.4
+               && model.anchor.position == 120.2 && model.hasLyrics,
+               "timing corrections reach the progress controls and preserve the loaded track resources")
         model.systemProhibitsSkip = true
         expect(!model.canSkip && !model.canSeek && !widgets.makeSnapshot().canSkip,
                "notch, Standby and native widget share system restrictions")
@@ -151,6 +165,10 @@ struct VerifySurfaces {
         expect(!model.nativeWidgetInUse, "removing widget releases its sampler demand")
         model.useDemo()
         expect(model.canSkip && model.canSeek, "demo clears restrictions inherited from the last video")
+        model.anchor.duration = 210
+        model.control("seek", position: 220)
+        expect(model.anchor.position == 210 && model.track.duration == 214,
+               "seek clamps to the current transport duration even when track metadata differs")
         model.systemProhibitsSkip = true
         let protected = model.anchor
         model.control("next")

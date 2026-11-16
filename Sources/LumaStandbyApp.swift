@@ -298,14 +298,14 @@ struct TrackProgress: View {
     var body: some View {
         Group {
             if model.anchor.playing && model.policy.visible && !model.isResynchronizing {
-                let interval = model.track.duration <= 0 ? 1 : (model.onBattery ? 0.5 : 0.25)
+                let interval = model.anchor.duration <= 0 ? 1 : (model.onBattery ? 0.5 : 0.25)
                 TimelineView(.periodic(from: .now, by: interval)) { _ in progress }
             } else { progress }
         }
     }
     private var progress: some View {
         let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
-        let duration = model.track.duration
+        let duration = model.anchor.duration
         let shownPosition = model.canSeek ? (dragProgress.map { $0 * duration } ?? position) : position
         return VStack(spacing: 7) {
             if duration > 0 {
@@ -338,7 +338,7 @@ struct PlaybackScrubber: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let duration = model.track.duration
+            let duration = model.anchor.duration
             let width = geometry.size.width
             let fraction = (model.canSeek ? dragProgress : nil) ?? unit(position / duration)
             let positionDescription = PlaybackTime.format(position) + " de " + PlaybackTime.format(duration)
@@ -356,7 +356,7 @@ struct PlaybackScrubber: View {
                     }
                     .onEnded { value in
                         if draggedTrack == model.track {
-                            model.control("seek", position: unit(value.location.x / max(1, width)) * duration)
+                            model.control("seek", position: unit(value.location.x / max(1, width)) * model.anchor.duration)
                         }
                         resetDrag()
                     })

@@ -277,7 +277,7 @@ final class StandbyModel {
     }
     var hasTrack: Bool { !track.id.isEmpty }
     var canSkip: Bool { hasTrack && !systemProhibitsSkip }
-    var canSeek: Bool { canSkip && track.duration > 0 && !isResynchronizing }
+    var canSeek: Bool { canSkip && anchor.duration > 0 && !isResynchronizing }
     var preferredScheme: ColorScheme? { appearance == "Sistema" ? nil : (appearance == "Claro" ? .light : .dark) }
     var effectiveAwake: Bool { keepAwake && isVisible && !screenSleeping && !onBattery && !lowPower && !hot }
 
@@ -601,6 +601,7 @@ final class StandbyModel {
         let adjusted = changed ? position : PlaybackRecovery.reconciledPosition(position, sampleUptime: sample, previous: anchor, playing: playing)
         let reportedRate = (snapshot["playbackRate"] as? NSNumber)?.doubleValue ?? 1
         let rate = SafePreference.number(reportedRate, range: 0...16, fallback: 1)
+        // Keep TrackIdentity stable for lyrics and artwork, but use the newest duration for transport.
         anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing, rate: rate)
         recovery.succeed(at: sample); isResynchronizing = false
         let duration = (snapshot["playbackReadDuration"] as? NSNumber)?.doubleValue
@@ -631,16 +632,18 @@ final class StandbyModel {
         guard hasTrack, position.isFinite else { return }
         if command == "seek" && !canSeek { return }
         if (command == "next" || command == "previous") && !canSkip { return }
+        let duration = anchor.duration
+        let target = duration > 0 ? min(max(0, position), duration) : max(0, position)
         if demoMode {
             let now = ProcessInfo.processInfo.systemUptime, current = anchor.value(at: ProcessInfo.processInfo.systemUptime)
-            if command == "toggle" { anchor = PlaybackAnchor(position: current, uptime: now, duration: track.duration, playing: !anchor.playing) }
+            if command == "toggle" { anchor = PlaybackAnchor(position: current, uptime: now, duration: duration, playing: !anchor.playing) }
             else if command == "shuffle" { shuffleEnabled.toggle() }
             else if command == "repeat" { repeatMode = (repeatMode + 1) % 3 }
-            else { anchor = PlaybackAnchor(position: command == "seek" && position.isFinite ? max(0, min(track.duration, position)) : 0, uptime: now, duration: track.duration, playing: anchor.playing) }
+            else { anchor = PlaybackAnchor(position: command == "seek" ? target : 0, uptime: now, duration: duration, playing: anchor.playing) }
             updateCue(); return
         }
         guard connected else { return }
-        let session = generation, source = activePlayer, target = min(max(0, position), track.duration > 0 ? track.duration : max(0, position))
+        let session = generation, source = activePlayer
         let preference = effectivePlayerPreference, expectedTrackID = track.id
         musicQueue.async { [weak self, playerRouter, playbackGeneration] in
             let result = playerRouter.command(command, position: target, source: source, preference: preference,

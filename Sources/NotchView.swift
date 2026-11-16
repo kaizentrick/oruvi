@@ -229,7 +229,7 @@ struct NotchView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(height: 46)
-            if model.hasTrack && model.track.duration > 0 {
+            if model.hasTrack && model.anchor.duration > 0 {
                 NotchTrackProgress(model: model, active: controller.expanded && controller.tab == .music)
                     .frame(height: 16)
             }
@@ -270,7 +270,7 @@ private struct NotchTrackProgress: View {
     }
     private var bar: some View {
         let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
-        let duration = model.track.duration
+        let duration = model.anchor.duration
         let shown = model.canSeek ? (dragProgress.map { $0 * duration } ?? position) : position
         return HStack(spacing: 8) {
             Text(PlaybackTime.format(shown))
