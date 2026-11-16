@@ -4,22 +4,22 @@ import AppKit
 /// Serialized on the existing playback queue. Explicit selections still use the
 /// public Apple Events bridges; Automatic follows macOS's active media session.
 final class PlayerRouter: @unchecked Sendable {
-    private var denied: Set<PlayerSource> = []
+    private var denials: [PlayerSource: [String: Any]] = [:]
     private var previouslyPlaying: Set<PlayerSource> = []
     private var lastAutomaticSource: PlayerSource?
     func reset() {
-        denied.removeAll(); previouslyPlaying.removeAll(); lastAutomaticSource = nil
+        denials.removeAll(); previouslyPlaying.removeAll(); lastAutomaticSource = nil
         LumaResetMusicBridge(); OruviResetSpotifyBridge()
     }
     private func native(_ source: PlayerSource) -> [String: Any] {
         guard source != .system else { return ["status": "notRunning"] }
-        guard !denied.contains(source) else { return ["status": "denied", "source": source.rawValue] }
+        if let denial = denials[source] { return denial }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: source.rawValue).isEmpty else {
             return ["status": "notRunning", "source": source.rawValue]
         }
         var value = source == .music ? LumaReadMusicSnapshot() : OruviReadSpotifySnapshot()
         value["source"] = source.rawValue
-        if value["status"] as? String == "denied" { denied.insert(source) }
+        if value["status"] as? String == "denied" { denials[source] = value }
         return value
     }
     func snapshot(preference: PlayerPreference, preferred: PlayerSource, refreshSystem: Bool = false) -> [String: Any] {
@@ -84,7 +84,10 @@ final class PlayerRouter: @unchecked Sendable {
             // before dispatch, even when another tab uses the same browser.
             return SystemMediaBridge.shared.send(command, position: position, target: displayed)
         }
-        let system = preference == .automatic ? SystemMediaBridge.shared.readNow() : nil
+        if displayed.canSendDirectly(command, preference: preference, requireSameTrack: requireSameTrack) {
+            return sendNative(command, position: position, to: source, checkPlayerState: true)
+        }
+        let system = preference == .automatic ? SystemMediaBridge.shared.readNow(includeArtwork: false) : nil
         let current = resolve(preference: preference, preferred: source, system: system)
         guard current["status"] as? String == "ok",
               let target = PlayerSource(rawValue: current["source"] as? String ?? "") else { return current }
@@ -92,11 +95,17 @@ final class PlayerRouter: @unchecked Sendable {
                                 requireSameTrack: command == "seek" || requireSameTrack) else {
             return ["status": "transition", "message": "El contenido cambió. Vuelve a pulsar el control."]
         }
-        switch target {
-        case .music: return LumaMusicCommand(command, position)
-        case .spotify: return OruviSpotifyCommand(command, position)
-        case .system: return ["status": "notRunning"]
-        }
+        return sendNative(command, position: position, to: target)
+    }
+    private func sendNative(_ command: String, position: Double, to source: PlayerSource, checkPlayerState: Bool = false) -> [String: Any] {
+        guard source != .system else { return ["status": "notRunning"] }
+        if let denial = denials[source] { return denial }
+        var result = source == .music
+            ? LumaMusicCommand(command, position, checkPlayerState)
+            : OruviSpotifyCommand(command, position, checkPlayerState)
+        result["source"] = source.rawValue
+        if result["status"] as? String == "denied" { denials[source] = result }
+        return result
     }
 }
 

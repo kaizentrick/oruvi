@@ -121,11 +121,16 @@ NSDictionary<NSString *, id> *LumaReadMusicSnapshot(void) {
         } @catch (NSException *exception) { return @{ @"status": @"error", @"message": @"Reconectando con Música…" }; }
     }
 }
-NSDictionary<NSString *, id> *LumaMusicCommand(NSString *command, double position) {
+NSDictionary<NSString *, id> *LumaMusicCommand(NSString *command, double position, BOOL checkPlayerState) {
     @autoreleasepool {
         LumaBridgeState *bridge = PlaybackBridge(); bridge.error = nil;
         if (![bridge.app isRunning]) return @{ @"status": @"notRunning" };
         @try {
+            if (checkPlayerState) {
+                NSInteger state = bridge.app.playerState;
+                if (bridge.error) return Failure(bridge);
+                if (state == 'kPSS') return @{ @"status": @"stopped" };
+            }
             if ([command isEqualToString:@"toggle"]) [bridge.app playpause];
             else if ([command isEqualToString:@"next"]) [bridge.app nextTrack];
             else if ([command isEqualToString:@"previous"]) [bridge.app previousTrack];

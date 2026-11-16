@@ -49,6 +49,11 @@ struct PlaybackCommandTarget {
     let source: PlayerSource
     let trackID: String
 
+    func canSendDirectly(_ command: String, preference: PlayerPreference, requireSameTrack: Bool) -> Bool {
+        guard preference.source == source, !trackID.isEmpty, !requireSameTrack else { return false }
+        return command == "toggle" || command == "next" || command == "previous"
+    }
+
     func matches(source currentSource: PlayerSource, trackID currentID: String?, requireSameTrack: Bool) -> Bool {
         guard source == currentSource else { return false }
         if source == .system || requireSameTrack { return !trackID.isEmpty && trackID == currentID }

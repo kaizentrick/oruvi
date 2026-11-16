@@ -2,13 +2,13 @@
 NS_ASSUME_NONNULL_BEGIN
 /// Snapshot, commands and reset share one serial playback queue. Never start audio implicitly.
 NSDictionary<NSString *, id> *LumaReadMusicSnapshot(void);
-NSDictionary<NSString *, id> *LumaMusicCommand(NSString *command, double position);
+NSDictionary<NSString *, id> *LumaMusicCommand(NSString *command, double position, BOOL checkPlayerState);
 /// Call only on a separate serial artwork queue. A stalled cover never blocks playback reads.
 NSData * _Nullable LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle, NSString *expectedAlbum);
 void LumaResetMusicBridge(void);
 BOOL LumaValidateMusicBindings(void);
 NSDictionary<NSString *, id> *OruviReadSpotifySnapshot(void);
-NSDictionary<NSString *, id> *OruviSpotifyCommand(NSString *command, double position);
+NSDictionary<NSString *, id> *OruviSpotifyCommand(NSString *command, double position, BOOL checkPlayerState);
 void OruviResetSpotifyBridge(void);
 BOOL OruviValidateSpotifyBindings(void);
 NS_ASSUME_NONNULL_END

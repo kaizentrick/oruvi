@@ -113,13 +113,15 @@ final class SystemMediaBridge: @unchecked Sendable {
 
     /// Only called on PlayerRouter's serial background queue, never on the UI.
     /// A fresh get avoids sending a seek for yesterday's active session.
-    func readNow() -> SystemMediaSnapshot? {
-        guard let data = Self.run(["get", "--micros", "--allow-missing-title"]),
+    func readNow(includeArtwork: Bool = true) -> SystemMediaSnapshot? {
+        var arguments = ["get", "--micros", "--allow-missing-title"]
+        if !includeArtwork { arguments.append("--no-artwork") }
+        guard let data = Self.run(arguments),
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return SystemMediaSnapshot(payload: payload, uptime: ProcessInfo.processInfo.systemUptime, epoch: Date().timeIntervalSince1970)
     }
     func send(_ command: String, position: Double, target: PlaybackCommandTarget) -> [String: Any] {
-        guard let fresh = readNow() else {
+        guard let fresh = readNow(includeArtwork: false) else {
             return ["status": "transition", "message": "El sistema está actualizando el contenido. Vuelve a intentarlo."]
         }
         guard target.matches(source: .system, trackID: fresh.id, requireSameTrack: true) else {

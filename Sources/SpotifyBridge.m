@@ -86,11 +86,17 @@ NSDictionary *OruviReadSpotifySnapshot(void) {
         } @catch (NSException *exception) { return @{ @"status": @"error", @"message": @"Spotify no respondió." }; }
     }
 }
-NSDictionary *OruviSpotifyCommand(NSString *command, double position) {
+NSDictionary *OruviSpotifyCommand(NSString *command, double position, BOOL checkPlayerState) {
     @autoreleasepool {
         if ([NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.spotify.client"].count == 0) return @{ @"status": @"notRunning" };
         OruviSpotifyState *bridge = Spotify(); bridge.error = nil;
+        if (!bridge.app || !bridge.app.isRunning) return @{ @"status": @"notRunning" };
         @try {
+            if (checkPlayerState) {
+                NSInteger state = bridge.app.playerState;
+                if (bridge.error) return SpotifyFailure(bridge);
+                if (state == 'kPSS') return @{ @"status": @"stopped" };
+            }
             if ([command isEqualToString:@"toggle"]) [bridge.app playpause];
             else if ([command isEqualToString:@"next"]) [bridge.app nextTrack];
             else if ([command isEqualToString:@"previous"]) [bridge.app previousTrack];
