@@ -29,6 +29,19 @@ struct VerifySurfaces {
                "preserve errors when the signature fails")
         expect(OruviUpdates.noUpdateStatus(for: NSError(domain: "Other", code: Int(SUError.noUpdateError.rawValue))) == nil,
                "only Sparkle's no-update error has special meaning")
+        let badSignature = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.validationError.rawValue))
+        let signedFeedFailure = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.appcastParseError.rawValue),
+                                        userInfo: [NSUnderlyingErrorKey: badSignature])
+        expect(OruviUpdates.failureStatus(for: signedFeedFailure).contains("firma"),
+               "Sparkle wraps public feed integrity errors as appcast parse failures")
+        let signedArchiveFailure = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.installationError.rawValue),
+                                           userInfo: [NSUnderlyingErrorKey: badSignature])
+        expect(OruviUpdates.failureStatus(for: signedArchiveFailure).contains("firma"),
+               "installer failures should report the underlying signature error")
+        expect(OruviUpdates.failureStatus(for: NSError(domain: SUSparkleErrorDomain, code: Int(SUError.downloadError.rawValue))).contains("descargar"),
+               "a download failure should explain the failed operation")
+        expect(OruviUpdates.failureStatus(for: NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)).contains("conexión"),
+               "a network failure still offers connection troubleshooting")
         model.automaticLyrics = false; model.automaticArtwork = false
         model.contentTypeface = .rounded
         expect(model.lyricTypeface == .rounded && model.lyricSizePercent == 100, "existing preferences are inherited at the original size")

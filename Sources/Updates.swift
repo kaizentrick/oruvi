@@ -66,13 +66,39 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
         status = "Nueva versión disponible: \(item.displayVersionString)"
     }
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        availableVersion = nil
         if let result = Self.noUpdateStatus(for: error) {
-            availableVersion = nil
             lastChecked = Date()
             status = result
         } else {
-            status = "No se pudo comprobar el feed. Verifica conexión y publicación de appcast.xml."
+            status = Self.failureStatus(for: error)
         }
+    }
+
+    static func failureStatus(for error: Error) -> String {
+        var underlying: NSError? = error as NSError
+        var status: String?
+        // Sparkle wraps signature failures inside appcast or installation errors.
+        for _ in 0..<4 {
+            guard let cause = underlying else { break }
+            if cause.domain == SUSparkleErrorDomain, let code = SUError(rawValue: Int32(clamping: cause.code)) {
+                switch code {
+                case .signatureError, .validationError, .notValidUpdateError:
+                    return "No se pudo verificar la firma o la integridad de la actualización."
+                case .downloadError:
+                    status = status ?? "No se pudo descargar la actualización. Vuelve a intentarlo."
+                case .installationCanceledError, .installationAuthorizeLaterError:
+                    status = status ?? "Instalación pendiente. Puedes volver a buscar la actualización."
+                case .installationWriteNoPermissionError:
+                    return "No se pudo instalar la actualización. Revisa los permisos de Aplicaciones."
+                case .installationError, .fileCopyFailure:
+                    status = status ?? "No se pudo instalar la actualización. Vuelve a intentarlo."
+                default: break
+                }
+            }
+            underlying = cause.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return status ?? "No se pudo comprobar el catálogo de actualizaciones. Revisa la conexión y el repositorio."
     }
 
     static func noUpdateStatus(for error: Error) -> String? {
