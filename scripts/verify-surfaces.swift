@@ -368,6 +368,25 @@ struct VerifySurfaces {
         expect(covers.cacheClearStatus.contains("vacía") && manager.fileExists(atPath: importedFile.path)
                && !manager.fileExists(atPath: lyricFile.path) && !manager.fileExists(atPath: artworkFile.path),
                "settings confirm that both downloaded caches were cleared and imported lyrics remain")
+        let missingCover = TrackIdentity(id: "missing-cover-qa", title: "Missing QA", artist: "QA Artist",
+                                         album: "QA Album", duration: 120)
+        let misses = ArtworkRepository(root: support, client: client)
+        let beforeMisses = ArtworkFixture.requestCount("/search")
+        ArtworkFixture.holdNext("/search")
+        async let firstMiss = misses.load(for: missingCover)
+        await until { ArtworkFixture.isHolding("/search") }
+        async let queuedMiss = misses.load(for: missingCover)
+        await until { await misses.queuedLookupCount == 1 }
+        ArtworkFixture.release("/search")
+        let missingResults = try await (firstMiss, queuedMiss)
+        let repeatedMiss = try await misses.load(for: missingCover)
+        expect(missingResults.0 == nil && missingResults.1 == nil && repeatedMiss == nil &&
+               ArtworkFixture.requestCount("/search") == beforeMisses + 1,
+               "an empty catalog search is reused by queued and subsequent cover lookups")
+        _ = await misses.clearCache()
+        let renewedLookup = try await misses.load(for: missingCover)
+        expect(renewedLookup == nil && ArtworkFixture.requestCount("/search") == beforeMisses + 2,
+               "clearing downloaded covers also forgets catalog misses")
         let instrumental = TrackIdentity(id: "instrumental-qa", title: "Instrumental QA", artist: "QA Artist", album: "QA Album", duration: 120)
         let beforeInstrumental = ArtworkFixture.requestCount("/api/get")
         guard case .unavailable = await lyricRepository.load(for: instrumental, allowNetwork: true),
@@ -584,7 +603,7 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
     static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQ6LkDAAJYAYnV4HfcAAAAAElFTkSuQmCC")!
     private static let pending = OSAllocatedUnfairLock(initialState: false)
     private static let held = OSAllocatedUnfairLock(initialState: [String: ArtworkFixture]())
-    private static let released = OSAllocatedUnfairLock(initialState: Set<String>())
+    private static let released = OSAllocatedUnfairLock(initialState: Set(["/search"]))
     private static let requests = OSAllocatedUnfairLock(initialState: [String: Int]())
     static var usedPendingRequest: Bool { pending.withLock { $0 } }
     static func isHolding(_ path: String) -> Bool { held.withLock { $0[path] != nil } }
@@ -603,7 +622,7 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
             Self.pending.withLock { $0 = true }
             return
         }
-        if ["/api/get", "/600x600bb.png"].contains(url.path), !Self.released.withLock({ $0.contains(url.path) }) {
+        if ["/api/get", "/600x600bb.png", "/search"].contains(url.path), !Self.released.withLock({ $0.contains(url.path) }) {
             Self.held.withLock { $0[url.path] = self }
             return
         }
@@ -627,6 +646,10 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
                 : #"{"trackName":"Cache QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"syncedLyrics":"[00:00.00]Test lyrics"}"#
             data = Data(json.utf8)
         case "/search":
+            if parameters.contains(where: { $0.value?.hasPrefix("Missing QA") == true }) {
+                data = Data(#"{"results":[]}"#.utf8)
+                break
+            }
             let suffix = rateTrack ? "rate/100x100bb.png" : "100x100bb.png"
             let title = rateTrack ? "Rate QA" : "Cache QA"
             data = Data(#"{"results":[{"trackName":"\#(title)","artistName":"QA Artist","collectionName":"QA Album","trackTimeMillis":120000,"artworkUrl100":"https://is1-ssl.mzstatic.com/\#(suffix)"}]}"#.utf8)

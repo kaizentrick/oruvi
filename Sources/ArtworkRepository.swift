@@ -16,6 +16,7 @@ actor ArtworkRepository {
     private var appleBlockedUntil: TimeInterval = 0
     private var spotifyBlockedUntil: TimeInterval = 0
     private var cacheGeneration = 0
+    private var catalogMisses: [String: TimeInterval] = [:]
 
     #if LUMA_QA
     var queuedLookupCount: Int { waiters.count }
@@ -41,14 +42,19 @@ actor ArtworkRepository {
         try? location.setResourceValues(attributes)
     }
     func load(for track: TrackIdentity) async throws -> ArtworkPayload? {
-        let file = root.appendingPathComponent(LumaEnvironment.cacheName(track) + ".json")
+        let name = LumaEnvironment.cacheName(track)
+        let file = root.appendingPathComponent(name + ".json")
         if let cached = cachedArtwork(at: file) { return cached }
+        if hasRecentMiss(name) { return nil }
         guard track.duration.isFinite, track.duration > 0, !track.artist.isEmpty else { return nil }
         let generation = cacheGeneration
         let waited = await acquireSlot()
         defer { releaseSlot() }
         try Task.checkCancellation()
-        if waited, let cached = cachedArtwork(at: file) { return cached }
+        if waited {
+            if let cached = cachedArtwork(at: file) { return cached }
+            if hasRecentMiss(name) { return nil }
+        }
         let now = ProcessInfo.processInfo.systemUptime
         guard now >= appleBlockedUntil else { throw RemoteError.rateLimited(until: appleBlockedUntil) }
         // Apple's documented Search API limit is roughly 20 calls/minute; stay below it.
@@ -76,7 +82,10 @@ actor ArtworkRepository {
                     abs(($1.trackTimeMillis ?? 0) / 1000 - track.duration)
             }
         guard let record = matches.first(where: { $0.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) != nil }),
-              let original = record.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) else { return nil }
+              let original = record.artworkUrl100.flatMap(RecordingMatcher.appleArtworkURL) else {
+            if generation == cacheGeneration, !Task.isCancelled { rememberMiss(name) }
+            return nil
+        }
         // The returned URL is the fallback if this image service doesn't accept a larger rendition.
         let sourceURL = original.absoluteString
         let larger = Self.sizePattern.stringByReplacingMatches(
@@ -101,6 +110,16 @@ actor ArtworkRepository {
             prune()
         }
         return payload
+    }
+    private func hasRecentMiss(_ name: String) -> Bool {
+        guard let deadline = catalogMisses[name] else { return false }
+        return ProcessInfo.processInfo.systemUptime < deadline
+    }
+    private func rememberMiss(_ name: String) {
+        if catalogMisses.count >= 64, let oldest = catalogMisses.min(by: { $0.value < $1.value })?.key {
+            catalogMisses.removeValue(forKey: oldest)
+        }
+        catalogMisses[name] = ProcessInfo.processInfo.systemUptime + 600
     }
     private func checkAppleLimit(_ reply: HTTPReply?) throws {
         if let deadline = reply?.retryDeadline {
@@ -141,6 +160,7 @@ actor ArtworkRepository {
     }
     func clearCache() -> Bool {
         cacheGeneration &+= 1
+        catalogMisses.removeAll()
         return LumaEnvironment.removeDownloadedCache(in: root)
     }
     private func prune() {
