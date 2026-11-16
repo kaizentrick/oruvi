@@ -341,15 +341,13 @@ struct PlaybackScrubber: View {
             let duration = model.track.duration
             let width = geometry.size.width
             let fraction = (model.canSeek ? dragProgress : nil) ?? unit(position / duration)
+            let positionDescription = PlaybackTime.format(position) + " de " + PlaybackTime.format(duration)
             let bar = Capsule().fill(trackColor)
                 .overlay(alignment: .leading) {
                     Capsule().fill(fillColor).frame(width: max(0, width * fraction))
                 }
                 .frame(height: thickness).frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Posición de reproducción")
-                .accessibilityValue(PlaybackTime.format(position) + " de " + PlaybackTime.format(duration))
             if model.canSeek {
                 bar.gesture(DragGesture(minimumDistance: 0)
                     .onChanged { value in
@@ -362,15 +360,15 @@ struct PlaybackScrubber: View {
                         }
                         resetDrag()
                     })
-                    .accessibilityAdjustableAction { direction in
-                        switch direction {
-                        case .increment: model.control("seek", position: position + 5)
-                        case .decrement: model.control("seek", position: position - 5)
-                        @unknown default: break
-                        }
+                    .accessibilityRepresentation {
+                        Slider(value: Binding(get: { duration * unit(position / duration) },
+                                              set: { model.control("seek", position: $0) }),
+                               in: 0...duration, step: min(5, duration)) {
+                            Text("Posición de reproducción")
+                        }.accessibilityValue(positionDescription)
                     }
             } else {
-                bar
+                bar.accessibilityRepresentation { Text("Posición de reproducción, \(positionDescription)") }
             }
         }
         .onChange(of: model.track) { _, _ in resetDrag() }
