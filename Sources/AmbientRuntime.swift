@@ -20,6 +20,7 @@ final class AmbientRuntime {
     private let model: StandbyModel
     private let window: NSWindow
     private var idleTimer: Timer?
+    private var scheduledPauseDeadline: ContinuousClock.Instant?
     private var phraseTimer: Timer?
     private var localEvents: Any?
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
@@ -47,7 +48,7 @@ final class AmbientRuntime {
         // Recheck after any asynchronous media query. Never cover a file chooser,
         // an AirDrop recipient picker or an agenda permission prompt automatically.
         if automatic && model.notch?.preventsAutomaticStandby == true { rescheduleIdle(); return }
-        idleTimer?.invalidate(); idleTimer = nil
+        cancelIdleTimer()
         mediaCheck.invalidate()
         model.automaticActivationStatus = automatic ? "Presentación automática" : "Presentación manual"
         model.automaticSession = automatic
@@ -94,15 +95,19 @@ final class AmbientRuntime {
         rescheduleIdle()
     }
     func rescheduleIdle() {
-        idleTimer?.invalidate(); idleTimer = nil
         mediaCheck.invalidate()
         if !model.idleEnabled { model.automaticActivationStatus = "Activación automática desactivada" }
-        guard !stopped, !LumaEnvironment.isTesting, model.idleEnabled, !isBlocked else { return }
-        if let until = model.autoPausedUntil, until > Date() {
+        guard !stopped, !LumaEnvironment.isTesting, model.idleEnabled, !isBlocked else { cancelIdleTimer(); return }
+        if let pause = model.automaticActivationPause, let remaining = pause.remainingSeconds() {
             model.automaticActivationStatus = "Activación automática en pausa"
-            scheduleIdleTimer(after: min(30, max(1, until.timeIntervalSinceNow))); return
+            if scheduledPauseDeadline != pause.deadline || idleTimer?.isValid != true {
+                scheduleIdleTimer(after: remaining)
+                scheduledPauseDeadline = pause.deadline
+            }
+            return
         }
-        model.autoPausedUntil = nil
+        cancelIdleTimer()
+        model.automaticActivationPause = nil
         if window.isVisible {
             if NSApp.isActive || model.settingsOpen || window.attachedSheet != nil { return }
             dismiss(); return
@@ -120,8 +125,12 @@ final class AmbientRuntime {
         model.automaticActivationStatus = "En espera · después de \(Int(delay / 60)) min"
         scheduleIdleTimer(after: interval)
     }
+    private func cancelIdleTimer() {
+        idleTimer?.invalidate(); idleTimer = nil
+        scheduledPauseDeadline = nil
+    }
     private func scheduleIdleTimer(after seconds: Double) {
-        idleTimer?.invalidate()
+        cancelIdleTimer()
         let interval = max(1, seconds)
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.rescheduleIdle() } }
         timer.tolerance = min(0.25, interval * 0.05)
@@ -174,8 +183,8 @@ final class AmbientRuntime {
         model.automaticActivationStatus = reason
         scheduleIdleTimer(after: 12)
     }
-    func pauseAutomatic(minutes: Double?) {
-        model.autoPausedUntil = minutes.map { Date().addingTimeInterval($0 * 60) }
+    func pauseAutomatic(for duration: Duration?) {
+        model.automaticActivationPause = duration.map { IdleActivationPause(duration: $0) }
         rescheduleIdle()
     }
     static func systemIdleSeconds() -> Double {
@@ -245,7 +254,7 @@ final class AmbientRuntime {
         return event
     }
     func stop() {
-        stopped = true; idleTimer?.invalidate(); phraseTimer?.invalidate()
+        stopped = true; cancelIdleTimer(); phraseTimer?.invalidate()
         mediaCheck.invalidate()
         if let localEvents { NSEvent.removeMonitor(localEvents); self.localEvents = nil }
         for (center, token) in tokens { center.removeObserver(token) }; tokens.removeAll()

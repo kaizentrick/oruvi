@@ -22,6 +22,20 @@ struct IdleActivationPolicy {
     }
 }
 
+struct IdleActivationPause {
+    let deadline: ContinuousClock.Instant
+
+    init(duration: Duration, at now: ContinuousClock.Instant = .now) {
+        deadline = now + duration
+    }
+
+    func remainingSeconds(at now: ContinuousClock.Instant = .now) -> TimeInterval? {
+        guard now < deadline else { return nil }
+        let remaining = now.duration(to: deadline).components
+        return Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18
+    }
+}
+
 /// Tracks a synchronous system probe that cannot be interrupted once launched.
 enum IdleMediaCheckState: Equatable {
     case idle, checking, invalidated, waitingToRetry

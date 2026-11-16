@@ -129,7 +129,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         let automatic = item("Activación por inactividad", #selector(toggleAutomatic))
         automatic.state = model.idleEnabled ? .on : .off
         _ = item(model.automaticActivationStatus, nil, enabled: false)
-        _ = item(model.autoPausedUntil == nil ? "Pausar activación durante 1 hora" : "Reanudar activación", #selector(pauseAutomatic))
+        _ = item(model.isAutomaticActivationPaused ? "Reanudar activación" : "Pausar activación durante 1 hora", #selector(pauseAutomatic))
         menu.addItem(.separator())
         let loginItem = item("Abrir al iniciar sesión", #selector(toggleLaunchAtLogin))
         loginItem.state = LaunchAtLogin.shared.enabled ? .on : .off
@@ -178,7 +178,7 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         }
     }
     @objc private func toggleAutomatic() { StandbyModel.shared.idleEnabled.toggle() }
-    @objc private func pauseAutomatic() { runtime?.pauseAutomatic(minutes: StandbyModel.shared.autoPausedUntil == nil ? 60 : nil) }
+    @objc private func pauseAutomatic() { runtime?.pauseAutomatic(for: StandbyModel.shared.isAutomaticActivationPaused ? nil : .seconds(3600)) }
     @objc private func checkUpdates() { OruviUpdates.shared.checkNow() }
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {

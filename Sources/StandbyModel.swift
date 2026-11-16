@@ -143,7 +143,8 @@ final class StandbyModel {
     var settingsSection: SettingsSection = .typography
     var isResynchronizing = true
     var automaticActivationStatus = "En espera"
-    var autoPausedUntil: Date?
+    var automaticActivationPause: IdleActivationPause?
+    var isAutomaticActivationPaused: Bool { automaticActivationPause?.remainingSeconds() != nil }
     var shuffleEnabled = false
     var repeatMode = 0
     var playbackOptionsAvailable = false

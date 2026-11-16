@@ -23,6 +23,14 @@ struct ReleaseVerification {
         _ = mediaCheck.begin()
         mediaCheck.invalidate()
         check(mediaCheck.complete() == .invalidated, "disabling, locking or using Standby cancels a deferred recheck")
+        let pauseStart = ContinuousClock.now
+        let activationPause = IdleActivationPause(duration: .seconds(3600), at: pauseStart)
+        check(activationPause.remainingSeconds(at: pauseStart) == 3600, "a one-hour pause supplies its full delay to the timer")
+        check(activationPause.remainingSeconds(at: pauseStart + .milliseconds(3_599_750)) == 0.25,
+              "rescheduling uses the same deadline even near expiration")
+        check(activationPause.remainingSeconds(at: pauseStart + .seconds(3600)) == nil
+              && activationPause.remainingSeconds(at: pauseStart + .seconds(4500)) == nil,
+              "an expired pause stays expired after a long sleep")
         check(MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowser", conservative: true)?.contains("Navegador") == true,
               "a foreground Aside session triggers conservative protection")
         check(MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowser", conservative: false) == nil,
