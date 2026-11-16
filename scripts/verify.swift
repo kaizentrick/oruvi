@@ -25,6 +25,25 @@ struct ReleaseVerification {
         check(paused.value(at: 25) == 10 && paused.delay(until: 12, at: 25) == nil, "Pause freezes the lyric clock")
         check(PlaybackTime.format(121.9) == "2:01" && PlaybackTime.format(-2) == "0:00", "Playback time rounds down and clamps negative remaining time")
         check(PlaybackTime.format(.greatestFiniteMagnitude) == "—" && PlaybackTime.format(.nan) == "—", "Unknown or out-of-range media time never traps")
+        var render = RenderPolicy(visible: true, onBattery: false, lowPower: false, hot: false, reduceMotion: false, mode: .adaptive)
+        check(render.framesPerSecond == 24, "standby adapts to 24 fps on AC power")
+        render.onBattery = true
+        check(render.framesPerSecond == 0, "adaptive standby keeps the mesh static on battery")
+        render.mode = .fluid
+        check(render.framesPerSecond == 12, "fluid standby budgets 12 fps on battery")
+        render.onBattery = false
+        check(render.framesPerSecond == 30, "fluid standby budgets 30 fps on AC power")
+        let fluid = render
+        render.lowPower = true
+        check(render.framesPerSecond == 0, "macOS Low Power Mode stops the mesh")
+        render = fluid; render.hot = true
+        check(render.framesPerSecond == 0, "thermal pressure stops the mesh")
+        render = fluid; render.reduceMotion = true
+        check(render.framesPerSecond == 0, "Reduce Motion stops the mesh")
+        render = fluid; render.mode = .saver
+        check(render.framesPerSecond == 0, "Oruvi energy saver stops the mesh")
+        render = fluid; render.visible = false
+        check(render.framesPerSecond == 0 && render.pollingInterval(playing: true) == nil, "hidden Standby needs neither animation frames nor its fast sampling cadence")
         var recovery = PlaybackRecovery()
         recovery.succeed(at: 10); recovery.fail()
         check(recovery.waiting && recovery.retryInterval <= 1, "quick failure recovery")
