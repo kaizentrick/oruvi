@@ -23,6 +23,19 @@ struct ReleaseVerification {
         _ = mediaCheck.begin()
         mediaCheck.invalidate()
         check(mediaCheck.complete() == .invalidated, "disabling, locking or using Standby cancels a deferred recheck")
+        check(MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowser", conservative: true)?.contains("Navegador") == true,
+              "a foreground Aside session triggers conservative protection")
+        check(MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowser", conservative: false) == nil,
+              "disabling the conservative rule leaves audio and display checks responsible")
+        check(MediaProtection.foregroundProtectionReason(bundleID: "com.apple.QuickTimePlayerX", conservative: true)?.contains("vídeo") == true,
+              "a video player blocks Standby before system audio sampling")
+        check(MediaProtection.foregroundProtectionReason(bundleID: "com.apple.Music", conservative: true) == nil
+              && MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowserFake", conservative: true) == nil,
+              "the foreground rule excludes music and unrelated bundle prefixes")
+        check(!MediaActivitySample().shouldProtect && MediaActivitySample(displayHeld: true).shouldProtect
+              && MediaActivitySample(otherAudio: true).shouldProtect
+              && MediaActivitySample(assertionsAvailable: false, audioAvailable: false).shouldProtect,
+              "system media checks keep protecting audio, display use and unavailable readings")
         let cues = LRCParser.parse("[00:00.00]One\n[00:01.50]Two\n[00:03.00]\n[00:04.00]Three")
         check(cues.count == 4, "timed cue parsing")
         check(LRCParser.index(at: 1.5, in: cues) == 1, "cue boundary")

@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import CoreAudio
 import IOKit.pwr_mgt
 
@@ -8,31 +7,35 @@ import IOKit.pwr_mgt
 struct MediaActivitySample: Sendable {
     var displayHeld = false
     var otherAudio = false
-    var foregroundBrowser = false
-    var foregroundPlayer = false
     var assertionsAvailable = true
     var audioAvailable = true
     var reason: String {
         if displayHeld { return "Una app está manteniendo la pantalla activa" }
         if otherAudio { return "Hay reproducción de audio fuera de Música" }
-        if foregroundPlayer { return "Reproductor de vídeo en primer plano" }
-        if foregroundBrowser { return "Navegador en primer plano · protección conservadora" }
         return "No se pudo comprobar la reproducción"
     }
-    func shouldProtect(enabled: Bool, conservativeBrowsers: Bool) -> Bool {
-        guard enabled else { return false }
-        return displayHeld || otherAudio || (conservativeBrowsers && (foregroundBrowser || foregroundPlayer)) || (!assertionsAvailable && !audioAvailable)
+    var shouldProtect: Bool {
+        displayHeld || otherAudio || (!assertionsAvailable && !audioAvailable)
     }
 }
 
 enum MediaProtection {
     static func isBrowser(_ bundleID: String) -> Bool {
         let id = bundleID.lowercased()
-        return ["com.apple.safari", "com.google.chrome", "org.mozilla.firefox", "com.microsoft.edgemac", "com.brave.browser", "com.operasoftware.opera", "company.thebrowser.browser", "company.thebrowser.dia", "com.vivaldi.vivaldi", "app.zen-browser.zen", "com.kagi.kagimacOS".lowercased(), "com.openai.atlas"].contains { id == $0 || id.hasPrefix($0 + ".") }
+        return ["com.apple.safari", "com.google.chrome", "org.mozilla.firefox", "com.microsoft.edgemac",
+                "com.brave.browser", "com.operasoftware.opera", "company.thebrowser.browser", "company.thebrowser.dia",
+                "com.vivaldi.vivaldi", "app.zen-browser.zen", "com.kagi.kagimacos", "com.openai.atlas",
+                "at.studio.asidebrowser"].contains { id == $0 || id.hasPrefix($0 + ".") }
     }
     static func isVideoPlayer(_ bundleID: String) -> Bool {
         let id = bundleID.lowercased()
         return ["com.apple.tv", "com.apple.quicktimeplayerx", "org.videolan.vlc", "com.colliderli.iina", "tv.plex.desktop", "com.hbo.hbonow", "com.wbd.stream", "com.burbn.instagram"].contains { id == $0 || id.hasPrefix($0 + ".") }
+    }
+    static func foregroundProtectionReason(bundleID: String, conservative: Bool) -> String? {
+        guard conservative else { return nil }
+        if isVideoPlayer(bundleID) { return "Reproductor de vídeo en primer plano" }
+        if isBrowser(bundleID) { return "Navegador en primer plano · protección conservadora" }
+        return nil
     }
     static func ignoredAudio(_ bundleID: String, pid: Int32, ownPID: Int32) -> Bool {
         let id = bundleID.lowercased()
@@ -42,10 +45,8 @@ enum MediaProtection {
         // Do not add a second full interval when the person has already used input since playback.
         idle > max(0, now - lastProtected) + 1
     }
-    static func sample(frontmostBundleID: String, ownPID: Int32) -> MediaActivitySample {
+    static func sample(ownPID: Int32) -> MediaActivitySample {
         var result = MediaActivitySample()
-        result.foregroundBrowser = isBrowser(frontmostBundleID)
-        result.foregroundPlayer = isVideoPlayer(frontmostBundleID)
         var assertions: Unmanaged<CFDictionary>?
         let status = IOPMCopyAssertionsByProcess(&assertions)
         result.assertionsAvailable = status == kIOReturnSuccess

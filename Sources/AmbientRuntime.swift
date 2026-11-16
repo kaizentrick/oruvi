@@ -129,12 +129,18 @@ final class AmbientRuntime {
     }
     private func checkMediaBeforeActivation() {
         guard model.avoidMedia else { activate(automatic: true); return }
+        let foreground = NSWorkspace.shared.frontmostApplication
+        if let reason = MediaProtection.foregroundProtectionReason(bundleID: foreground?.bundleIdentifier ?? "",
+                                                                  conservative: model.protectBrowsers) {
+            deferForMedia(reason: reason)
+            return
+        }
         model.automaticActivationStatus = "Comprobando reproducción"
         guard mediaCheck.begin() else { return }
-        let foreground = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        let foregroundPID = foreground?.processIdentifier
         let pid = ProcessInfo.processInfo.processIdentifier
         Task { [weak self] in
-            let result = await Task.detached(priority: .utility) { MediaProtection.sample(frontmostBundleID: foreground, ownPID: pid) }.value
+            let result = await Task.detached(priority: .utility) { MediaProtection.sample(ownPID: pid) }.value
             guard let self else { return }
             switch self.mediaCheck.complete() {
             case .waitingToRetry: self.rescheduleIdle(); return
@@ -143,12 +149,10 @@ final class AmbientRuntime {
             }
             guard !self.stopped, !self.isBlocked, !self.window.isVisible, self.model.idleEnabled else { return }
             // Another app could become active while a system query is in flight.
-            guard foreground == (NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "") else { self.rescheduleIdle(); return }
-            if result.shouldProtect(enabled: self.model.avoidMedia, conservativeBrowsers: self.model.protectBrowsers) {
-                self.wasMediaProtected = true
-                self.lastMediaProtected = ProcessInfo.processInfo.systemUptime
-                self.model.automaticActivationStatus = result.reason
-                self.scheduleIdleTimer(after: 12); return
+            guard foregroundPID == NSWorkspace.shared.frontmostApplication?.processIdentifier else { self.rescheduleIdle(); return }
+            if result.shouldProtect {
+                self.deferForMedia(reason: result.reason)
+                return
             }
             if self.wasMediaProtected {
                 // A full new idle period after playback ends prevents covering the final frame,
@@ -163,6 +167,12 @@ final class AmbientRuntime {
             if policy.shouldActivate(idle: Self.systemIdleSeconds()) { self.activate(automatic: true) }
             else { self.rescheduleIdle() }
         }
+    }
+    private func deferForMedia(reason: String) {
+        wasMediaProtected = true
+        lastMediaProtected = ProcessInfo.processInfo.systemUptime
+        model.automaticActivationStatus = reason
+        scheduleIdleTimer(after: 12)
     }
     func pauseAutomatic(minutes: Double?) {
         model.autoPausedUntil = minutes.map { Date().addingTimeInterval($0 * 60) }
