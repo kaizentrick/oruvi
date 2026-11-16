@@ -1,22 +1,48 @@
-# Oruvi
+<p align="center"><img src="Resources/OruviIcon.png" alt="Icono de Oruvi" width="96"></p>
 
-Un compañero de música en el notch. Un Standby de pantalla completa cuando dejas de usar tu Mac.
+<h1 align="center">Oruvi</h1>
 
-Copyright © 2026 KaizenTrick · [Licencia MIT](LICENSE)
+<p align="center">Controla tu música desde el notch y convierte tu Mac en un reloj con música y letras a pantalla completa.</p>
 
-## Descargar e instalar
+<p align="center">
+  <a href="https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg"><strong>Descargar Oruvi.dmg</strong></a>
+  · <a href="https://github.com/kaizentrick/oruvi/releases/latest">Última versión</a>
+  · <a href=".github/CONTRIBUTING.md">Contribuir</a>
+</p>
 
-### [Descargar Oruvi para Mac — Oruvi.dmg](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg)
+<p align="center">Apple silicon (M1 o posterior) · macOS 26 o posterior · <a href="LICENSE">Licencia MIT</a></p>
 
-[Última versión y notas](https://github.com/kaizentrick/oruvi/releases/latest)
+![Standby de Oruvi con portada, controles y letra sincronizada en el modo de demostración](.github/media/standby.jpg)
 
-**Requiere Apple Silicon (M1 o posterior) y macOS 26 o posterior.** No incluye soporte Intel. En Automático sigue la sesión Ahora suena que publica macOS; mantiene controles directos para Apple Music y Spotify de escritorio. No necesitas Xcode, Terminal, Homebrew, el código fuente ni una cuenta de GitHub para instalarla.
+## Instalar Oruvi
 
-Abre el DMG, arrastra **Oruvi.app** a **Applications**, expulsa el disco y abre Oruvi desde Aplicaciones. Autoriza Automatización para el reproductor que utilices. No se reproduce otro audio encima del reproductor.
+1. [Descarga **Oruvi.dmg**](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg). En la página de **Releases**, también lo encuentras en **Assets**. La descarga pública funciona sin cuenta de GitHub.
+2. Abre el DMG y arrastra **Oruvi.app** a **Aplicaciones**.
+3. Expulsa el disco y abre **Oruvi** desde **Aplicaciones**. Para probar el notch, acerca el puntero al borde superior de la pantalla. Para abrir Standby, usa el icono de Oruvi en la barra de menús y elige **Activar pantalla completa**.
+4. Elige **Automático**, **Apple Music** o **Spotify**. Si macOS solicita Automatización para el reproductor elegido, concede el permiso para habilitar sus controles.
 
-**Sin notarización de Apple:** esta distribución está firmada localmente. macOS puede bloquear el primer inicio. Comprueba el origen y, únicamente si confías en esta copia, autoriza esa app desde **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. No desactives Gatekeeper ni SIP. Un Mac administrado puede impedir esta excepción. Ed25519 verifica las actualizaciones, pero no sustituye Developer ID ni notarización.
+La versión pública usa firma ad-hoc y carece de notarización de Apple. Si macOS bloquea el primer inicio, confirma que descargaste el DMG desde este repositorio. Si confías en la copia, ve a **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. Algunas Mac administradas restringen esta opción. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
 
-Usa `Oruvi.dmg`, no los ZIP «Source code». Cada release publica ese alias junto a un DMG numerado de contenido idéntico y `SHA256SUMS.txt`.
+Las próximas versiones se descargan desde GitHub con **Ajustes → Actualizaciones → Buscar versiones nuevas automáticamente** y **Descargar e instalar al salir cuando sea posible**. Sparkle verifica la firma Ed25519 antes de instalar.
+
+## Explora Oruvi
+
+- **Notch.** Controla música y abre Agenda, el temporizador y Conexiones desde el borde superior.
+- **Standby.** Elige Reloj, Música o Reloj + música. Las letras sincronizadas aparecen cuando están disponibles.
+- **Tipografía.** Compara fuentes y ajusta el tamaño de las letras con una vista previa en vivo.
+- **Widgets.** Pon la portada y los controles de reproducción en el escritorio.
+
+![Ajustes de tipografía con muestras de fuentes y vista previa del tamaño de las letras](.github/media/tipografia.jpg)
+
+Las capturas muestran el modo de demostración con texto y portada de ejemplo.
+
+## Participa
+
+El código está disponible bajo [MIT](LICENSE). Puedes leerlo, modificarlo y compartirlo conservando el aviso de copyright y el texto de la licencia. Para proponer un cambio, crea un fork y abre un pull request. También puedes [reportar un problema o sugerir una mejora](https://github.com/kaizentrick/oruvi/issues/new). Consulta la [guía para contribuir](.github/CONTRIBUTING.md) y los [avisos de terceros](THIRD_PARTY_NOTICES.md).
+
+<details>
+<summary>Controles, compatibilidad y detalles técnicos</summary>
+
 
 ## Notch más ligero
 
@@ -124,14 +150,7 @@ Usa **Buscar actualizaciones** en Oruvi. Sparkle comprueba el feed y el archivo 
 
 Los PR ejecutan comprobaciones y compilación completa en GitHub con `ORUVI_REPOSITORY=''`, sin secretos ni publicación. Solo `main` publica: valida, compila, verifica, firma y sube todos los recursos antes de hacer Latest. Un fallo no sustituye el instalador anterior. Los cambios de documentación no empaquetada no consumen una compilación.
 
-Para desarrollar con SDK macOS 26:
-
-```bash
-bash scripts/check.sh
-bash scripts/build.sh
-```
-
-Resultado: `dist/Oruvi-0.12.0-arm64.dmg`. El bundle sigue siendo `com.kaizentrick.Oruvi`; los datos históricos permanecen en `~/Library/Application Support/LumaStandby`.
+Para compilar una copia de desarrollo, sigue la [guía para contribuir](.github/CONTRIBUTING.md).
 
 `bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 
@@ -142,6 +161,8 @@ Resultado: `dist/Oruvi-0.12.0-arm64.dmg`. El bundle sigue siendo `com.kaizentric
 Se conservan las pruebas de lógica existentes y las matrices de selección automática, aplicaciones instaladas, preferencias separadas, migración, cámara/bordes y pantallas múltiples. En 0.11.0 se añaden comprobaciones parametrizadas de silueta, límites de entrada, coordenadas de pantalla, avisos y antirrebote, además de pruebas del animador real y su cancelación. La compilación ejecuta además pruebas sobre el modelo real de Oruvi con preferencias aisladas, sin abrir reproductores, solicitar permisos ni hacer búsquedas externas. Se verifican el flujo asíncrono del widget, su lectura entre procesos, la extensión nativa, la firma y el icono. El DMG se monta y se verifican firma, binario y copia de la licencia.
 
 Estas pruebas **no equivalen a una sesión interactiva en todos los modelos de Mac**, una transferencia real de AirDrop, la sensación física del trackpad ni pruebas con permisos/cuentas reales de Calendario o Spotify. No se afirman benchmarks nuevos; la compilación y las pruebas no sustituyen verificar los permisos y la galería en cada instalación.
+
+</details>
 
 ## Licencia y atribución
 

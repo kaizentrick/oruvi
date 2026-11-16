@@ -37,6 +37,7 @@ CHANGES="$(awk -v version="$VERSION" '$1 == "##" { if (found) exit; found = ($2 
 {
   printf '## Descargar Oruvi\n\n'
   printf '**[Descargar Oruvi.dmg](https://github.com/%s/releases/download/%s/Oruvi.dmg)**\n\n' "$REPO" "$TAG"
+  printf '[Guía de instalación y capturas](https://github.com/%s/blob/%s/README.md#instalar-oruvi) · [Cómo contribuir](https://github.com/%s/blob/%s/.github/CONTRIBUTING.md)\n\n' "$REPO" "$TAG" "$REPO" "$TAG"
   printf 'Apple Silicon (M1 o posterior) y macOS 26 o posterior. No necesitas Git, Xcode ni una cuenta de GitHub para descargarla.\n\n'
   printf '1. Abre Oruvi.dmg y arrastra Oruvi.app a Applications.\n'
   printf '2. Expulsa el DMG y abre Oruvi desde Aplicaciones.\n'
