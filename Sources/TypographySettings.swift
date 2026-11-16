@@ -137,8 +137,12 @@ struct TypographySettings: View {
                 }
             }
         case .clock:
-            Picker("Grosor del reloj", selection: $model.clockWeight) {
-                ForEach(ClockWeight.allCases) { Text($0.name).tag($0) }
+            let typeface = model.clockTypeface
+            Picker("Grosor del reloj", selection: Binding(
+                get: { typeface.displayedClockWeight(model.clockWeight) },
+                set: { model.clockWeight = $0 }
+            )) {
+                ForEach(typeface.clockWeights) { Text($0.name).tag($0) }
             }
         case .content:
             Text("La fuente se aplica a títulos, artistas y frases. Las letras pueden usar su propia fuente.")
@@ -166,7 +170,7 @@ struct TypographySettings: View {
         case .content: "Música y calma"
         }
         let font = switch target {
-        case .lyrics: typeface.font(size: 22, emphasized: true)
+        case .lyrics: LyricTypography.font(typeface, baseSize: 22, sizePercent: model.lyricSizePercent, emphasized: true)
         case .clock: Font(typeface.native(size: 26, weight: model.clockWeight.native))
         case .content: typeface.font(size: 20, emphasized: true)
         }

@@ -36,9 +36,37 @@ enum AmbientTypeface: String, CaseIterable, Identifiable {
         }
     }
     var installed: Bool { postScriptName.map { NSFont(name: $0, size: 14) != nil } ?? true }
+
+    private static let namedFaces: [Self: [ClockWeight: String]] = Dictionary(uniqueKeysWithValues: allCases.compactMap { typeface in
+        guard let name = typeface.postScriptName, let base = NSFont(name: name, size: 14),
+              let family = base.familyName else { return nil }
+        var faces: [ClockWeight: String] = [.regular: name]
+        for member in NSFontManager.shared.availableMembers(ofFontFamily: family) ?? [] {
+            guard member.count >= 4, let faceName = member[0] as? String, let rawTraits = member[3] as? UInt,
+                  NSFontTraitMask(rawValue: rawTraits).intersection([.italicFontMask, .condensedFontMask, .expandedFontMask]).isEmpty,
+                  let font = NSFont(name: faceName, size: 14),
+                  let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
+                  let weight = traits[.weight] as? NSNumber else { continue }
+            let closest = ClockWeight.closest(to: weight.doubleValue, among: ClockWeight.allCases)
+            if faces[closest] == nil { faces[closest] = faceName }
+        }
+        return (typeface, faces)
+    })
+
+    var clockWeights: [ClockWeight] {
+        guard postScriptName != nil, let faces = Self.namedFaces[self] else { return ClockWeight.allCases }
+        return ClockWeight.allCases.filter { faces[$0] != nil }
+    }
+
+    func displayedClockWeight(_ requested: ClockWeight) -> ClockWeight {
+        ClockWeight.closest(to: Double(requested.native.rawValue), among: clockWeights)
+    }
+
     func native(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        if let postScriptName, let font = NSFont(name: postScriptName, size: size) {
-            return weight.rawValue >= NSFont.Weight.semibold.rawValue ? NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) : font
+        if postScriptName != nil, let faces = Self.namedFaces[self],
+           let name = faces[ClockWeight.closest(to: Double(weight.rawValue), among: clockWeights)],
+           let font = NSFont(name: name, size: size) {
+            return font
         }
         let design: NSFontDescriptor.SystemDesign
         switch self { case .editorial: design = .serif; case .rounded: design = .rounded; case .monospaced: design = .monospaced; default: design = .default }
@@ -81,6 +109,9 @@ enum ClockWeight: String, CaseIterable, Identifiable {
         case .heavy: return .heavy
         case .black: return .black
         }
+    }
+    static func closest(to desired: Double, among choices: [Self]) -> Self {
+        choices.min { abs(Double($0.native.rawValue) - desired) < abs(Double($1.native.rawValue) - desired) } ?? .regular
     }
 }
 

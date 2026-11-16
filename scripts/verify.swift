@@ -147,6 +147,19 @@ struct ReleaseVerification {
         check(ClockWeight.allCases.count == 9, "nine system weights")
         for font in AmbientTypeface.allCases.filter(\.installed) {
             check(font.native(size: 30).pointSize == 30, "native font resolves without downloading")
+            if !font.isAppleSystem {
+                let choices = font.clockWeights
+                let names = choices.map { font.native(size: 30, weight: $0.native).fontName }
+                check(choices.contains(.regular) && Set(names).count == choices.count,
+                      "every named weight in Settings selects a distinct font face")
+                check(choices.contains(font.displayedClockWeight(.black)),
+                      "existing saved weights resolve to a choice the current family can render")
+            }
+        }
+        if AmbientTypeface.avenir.installed {
+            check(AmbientTypeface.avenir.clockWeights.contains(.medium) &&
+                  AmbientTypeface.avenir.native(size: 30, weight: .medium).fontName != AmbientTypeface.avenir.native(size: 30).fontName,
+                  "Avenir's real medium face differs from its regular face")
         }
         print("PASS: \(count) release checks. Geometry, lyrics, recovery, typography and update target validation.")
     }
