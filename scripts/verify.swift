@@ -15,6 +15,23 @@ struct ReleaseVerification {
         check(LRCParser.index(at: -1, in: cues) == nil, "before first cue")
         check(LRCParser.index(at: .nan, in: cues) == nil, "nonfinite time")
         check(cues[2].text.isEmpty, "instrumental gap")
+        let literal = LRCParser.parse("\u{FEFF}[00:01.2] [00:02.034] <00:01.20>time [00:12.00] and [offset:5000]\r\n")
+        check(literal.map(\.time) == [1.2, 2.034] && literal.allSatisfy { $0.text == "time [00:12.00] and [offset:5000]" },
+              "only leading timestamps and standalone offsets are metadata")
+        let negative = LRCParser.parse("[offset:-2500]\n[00:01]Old\n[00:02]Current\n[00:02.000]Second\n[00:02.0]Current\n[00:03]Next")
+        check(negative.map(\.time) == [0, 0.5] && negative.first?.text == "Current\nSecond",
+              "offset preserves only the active pre-start cue and merges distinct simultaneous lines")
+        let zero = LRCParser.parse("[OFFSET:-2000]\n[00:01]Previous\n[00:02]\n[00:03]Next")
+        check(zero.first?.text.isEmpty == true && zero.first?.time == 0, "an actual cue at zero overrides an earlier cue")
+        check(LRCParser.parse("[offset:+200]\n[00:01]One").first?.time == 1.2, "positive offsets retain their timing convention")
+        check(LRCParser.parse("Cover art [00:05] must not be a cue\n[00:61]Invalid").isEmpty, "timestamps in prose and invalid seconds are ignored")
+        let simultaneous = (0..<4000).map { "[00:01]Line \($0)" }.joined(separator: "\n")
+        let merged = LRCParser.parse(simultaneous)
+        check(merged.count == 1 && merged.first?.text.components(separatedBy: "\n").count == 4000
+              && merged.first?.text.hasSuffix("Line 3999") == true, "many simultaneous lines merge in file order")
+        let expanded = (0..<64).map { String(format: "[00:%02d.%03d]", $0 / 2, $0 % 2) }.joined()
+            + String(repeating: "x", count: 64_000)
+        check(LRCParser.parse(expanded).isEmpty, "repeated stamps cannot expand a bounded input indefinitely")
         let anchor = PlaybackAnchor(position: 10, uptime: 20, duration: 60, playing: true)
         check(anchor.value(at: 25) == 15, "monotonic playback")
         check(anchor.value(at: 100) == 60, "duration clamp")

@@ -249,6 +249,9 @@ struct VerifySurfaces {
         let name = LumaEnvironment.cacheName(track) + ".json"
         let lyricFile = support.appendingPathComponent("LyricsCache").appendingPathComponent(name)
         let artworkFile = support.appendingPathComponent("ArtworkCache").appendingPathComponent(name)
+        let legacyLyrics = LyricsPayload(lines: [LyricLine(id: 0, time: 0, text: "Old parse")],
+                                         source: "Legacy", savedAt: Date(), parserVersion: nil)
+        try JSONEncoder().encode(legacyLyrics).write(to: lyricFile)
         async let pendingLyrics = lyricRepository.load(for: track, allowNetwork: true)
         async let pendingArtwork = artworkRepository.load(for: track)
         await until { ArtworkFixture.isHolding("/api/get") && ArtworkFixture.isHolding("/600x600bb.png") }
@@ -288,7 +291,11 @@ struct VerifySurfaces {
         let imported = support.appendingPathComponent("ImportedLyrics")
         try manager.createDirectory(at: imported, withIntermediateDirectories: true)
         let importedFile = imported.appendingPathComponent(name)
-        try JSONEncoder().encode(lyrics).write(to: importedFile)
+        try JSONEncoder().encode(legacyLyrics).write(to: importedFile)
+        let importedResult = await lyricRepository.load(for: track, allowNetwork: false)
+        guard case .available(let importedLyrics) = importedResult else { preconditionFailure("legacy imported lyrics must remain readable") }
+        expect(importedLyrics.lines == legacyLyrics.lines && lyrics.lines != legacyLyrics.lines,
+               "refresh downloaded lyrics from the old parser while retaining imported lyrics")
         covers.clearLyricsCache()
         expect(covers.isClearingDownloadCache, "settings indicate cache clearing while in progress")
         await until { !covers.isClearingDownloadCache }

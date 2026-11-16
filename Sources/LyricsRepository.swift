@@ -48,7 +48,8 @@ actor LyricsRepository {
               let data = try? Data(contentsOf: url), let payload = try? JSONDecoder().decode(LyricsPayload.self, from: data),
               payload.lines.contains(where: { !$0.text.isEmpty }), payload.lines.allSatisfy({ $0.time.isFinite && $0.time >= 0 }),
               zip(payload.lines, payload.lines.dropFirst()).allSatisfy({ $0.time <= $1.time }) else { return nil }
-        if let maxAge, Date().timeIntervalSince(payload.savedAt) > maxAge { return nil }
+        if let maxAge,
+           payload.parserVersion != LRCParser.cacheVersion || Date().timeIntervalSince(payload.savedAt) > maxAge { return nil }
         return payload
     }
     func clearDownloadedCache() -> Bool {
@@ -138,7 +139,8 @@ actor LyricsRepository {
     private func payload(_ record: RemoteLyrics) -> LyricsPayload? {
         let lines = LRCParser.parse(record.syncedLyrics ?? "")
         guard lines.contains(where: { !$0.text.isEmpty }) else { return nil }
-        return LyricsPayload(lines: lines, source: "LRCLIB · sincronización por línea", savedAt: Date())
+        return LyricsPayload(lines: lines, source: "LRCLIB · sincronización por línea", savedAt: Date(),
+                             parserVersion: LRCParser.cacheVersion)
     }
     private func save(_ payload: LyricsPayload, name: String, generation: Int) {
         guard generation == cacheGeneration, !Task.isCancelled else { return }
