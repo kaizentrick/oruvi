@@ -18,6 +18,23 @@ struct NotchAgendaDates: Equatable {
     var needsSeparateMonthQuery: Bool { month.end > upcoming.end }
 
     static func overlaps(start: Date, end: Date, range: DateInterval) -> Bool {
-        start < range.end && end > range.start
+        if start == end { return start >= range.start && start < range.end }
+        return start < end && start < range.end && end > range.start
+    }
+
+    static func coveredDays(start: Date, end: Date, in range: DateInterval, calendar: Calendar) -> [Date] {
+        guard overlaps(start: start, end: end, range: range) else { return [] }
+        if start == end { return [calendar.startOfDay(for: start)] }
+        let limit = min(end, range.end)
+        var day = calendar.startOfDay(for: max(start, range.start))
+        var result: [Date] = []
+        while day < limit {
+            result.append(day)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            let nextDay = calendar.startOfDay(for: next)
+            guard nextDay > day else { break }
+            day = nextDay
+        }
+        return result
     }
 }
