@@ -14,6 +14,7 @@ actor ArtworkRepository {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var lastRequest = Date.distantPast
     private var blockedUntil = Date.distantPast
+    private var cacheGeneration = 0
     private static let sizePattern = try! NSRegularExpression(pattern: #"/[0-9]+x[0-9]+bb\."#)
 
     private func acquireSlot() async {
@@ -39,6 +40,7 @@ actor ArtworkRepository {
            let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode(ArtworkPayload.self, from: data),
            Self.isImage(cached.data), (0..<30 * 86400).contains(Date().timeIntervalSince(cached.savedAt)) { return cached }
         guard track.duration.isFinite, track.duration > 0, !track.artist.isEmpty else { return nil }
+        let generation = cacheGeneration
         await acquireSlot()
         defer { releaseSlot() }
         try Task.checkCancellation()
@@ -85,7 +87,11 @@ actor ArtworkRepository {
             return url
         }
         let payload = ArtworkPayload(data: image.data, link: link, savedAt: Date())
-        if let data = try? JSONEncoder().encode(payload) { try? data.write(to: file, options: .atomic); prune() }
+        // A request started before clearing can finish for playback without repopulating the cache.
+        if generation == cacheGeneration, !Task.isCancelled, let data = try? JSONEncoder().encode(payload) {
+            try? data.write(to: file, options: .atomic)
+            prune()
+        }
         return payload
     }
     /// Spotify supplies its own artwork URL. Never substitute a different catalog image.
@@ -106,9 +112,9 @@ actor ArtworkRepository {
             kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary) != nil && CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete
     }
-    func clearCache() {
-        guard let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
-        for file in urls where file.pathExtension == "json" { try? FileManager.default.removeItem(at: file) }
+    func clearCache() -> Bool {
+        cacheGeneration &+= 1
+        return LumaEnvironment.removeDownloadedCache(in: root)
     }
     private func prune() {
         guard let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) else { return }

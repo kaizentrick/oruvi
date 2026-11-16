@@ -33,6 +33,23 @@ enum LumaEnvironment {
     static func cacheName(_ track: TrackIdentity) -> String {
         SHA256.hash(data: Data(track.cacheKey.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+    static func removeDownloadedCache(in directory: URL) -> Bool {
+        let manager = FileManager.default
+        do {
+            let entries = try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            var succeeded = true
+            for entry in entries where entry.pathExtension == "json" {
+                do { try manager.removeItem(at: entry) }
+                catch let error as CocoaError where error.code == .fileNoSuchFile { continue }
+                catch { succeeded = false }
+            }
+            return succeeded
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return true
+        } catch {
+            return false
+        }
+    }
 }
 
 struct HTTPReply: Sendable {

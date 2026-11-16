@@ -39,6 +39,8 @@ final class StandbyModel {
     var artwork: NSImage?
     var artworkLink: URL?
     var artworkStatus = ""
+    private(set) var cacheClearStatus = ""
+    private(set) var isClearingDownloadCache = false
     var palette = RGB.aurora
     var lines: [LyricLine] = []
     var activeLine: Int?
@@ -811,7 +813,18 @@ final class StandbyModel {
         timer.tolerance = 0.012; cueTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func clearLyricsCache() {
-        Task { await repository.clearDownloadedCache(); await artworkRepository.clearCache() }
+        guard !isClearingDownloadCache else { return }
+        isClearingDownloadCache = true
+        cacheClearStatus = "Vaciando caché…"
+        Task {
+            async let lyricsCleared = repository.clearDownloadedCache()
+            async let artworkCleared = artworkRepository.clearCache()
+            let (lyrics, artwork) = await (lyricsCleared, artworkCleared)
+            cacheClearStatus = lyrics && artwork
+                ? "Caché de letras y portadas vacía."
+                : "No se pudieron borrar todos los archivos de caché."
+            isClearingDownloadCache = false
+        }
     }
     func setNotchVisible(_ value: Bool) {
         guard notchVisible != value else { return }

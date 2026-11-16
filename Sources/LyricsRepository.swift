@@ -16,6 +16,7 @@ actor LyricsRepository {
     private var blockedUntil = Date.distantPast
     private var lastRequest = Date.distantPast
     private var misses: [String: Date] = [:]
+    private var cacheGeneration = 0
 
     private func acquireSlot() async {
         guard busy else { busy = true; return }
@@ -44,10 +45,10 @@ actor LyricsRepository {
         if let maxAge, Date().timeIntervalSince(payload.savedAt) > maxAge { return nil }
         return payload
     }
-    func clearDownloadedCache() {
-        guard let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
-        for url in urls where url.pathExtension == "json" { try? FileManager.default.removeItem(at: url) }
+    func clearDownloadedCache() -> Bool {
+        cacheGeneration &+= 1
         misses.removeAll()
+        return LumaEnvironment.removeDownloadedCache(in: root)
     }
     private func request(_ endpoint: String, items: [URLQueryItem]) async throws -> HTTPReply {
         guard Date() >= blockedUntil else { throw RemoteError.unavailable }
@@ -71,6 +72,7 @@ actor LyricsRepository {
             return .message
         }
         if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable }
+        let generation = cacheGeneration
         do {
             await acquireSlot()
             defer { releaseSlot() }
@@ -85,7 +87,8 @@ actor LyricsRepository {
             if reply.status == 200 { records = [try JSONDecoder().decode(RemoteLyrics.self, from: reply.data)] }
             if let record = records.first, record.matches(track), record.instrumental == true { return .unavailable }
             if let record = records.first, record.matches(track), let payload = payload(record) {
-                save(payload, name: name); return .available(payload)
+                save(payload, name: name, generation: generation)
+                return .available(payload)
             }
             // A strict search fallback handles collaborative credits and differing album spellings.
             // It never assigns the first search result or fabricates timestamps for plain lyrics.
@@ -104,9 +107,12 @@ actor LyricsRepository {
                     return abs(($0.duration ?? 0) - track.duration) < abs(($1.duration ?? 0) - track.duration)
                 }
             for record in records {
-                if let payload = payload(record) { save(payload, name: name); return .available(payload) }
+                if let payload = payload(record) {
+                    save(payload, name: name, generation: generation)
+                    return .available(payload)
+                }
             }
-            rememberMiss(name)
+            if generation == cacheGeneration && !Task.isCancelled { rememberMiss(name) }
             return .unavailable
         } catch is CancellationError { return .message }
         catch { return .retry }
@@ -116,7 +122,8 @@ actor LyricsRepository {
         guard lines.contains(where: { !$0.text.isEmpty }) else { return nil }
         return LyricsPayload(lines: lines, source: "LRCLIB · sincronización por línea", savedAt: Date())
     }
-    private func save(_ payload: LyricsPayload, name: String) {
+    private func save(_ payload: LyricsPayload, name: String, generation: Int) {
+        guard generation == cacheGeneration, !Task.isCancelled else { return }
         if let data = try? JSONEncoder().encode(payload), data.count <= 1_000_000 {
             try? data.write(to: root.appendingPathComponent(name), options: .atomic)
             pruneCache()

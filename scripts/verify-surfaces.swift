@@ -6,7 +6,7 @@ import Sparkle
 /// launches a player or contacts artwork/lyrics services. Preferences are isolated.
 @main
 struct VerifySurfaces {
-    @MainActor static func main() async {
+    @MainActor static func main() async throws {
         precondition(LumaEnvironment.isTesting)
         let defaults = LumaEnvironment.preferences
         defaults.set("music", forKey: "playerPreference")
@@ -194,13 +194,50 @@ struct VerifySurfaces {
         applySpotify("late", id: "spotify:track:next")
         await until { covers.artworkStatus == "Portada de Spotify" }
         expect(covers.artwork != nil, "a URL arriving after the song did should be used immediately")
+
+        let support = LumaEnvironment.supportDirectory
+        let client = BoundedHTTPClient(session: session)
+        let lyricRepository = LyricsRepository(root: support, client: client)
+        let artworkRepository = ArtworkRepository(root: support, client: client)
+        let track = TrackIdentity(id: "cache-qa", title: "Cache QA", artist: "QA Artist", album: "QA Album", duration: 120)
+        let name = LumaEnvironment.cacheName(track) + ".json"
+        let lyricFile = support.appendingPathComponent("LyricsCache").appendingPathComponent(name)
+        let artworkFile = support.appendingPathComponent("ArtworkCache").appendingPathComponent(name)
+        async let pendingLyrics = lyricRepository.load(for: track, allowNetwork: true)
+        async let pendingArtwork = artworkRepository.load(for: track)
+        await until { ArtworkFixture.isHolding("/api/get") && ArtworkFixture.isHolding("/600x600bb.png") }
+        let clearedLyrics = await lyricRepository.clearDownloadedCache()
+        let clearedArtwork = await artworkRepository.clearCache()
+        expect(clearedLyrics && clearedArtwork, "empty caches can be cleared during downloads")
+        ArtworkFixture.release("/api/get")
+        ArtworkFixture.release("/600x600bb.png")
+        guard case .available(let lyrics) = await pendingLyrics, try await pendingArtwork != nil else {
+            preconditionFailure("downloads already in progress can still supply the current song")
+        }
+        let manager = FileManager.default
+        expect(!manager.fileExists(atPath: lyricFile.path) && !manager.fileExists(atPath: artworkFile.path),
+               "downloads that started before clearing must not recreate either cache file")
+        guard case .available = await lyricRepository.load(for: track, allowNetwork: true),
+              try await artworkRepository.load(for: track) != nil else { preconditionFailure("fresh downloads must still work") }
+        expect(manager.fileExists(atPath: lyricFile.path) && manager.fileExists(atPath: artworkFile.path),
+               "downloads starting after clearing may populate the cache")
+        let imported = support.appendingPathComponent("ImportedLyrics")
+        try manager.createDirectory(at: imported, withIntermediateDirectories: true)
+        let importedFile = imported.appendingPathComponent(name)
+        try JSONEncoder().encode(lyrics).write(to: importedFile)
+        covers.clearLyricsCache()
+        expect(covers.isClearingDownloadCache, "settings indicate cache clearing while in progress")
+        await until { !covers.isClearingDownloadCache }
+        expect(covers.cacheClearStatus.contains("vacía") && manager.fileExists(atPath: importedFile.path)
+               && !manager.fileExists(atPath: lyricFile.path) && !manager.fileExists(atPath: artworkFile.path),
+               "settings confirm that both downloaded caches were cleared and imported lyrics remain")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 
     @MainActor private static func until(_ condition: () -> Bool) async {
-        let deadline = ContinuousClock.now + .seconds(3)
+        let deadline = ContinuousClock.now + .seconds(5)
         while !condition() {
-            precondition(ContinuousClock.now < deadline, "timed out waiting for the artwork state")
+            precondition(ContinuousClock.now < deadline, "timed out waiting for the media state")
             try? await Task.sleep(for: .milliseconds(10))
         }
     }
@@ -209,7 +246,14 @@ struct VerifySurfaces {
 private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
     static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQ6LkDAAJYAYnV4HfcAAAAAElFTkSuQmCC")!
     private static let pending = OSAllocatedUnfairLock(initialState: false)
+    private static let held = OSAllocatedUnfairLock(initialState: [String: ArtworkFixture]())
+    private static let released = OSAllocatedUnfairLock(initialState: Set<String>())
     static var usedPendingRequest: Bool { pending.withLock { $0 } }
+    static func isHolding(_ path: String) -> Bool { held.withLock { $0[path] != nil } }
+    static func release(_ path: String) {
+        _ = released.withLock { $0.insert(path) }
+        held.withLock { $0.removeValue(forKey: path) }?.reply()
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -218,9 +262,26 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
             Self.pending.withLock { $0 = true }
             return
         }
+        if ["/api/get", "/600x600bb.png"].contains(url.path), !Self.released.withLock({ $0.contains(url.path) }) {
+            Self.held.withLock { $0[url.path] = self }
+            return
+        }
+        reply()
+    }
+    private func reply() {
+        let url = request.url!
+        let data: Data
+        switch url.path {
+        case "/api/get":
+            data = Data(#"{"trackName":"Cache QA","artistName":"QA Artist","albumName":"QA Album","duration":120,"syncedLyrics":"[00:00.00]Test lyrics"}"#.utf8)
+        case "/search":
+            data = Data(#"{"results":[{"trackName":"Cache QA","artistName":"QA Artist","collectionName":"QA Album","trackTimeMillis":120000,"artworkUrl100":"https://is1-ssl.mzstatic.com/100x100bb.png"}]}"#.utf8)
+        default:
+            data = Self.png
+        }
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Self.png)
+        client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

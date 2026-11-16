@@ -165,6 +165,8 @@ struct SettingsPanel: View {
             Text("LRCLIB recibe el título, artista, álbum, duración y tu IP para buscar una letra sincronizada.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Vaciar caché de letras y portadas") { model.clearLyricsCache() }
+                .disabled(model.isClearingDownloadCache)
+            if !model.cacheClearStatus.isEmpty { caption(model.cacheClearStatus) }
             HStack {
                 Text("Ajuste de sincronía")
                 Slider(value: $model.lyricOffset, in: -2...2, step: 0.05).accessibilityLabel("Ajuste de sincronía")
