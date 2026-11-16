@@ -59,7 +59,7 @@ final class NotchAgenda {
     private(set) var today = Calendar.current.startOfDay(for: Date())
     private(set) var requesting = false
     private(set) var loading = false
-    private(set) var access = EKEventStore.authorizationStatus(for: .event)
+    private(set) var access: EKAuthorizationStatus
     var message = ""
     @ObservationIgnored private let reader = NotchCalendarReader()
     @ObservationIgnored private var active = false
@@ -67,6 +67,12 @@ final class NotchAgenda {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+    @ObservationIgnored private let authorizationStatus: () -> EKAuthorizationStatus
+
+    init(authorizationStatus: @escaping () -> EKAuthorizationStatus = { EKEventStore.authorizationStatus(for: .event) }) {
+        self.authorizationStatus = authorizationStatus
+        access = authorizationStatus()
+    }
 
     func setActive(_ value: Bool) {
         active = value
@@ -78,19 +84,20 @@ final class NotchAgenda {
             events.removeAll(); monthEventsByDay.removeAll(); monthOffset = 0; selectedDay = nil
             return
         }
-        access = EKEventStore.authorizationStatus(for: .event)
+        updateAccess(authorizationStatus())
+        observe(.default, .EKEventStoreChanged) { [weak self] in self?.refresh() }
+        // A permission granted in System Settings must be visible even if Agenda
+        // has never been enabled. Checking authorization does not read events.
+        observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didActivateApplicationNotification) { [weak self] in
+            guard let self, self.access != self.authorizationStatus() else { return }
+            self.refresh()
+        }
         guard enabled else {
             events.removeAll(); monthEventsByDay.removeAll(); monthOffset = 0; selectedDay = nil
             return
         }
-        for name in [Notification.Name.EKEventStoreChanged, .NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
             observe(.default, name) { [weak self] in self?.refresh() }
-        }
-        // The notch is a nonactivating panel. Observe foreground changes at
-        // workspace level so a round trip to Settings rechecks permission.
-        observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didActivateApplicationNotification) { [weak self] in
-            guard let self, self.access != EKEventStore.authorizationStatus(for: .event) else { return }
-            self.refresh()
         }
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -103,6 +110,11 @@ final class NotchAgenda {
             MainActor.assumeIsolated { action() }
         }
         observers.append((center, token))
+    }
+    private func updateAccess(_ status: EKAuthorizationStatus) {
+        guard access != status else { return }
+        access = status
+        if status == .fullAccess { message = "" }
     }
     func showMonth(_ offset: Int) {
         guard monthOffset != offset, offset >= 0 else { return }
@@ -119,11 +131,11 @@ final class NotchAgenda {
                 let granted = try await self.reader.requestAccess()
                 self.enabled = granted
                 LumaEnvironment.preferences.set(granted, forKey: "notchAgendaEnabled")
-                self.access = EKEventStore.authorizationStatus(for: .event)
+                self.updateAccess(self.authorizationStatus())
                 if !granted { self.message = "Activa Calendarios en Ajustes del Sistema → Privacidad y seguridad." }
                 self.setActive(self.active)
             } catch {
-                self.access = EKEventStore.authorizationStatus(for: .event)
+                self.updateAccess(self.authorizationStatus())
                 self.message = "No se pudo conectar Calendario. Revisa el permiso en Ajustes del Sistema."
             }
         }
@@ -133,8 +145,9 @@ final class NotchAgenda {
         events.removeAll(); message = ""; setActive(active)
     }
     func refresh() {
-        guard active, enabled else { return }
-        access = EKEventStore.authorizationStatus(for: .event)
+        guard active else { return }
+        updateAccess(authorizationStatus())
+        guard enabled else { return }
         task?.cancel(); task = nil; generation += 1
         guard access == .fullAccess else {
             events.removeAll(); monthEventsByDay.removeAll(); selectedDay = nil; loading = false; return
@@ -156,7 +169,7 @@ final class NotchAgenda {
             guard let self else { return }
             let result = await self.reader.read(now: now, dates: dates, calendar: calendar)
             guard !Task.isCancelled, self.active, self.enabled, self.generation == serial else { return }
-            self.access = EKEventStore.authorizationStatus(for: .event)
+            self.updateAccess(self.authorizationStatus())
             self.events = self.access == .fullAccess ? result.upcoming : []
             self.monthEventsByDay = self.access == .fullAccess ? result.byDay : [:]
             if self.access != .fullAccess { self.selectedDay = nil }
@@ -165,7 +178,7 @@ final class NotchAgenda {
     }
     func stop() { setActive(false) }
     func openMeeting(_ url: URL) {
-        guard NotchMeetingDetector.isAllowedMeetingURL(url) else { return }
+        guard active, enabled, authorizationStatus() == .fullAccess, NotchMeetingDetector.isAllowedMeetingURL(url) else { return }
         NSWorkspace.shared.open(url)
     }
     func openApp(_ bundle: String) {

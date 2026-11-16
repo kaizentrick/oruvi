@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import os
 import Sparkle
 
@@ -18,6 +19,25 @@ struct VerifySurfaces {
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             count += 1; precondition(condition(), message)
         }
+        defaults.set(false, forKey: "notchAgendaEnabled")
+        var calendarPermission = EKAuthorizationStatus.denied
+        let permissionAgenda = NotchAgenda(authorizationStatus: { calendarPermission })
+        let workspace = NSWorkspace.shared.notificationCenter
+        permissionAgenda.setActive(true)
+        permissionAgenda.message = "Permiso pendiente"
+        calendarPermission = .fullAccess
+        workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        expect(permissionAgenda.access == .fullAccess && permissionAgenda.message.isEmpty,
+               "returning from System Settings clears the denied state without closing Agenda")
+        expect(!permissionAgenda.enabled && !permissionAgenda.loading && permissionAgenda.events.isEmpty && permissionAgenda.monthEventsByDay.isEmpty,
+               "macOS authorization alone never opts Agenda in or starts a query")
+        calendarPermission = .denied
+        NotificationCenter.default.post(name: .EKEventStoreChanged, object: nil)
+        expect(permissionAgenda.access == .denied, "an EventKit notification rechecks authorization even before opt-in")
+        permissionAgenda.stop()
+        calendarPermission = .fullAccess
+        workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        expect(permissionAgenda.access == .denied, "closed Agenda removes its authorization observers")
         func noUpdate(_ reason: SPUNoUpdateFoundReason) -> NSError {
             NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue),
                     userInfo: [SPUNoUpdateFoundReasonKey: NSNumber(value: reason.rawValue)])
