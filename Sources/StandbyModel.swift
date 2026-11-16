@@ -30,7 +30,12 @@ enum LayoutMode: String, CaseIterable, Identifiable {
 final class StandbyModel {
     static let shared = StandbyModel()
     var track = TrackIdentity.empty
-    var anchor = PlaybackAnchor()
+    var anchor = PlaybackAnchor() {
+        didSet {
+            if anchor.playing != oldValue.playing { playbackIsPlaying = anchor.playing }
+        }
+    }
+    private(set) var playbackIsPlaying = false
     var artwork: NSImage?
     var artworkLink: URL?
     var artworkStatus = ""

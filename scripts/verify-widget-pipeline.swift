@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 
 /// Tests the actual async observer -> thumbnail -> atomic write -> reload path.
 /// Does not start the app delegate, playback router, a real player or networking.
@@ -12,19 +13,26 @@ import AppKit
         var count = 0, reloads = 0
         func check(_ value: @autoclosure () -> Bool, _ text: String) { count += 1; precondition(value(), text) }
         func settle() async throws { try await Task.sleep(nanoseconds: 800_000_000) }
-        let controller = NativeWidgetController(model: model)
+        let controller = NativeWidgetController(model: model, resolveStore: { store })
         defer {
             controller.stop(); model.shutdown(); LumaEnvironment.cleanTestingData()
             try? FileManager.default.removeItem(at: root)
         }
         model.connected = true
         model.apply(["status":"ok", "source":"oruvi.system", "id":"browser-A", "title":"Video A", "artist":"Channel A", "album":"", "duration":100, "position":12, "playing":true])
-        controller.startForVerification(store: store) { reloads += 1 }
+        controller.startForVerification { reloads += 1 }
         try await settle()
         check(store.read()?.title == "Video A", "Bootstrap writes before WidgetCenter reports any widgets")
         check(store.read()?.displaySourceName == "Ahora suena", "The widget source label omits the automatic selection mode")
         check(store.read()?.playing == true, "Playback state crosses actual async pipeline")
         check(reloads == 1, "First reload occurs only after verified write")
+        let playingChange = DispatchSemaphore(value: 0)
+        withObservationTracking { _ = model.playbackIsPlaying } onChange: { playingChange.signal() }
+        model.anchor = PlaybackAnchor(position: 20, uptime: ProcessInfo.processInfo.systemUptime, duration: 100, playing: true)
+        check(playingChange.wait(timeout: .now()) == .timedOut, "Position-only samples do not wake the widget observer")
+        model.anchor.playing = false
+        check(playingChange.wait(timeout: .now()) == .success, "Play and pause still wake the widget observer")
+        model.anchor.playing = true
         controller.acceptConfigurationCount(0)
         try await settle()
         check(store.read()?.title == "Video A", "Late empty enumeration cannot erase real music")
@@ -52,6 +60,10 @@ import AppKit
         let image = imageData.flatMap { NSImage(data:$0) }
         check(image != nil && image!.size.width <= 192, "Published cover is decodable and bounded")
         check(store.read()?.artworkPalette == Array(repeating: 0x666666, count: 4), "The cover palette is published with late artwork")
+        model.palette = Array(repeating: RGB(r: 0.2, g: 0.2, b: 0.2), count: 4)
+        try await settle()
+        check(store.read()?.artwork == imageData && store.read()?.artworkPalette == Array(repeating: 0x333333, count: 4),
+              "Palette-only changes reach the widget without rebuilding the thumbnail")
         bitmap.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1))
         bitmap.fill(CGRect(x: 0, y: 0, width: 384, height: 384))
         let correctedCover = NSBitmapImageRep(cgImage: bitmap.makeImage()!).representation(using: .png, properties: [:])!
@@ -99,6 +111,34 @@ import AppKit
         check(store.read() == nil, "Quit clears the shared media")
         try await settle()
         check(store.read() == nil, "No observer can republish after shutdown")
+        let interrupted = FirstWidgetWrite()
+        let stopStarted = DispatchSemaphore(value: 0)
+        model.connected = true
+        model.apply(["status": "ok", "source": "oruvi.system", "id": "first-write", "title": "Private media",
+                     "duration": 120, "position": 1, "playing": true])
+        let firstWrite = NativeWidgetController(model: model, resolveStore: {
+            DispatchQueue.main.async {
+                interrupted.stop()
+                stopStarted.signal()
+            }
+            precondition(stopStarted.wait(timeout: .now() + 3) == .success)
+            return store
+        })
+        interrupted.controller = firstWrite
+        firstWrite.startForVerification {}
+        try await settle()
+        check(interrupted.didStop, "Shutdown overlapped first lookup of the cache container")
+        check(store.read() == nil, "Shutdown removes a write even before its result reaches the main actor")
         print("PASS: \(count) actual async widget pipeline checks, including bootstrap, enumeration races, cover, pause, sleep and shutdown.")
+    }
+}
+
+@MainActor private final class FirstWidgetWrite {
+    weak var controller: NativeWidgetController?
+    private(set) var didStop = false
+
+    func stop() {
+        controller?.stop()
+        didStop = true
     }
 }

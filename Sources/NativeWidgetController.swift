@@ -5,6 +5,39 @@ import Observation
 import ImageIO
 import UniformTypeIdentifiers
 
+/// Lookup stays off the main actor and outside the lock because macOS may ask
+/// for access. Closing is serialized with writes, even before their callbacks.
+private final class WidgetPublicationStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var store: WidgetSnapshotStore?
+    private var closed = false
+    private let resolve: @Sendable () -> WidgetSnapshotStore
+
+    init(resolve: @escaping @Sendable () -> WidgetSnapshotStore) { self.resolve = resolve }
+
+    func writeVerified(_ snapshot: WidgetSnapshot) -> Bool {
+        let (closed, cached) = lock.withLock { (self.closed, store) }
+        guard !closed else { return false }
+        let target = cached.flatMap { $0.directory == nil ? nil : $0 } ?? resolve()
+        return lock.withLock {
+            guard !self.closed else { return false }
+            store = target
+            do {
+                try target.write(snapshot)
+                return target.read() == snapshot
+            } catch { return false }
+        }
+    }
+
+    func close() {
+        lock.withLock {
+            closed = true
+            store?.clear()
+            store = nil
+        }
+    }
+}
+
 /// The app owns media reads and writes a single atomic presentation. WidgetCenter
 /// membership is an energy hint, not a prerequisite for publishing current data.
 @MainActor @Observable
@@ -25,7 +58,7 @@ final class NativeWidgetController {
     @ObservationIgnored private var maintenance: Timer?
     @ObservationIgnored private var policy = WidgetPublicationPolicy()
     @ObservationIgnored private var presence = WidgetPresencePolicy()
-    @ObservationIgnored private var store: WidgetSnapshotStore?
+    @ObservationIgnored private let storage: WidgetPublicationStorage
     @ObservationIgnored private var lastImage: NSImage?
     @ObservationIgnored private var thumbnail: Data?
     @ObservationIgnored private var lastMusicCover: (artwork: Data, palette: [UInt32]?)?
@@ -42,7 +75,10 @@ final class NativeWidgetController {
     @ObservationIgnored private var verificationReload: (() -> Void)?
     #endif
 
-    init(model: StandbyModel) { self.model = model }
+    init(model: StandbyModel, resolveStore: @escaping @Sendable () -> WidgetSnapshotStore = { WidgetSnapshotStore.shared() }) {
+        self.model = model
+        storage = WidgetPublicationStorage(resolve: resolveStore)
+    }
     func start() {
         guard !started, !stopped, !LumaEnvironment.isTesting else { return }
         started = true
@@ -77,10 +113,10 @@ final class NativeWidgetController {
     private func trackChanges() {
         guard !stopped else { return }
         withObservationTracking {
-            _ = model.track; _ = model.artwork; _ = model.anchor.playing
+            _ = model.track; _ = model.artwork; _ = model.playbackIsPlaying
             _ = model.connected; _ = model.screenSleeping; _ = model.demoMode
             _ = model.effectivePlayerPreference; _ = model.playbackSurface; _ = model.activePlayer
-            _ = model.systemProhibitsSkip
+            _ = model.systemProhibitsSkip; _ = model.activeSystemBundleID; _ = model.palette
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.trackChanges() }
         }
@@ -161,7 +197,7 @@ final class NativeWidgetController {
             value.sourceName = String((systemApp?.localizedName ?? source.name).prefix(512))
             value.title = String(model.track.title.prefix(512))
             value.artist = String((model.track.artist.isEmpty ? model.activePlayer.name : model.track.artist).prefix(512))
-            value.playing = model.anchor.playing; value.canSkip = !model.systemProhibitsSkip
+            value.playing = model.playbackIsPlaying; value.canSkip = !model.systemProhibitsSkip
         }
         return value
     }
@@ -201,22 +237,15 @@ final class NativeWidgetController {
             }
         }
         guard !stopped, !Task.isCancelled, work == serial, policy.needsWrite(value, force: force) else { return }
-        let existingStore = store
-        let result: (WidgetSnapshotStore, Bool) = await withCheckedContinuation { continuation in
-            io.async {
+        let verified = await withCheckedContinuation { continuation in
+            io.async { [storage, value] in
                 // Container lookup may ask for access. Do not block the UI, and
                 // never keep a failed nil-container result forever after consent.
-                let target = existingStore?.directory != nil ? existingStore! : WidgetSnapshotStore.shared()
-                do {
-                    try target.write(value)
-                    guard target.read() == value else { throw WidgetSnapshotStore.StoreError.unavailable }
-                    continuation.resume(returning: (target, true))
-                } catch { continuation.resume(returning: (target, false)) }
+                continuation.resume(returning: storage.writeVerified(value))
             }
         }
         guard !stopped, work == serial else { return }
-        store = result.0
-        guard result.1 else {
+        guard verified else {
             retryWriteAt = Date().addingTimeInterval(60)
             storageError = "No se pudo leer/escribir el contenedor compartido. Autoriza el acceso a datos de Oruvi si macOS lo solicita y pulsa Conectar y actualizar. La firma ad-hoc no autoriza App Groups de forma permanente."
             return
@@ -273,7 +302,7 @@ final class NativeWidgetController {
         maintenance?.invalidate(); maintenance = nil
         publishing?.cancel(); reloading?.cancel(); publishing = nil; reloading = nil
         for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
-        if let store { io.sync { store.clear() } }
+        storage.close()
         #if LUMA_QA
         if let callback = verificationReload { callback(); return }
         #endif
@@ -281,9 +310,9 @@ final class NativeWidgetController {
     }
     #if LUMA_QA
     /// Only compiled in CI's isolated executable; never in the distributed app.
-    func startForVerification(store: WidgetSnapshotStore, reload: @escaping () -> Void) {
+    func startForVerification(reload: @escaping () -> Void) {
         precondition(LumaEnvironment.isTesting && !started)
-        self.store = store; verificationReload = reload; started = true
+        verificationReload = reload; started = true
         trackChanges(); requestPublication(force: true)
     }
     func renewForVerification() {
