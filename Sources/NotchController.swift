@@ -345,10 +345,13 @@ final class NotchController {
     func beginInteraction() { input.interactionDepth += 1; cancelHover() }
     func endInteraction() { input.interactionDepth = max(0, input.interactionDepth - 1); refreshPointer() }
     func beginFileDrag() {
-        guard acceptsFileDrop else { return }
-        if !draggingFiles { previousDragTab = tab }
+        guard acceptsFileDrop, !draggingFiles else { return }
+        previousDragTab = tab
+        let wasShowingFiles = expanded && tab == .files
         input.suppressHoverUntilExit = false; input.fileDragActive = true; cancelHover(); select(.files)
-        setExpanded(true, animated: false); updateFrame(animated: false); dragMonitor?.watchDrag()
+        if wasShowingFiles { updateFrame(animated: false) }
+        else { setExpanded(true, animated: false) }
+        dragMonitor?.watchDrag()
     }
     func fileDragExited() {
         guard !dragRetentionFrame.contains(NSEvent.mouseLocation) else { return }; endFileDrag(accepted: false)
@@ -387,6 +390,7 @@ final class NotchDropHostingView: NSHostingView<NotchView> {
     private var cachedSequence = -1
     private var cachedChangeCount = -1
     private var cachedURLs: [URL] = []
+    private var cachedShelfURLs: [URL] = []
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
     override func updateTrackingAreas() {
@@ -405,33 +409,38 @@ final class NotchDropHostingView: NSHostingView<NotchView> {
         if controller?.draggingFiles == true { return self }
         return super.hitTest(point) ?? self
     }
-    private func urls(_ sender: NSDraggingInfo) -> [URL] {
+    private func dropURLs(_ sender: NSDraggingInfo) -> [URL] {
+        guard let controller, controller.acceptsFileDrop, !controller.shelf.isFull, let window,
+              controller.containsSurface(window.convertPoint(toScreen: sender.draggingLocation)),
+              sender.draggingSourceOperationMask.contains(.copy) else { return [] }
+        let existing = controller.shelf.items.map(\.url)
         let pasteboard = sender.draggingPasteboard
-        if cachedSequence != sender.draggingSequenceNumber || cachedChangeCount != pasteboard.changeCount {
-            cachedSequence = sender.draggingSequenceNumber; cachedChangeCount = pasteboard.changeCount
+        if cachedSequence != sender.draggingSequenceNumber || cachedChangeCount != pasteboard.changeCount || cachedShelfURLs != existing {
+            cachedSequence = sender.draggingSequenceNumber; cachedChangeCount = pasteboard.changeCount; cachedShelfURLs = existing
             let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
-            let urls = objects.prefix(NotchFilePolicy.limit).compactMap { ($0 as? NSURL).map { $0 as URL } }
-            cachedURLs = NotchFilePolicy.candidates(urls, existing: [])
+            let urls = objects.lazy.compactMap { ($0 as? NSURL).map { $0 as URL } }
+            cachedURLs = NotchFilePolicy.candidates(urls, existing: existing)
         }
         return cachedURLs
     }
-    private func accepts(_ sender: NSDraggingInfo) -> Bool {
-        controller?.acceptsFileDrop == true && controller?.containsSurface(NSEvent.mouseLocation) == true && sender.draggingSourceOperationMask.contains(.copy) && !urls(sender).isEmpty
-    }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard accepts(sender) else { return [] }; controller?.beginFileDrag(); return .copy
+        guard !dropURLs(sender).isEmpty else { return [] }; controller?.beginFileDrag(); return .copy
     }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard accepts(sender) else { return [] }; controller?.beginFileDrag(); return .copy
+        guard !dropURLs(sender).isEmpty else { return [] }; controller?.beginFileDrag(); return .copy
     }
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { accepts(sender) }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !dropURLs(sender).isEmpty }
     override func draggingExited(_ sender: NSDraggingInfo?) { controller?.fileDragExited() }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard accepts(sender), let controller else { return false }
-        controller.shelf.add(urls(sender)); controller.endFileDrag(accepted: true); clearDragCache(); return true
+        defer { clearDragCache() }
+        let files = dropURLs(sender)
+        guard !files.isEmpty, let controller else { return false }
+        controller.shelf.add(files); controller.endFileDrag(accepted: true); return true
     }
     override func draggingEnded(_ sender: NSDraggingInfo) {
         controller?.endFileDrag(accepted: false); clearDragCache()
     }
-    private func clearDragCache() { cachedSequence = -1; cachedChangeCount = -1; cachedURLs.removeAll() }
+    private func clearDragCache() {
+        cachedSequence = -1; cachedChangeCount = -1; cachedURLs.removeAll(); cachedShelfURLs.removeAll()
+    }
 }

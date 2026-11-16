@@ -183,7 +183,8 @@ struct NotchView: View {
                             .overlay {
                                 VStack(spacing: 8) {
                                     Image(systemName: "tray.and.arrow.down").font(.system(size: 25, weight: .light))
-                                    Text("Suelta para añadir").font(.system(size: 13, weight: .medium))
+                                    Text(controller.shelf.isFull ? "Bandeja llena" : "Suelta para añadir")
+                                        .font(.system(size: 13, weight: .medium))
                                 }
                             }.allowsHitTesting(false)
                     }

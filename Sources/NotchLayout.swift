@@ -65,20 +65,23 @@ enum NotchCompactPolicy {
 
 enum NotchFilePolicy {
     static let limit = 20
-    static func candidates(_ urls: [URL], existing: [URL]) -> [URL] {
+    static func candidates(_ urls: some Sequence<URL>, existing: [URL]) -> [URL] {
         var seen = Set(existing.map { $0.standardizedFileURL })
         var result: [URL] = []
         for url in urls {
             guard result.count + existing.count < limit else { break }
-            guard url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost" else { continue }
+            guard isLocal(url) else { continue }
             let normalized = url.standardizedFileURL
             guard seen.insert(normalized).inserted else { continue }
             result.append(normalized)
         }
         return result
     }
+    private static func isLocal(_ url: URL) -> Bool {
+        url.isFileURL && (url.host == nil || url.host == "" || url.host == "localhost")
+    }
     static func isSafeFile(_ url: URL) -> Bool {
-        guard url.isFileURL,
+        guard isLocal(url),
               let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .isDirectoryKey]),
               values.isSymbolicLink != true,
               values.isRegularFile == true || values.isDirectory == true else { return false }

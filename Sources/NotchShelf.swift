@@ -25,10 +25,16 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
     var sharingURLs: [URL] {
         items.filter { selected.isEmpty || selected.contains($0.url) }.map(\.url)
     }
+    var isFull: Bool { items.count >= NotchFilePolicy.limit }
     func add(_ urls: [URL]) {
         // Bound work before touching the filesystem. Validation never opens file contents.
-        let candidates = NotchFilePolicy.candidates(urls, existing: [])
-        guard !candidates.isEmpty else { message = "Arrastra archivos locales desde Finder."; return }
+        guard !isFull else { message = "Límite de 20 archivos. Retira alguno para añadir más."; return }
+        let candidates = NotchFilePolicy.candidates(urls, existing: items.map(\.url))
+        guard !candidates.isEmpty else {
+            message = NotchFilePolicy.candidates(urls, existing: []).isEmpty
+                ? "Arrastra archivos locales desde Finder." : "Estos archivos ya están en la bandeja."
+            return
+        }
         let serial = generation
         imports += 1; importing = true
         Task { [weak self] in
@@ -83,7 +89,10 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
             message = "Este archivo ya no es válido o no se puede abrir."
             return
         }
-        NSWorkspace.shared.open(url)
+        guard NSWorkspace.shared.open(url) else {
+            message = "macOS no pudo abrir este archivo."
+            return
+        }
         controller.collapse()
     }
     func copyFiles() {
@@ -91,7 +100,7 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
         guard !urls.isEmpty else { message = "No hay archivos válidos para copiar."; return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.writeObjects(urls as [NSURL])
+        guard pasteboard.writeObjects(urls as [NSURL]) else { message = "No se pudo copiar al portapapeles."; return }
         message = urls.count == 1 ? "Archivo copiado · pégalo con ⌘V." : "\(urls.count) archivos copiados · pégalos con ⌘V."
     }
     func copyPaths() {
@@ -99,7 +108,9 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
         guard !urls.isEmpty else { message = "No hay rutas válidas para copiar."; return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
+        guard pasteboard.setString(urls.map(\.path).joined(separator: "\n"), forType: .string) else {
+            message = "No se pudo copiar al portapapeles."; return
+        }
         message = urls.count == 1 ? "Ruta copiada al portapapeles." : "\(urls.count) rutas copiadas al portapapeles."
     }
     func share(via serviceName: NSSharingService.Name, label: String, controller: NotchController) {

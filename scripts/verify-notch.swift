@@ -59,6 +59,10 @@ struct VerifyNotch {
         expect(NotchFilePolicy.candidates(many, existing: []).count == 20, "bounded shelf")
         expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(19))).count == 1, "remaining capacity")
         expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(20))).isEmpty, "full shelf")
+        let duplicateFirst = Array(repeating: a, count: 40) + [b]
+        expect(NotchFilePolicy.candidates(duplicateFirst.lazy, existing: [a]) == [b],
+               "skip duplicates before applying the capacity limit")
+        expect(!NotchFilePolicy.isSafeFile(remoteFile), "network file URLs stay invalid when reopening or sharing")
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("oruvi-shelf-" + UUID().uuidString, isDirectory: true)
         let realFile = tempDir.appendingPathComponent("doc.txt")
         let linkFile = tempDir.appendingPathComponent("link.txt")
