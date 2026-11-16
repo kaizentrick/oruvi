@@ -506,6 +506,35 @@ struct VerifySurfaces {
         let reopened = try ApplicationInstanceLock.acquire(at: lockFile)
         expect(reopened != nil, "a new launch can start after the previous owner exits")
         withExtendedLifetime(reopened) {}
+
+        let cursor = CursorConnection()
+        cursor.setEnabled(true)
+        let oldPollID = cursor.refreshID
+        var completeOldRequest: CheckedContinuation<CursorUsageSnapshot, Never>?
+        let oldPoll = Task {
+            await cursor.poll(id: oldPollID) {
+                await withCheckedContinuation { completeOldRequest = $0 }
+            }
+        }
+        await until { completeOldRequest != nil }
+        cursor.refresh()
+        let replacementID = cursor.refreshID
+        let oldReading = CursorUsageSnapshot(remainingPercent: 30, resetLabel: "Nov 21", fetchedAt: Date())
+        completeOldRequest?.resume(returning: oldReading)
+        await oldPoll.value
+        expect(cursor.currentSnapshot == nil && !cursor.refreshing, "a superseded Cursor response cannot reappear before a new poll")
+        await cursor.poll(id: oldPollID) { preconditionFailure("an obsolete poll started a browser request") }
+        let newReading = CursorUsageSnapshot(remainingPercent: 70, resetLabel: "Nov 22", fetchedAt: Date())
+        let newPoll = Task { await cursor.poll(id: replacementID) { newReading } }
+        await until { cursor.currentSnapshot != nil }
+        expect(cursor.summary.contains("70%") && cursor.summary.contains("Nov 22"),
+               "the latest request reports its own quota and reset date")
+        newPoll.cancel()
+        await newPoll.value
+        expect(cursor.currentSnapshot != nil && !cursor.refreshing,
+               "closing Conexiones keeps its cached quota without continuing to poll")
+        cursor.setEnabled(false)
+        expect(cursor.currentSnapshot == nil && cursor.summary == "Sin conectar", "disconnecting clears the displayed Cursor quota")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 

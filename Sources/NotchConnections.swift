@@ -35,6 +35,7 @@ struct NotchConnectionsView: View {
     private enum UsageDetail { case codex, cursor }
 
     var body: some View {
+        let cursorPollID = controller.expanded ? cursor.refreshID : nil
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let detail {
@@ -77,7 +78,10 @@ struct NotchConnectionsView: View {
             }.padding(.vertical, 2).padding(.trailing, 4)
         }
         .scrollIndicators(.automatic)
-        .task(id: cursor.refreshID) { await cursor.poll() }
+        .task(id: cursorPollID) {
+            guard let cursorPollID, !LumaEnvironment.isTesting else { return }
+            await cursor.poll(id: cursorPollID)
+        }
     }
 
     private var cursorDetail: some View {
@@ -131,7 +135,7 @@ struct NotchConnectionsView: View {
 }
 
 @MainActor @Observable
-private final class CursorConnection {
+final class CursorConnection {
     static let shared = CursorConnection()
     private(set) var enabled = LumaEnvironment.preferences.bool(forKey: "cursorUsageEnabled")
     private(set) var refreshID = UUID()
@@ -158,29 +162,32 @@ private final class CursorConnection {
     }
 
     func refresh() {
+        activeRequest = nil
+        refreshing = false
         snapshot = nil
         error = nil
         refreshID = UUID()
     }
 
-    func poll() async {
-        guard enabled, !LumaEnvironment.isTesting else { return }
+    func poll(id: UUID, read: () async throws -> CursorUsageSnapshot = { try await CursorUsageRequest().read() }) async {
+        guard enabled else { return }
         let interval = CursorUsageSnapshot.maximumAge
-        while !Task.isCancelled {
+        while !Task.isCancelled && id == refreshID {
             if let snapshot = currentSnapshot {
                 let wait = snapshot.fetchedAt.addingTimeInterval(interval).timeIntervalSinceNow
                 if wait > 0 && wait <= interval {
                     do { try await Task.sleep(for: .seconds(wait)) } catch { return }
                 }
             }
+            guard !Task.isCancelled, id == refreshID, enabled else { return }
             snapshot = nil
-            let id = UUID()
-            activeRequest = id
+            let requestID = UUID()
+            activeRequest = requestID
             refreshing = true
             let result: Result<CursorUsageSnapshot, Error>
-            do { result = .success(try await CursorUsageRequest().read()) }
+            do { result = .success(try await read()) }
             catch { result = .failure(error) }
-            guard activeRequest == id else { return }
+            guard activeRequest == requestID else { return }
             activeRequest = nil
             refreshing = false
             guard !Task.isCancelled, enabled else { return }
