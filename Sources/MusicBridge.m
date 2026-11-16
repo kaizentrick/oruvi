@@ -114,7 +114,7 @@ NSDictionary<NSString *, id> *LumaReadMusicSnapshot(void) {
             NSMutableDictionary *snapshot = [@{ @"status": @"ok", @"id": Identity(identifier, title), @"title": title, @"artist": artist,
                       @"album": album, @"duration": @(isfinite(duration) ? MAX(0, duration) : 0),
                       @"position": @(isfinite(position) ? MAX(0, position) : 0),
-                      @"sampleUptime": @((before + after) * 0.5), @"roundTrip": @(after - before),
+                      @"sampleUptime": @((before + after) * 0.5),
                       @"playing": @(endState == 'kPSP') } mutableCopy];
             if (bridge.options) [snapshot addEntriesFromDictionary:bridge.options];
             return snapshot;

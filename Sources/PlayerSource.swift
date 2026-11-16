@@ -39,8 +39,15 @@ final class PlayerRouter: @unchecked Sendable {
         return value
     }
     func snapshot(preference: PlayerPreference, preferred: PlayerSource, refreshSystem: Bool = false) -> [String: Any] {
-        let system = refreshSystem && preference == .automatic ? SystemMediaBridge.shared.readNow() : SystemMediaBridge.shared.current
+        let start = ProcessInfo.processInfo.systemUptime
+        let system: SystemMediaSnapshot? = preference == .automatic
+            ? (refreshSystem ? SystemMediaBridge.shared.readNow() : SystemMediaBridge.shared.current)
+            : nil
         var snapshot = resolve(preference: preference, preferred: preferred, system: system)
+        if snapshot["status"] as? String == "ok",
+           (snapshot["source"] as? String != PlayerSource.system.rawValue || refreshSystem) {
+            snapshot["playbackReadDuration"] = ProcessInfo.processInfo.systemUptime - start
+        }
         // Widget intents and timer reads return through different MainActor entry points.
         // Order every result on the playback queue, including errors and stopped states.
         snapshotSequence += 1

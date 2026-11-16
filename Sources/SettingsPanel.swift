@@ -147,6 +147,10 @@ struct SettingsPanel: View {
                                    activePlayer: model.hasTrack ? model.activePlayer : nil)
             }
             Text(model.connectionStatus).font(.callout)
+            if let milliseconds = model.playbackReadMilliseconds {
+                let time = milliseconds == 0 ? "<1 ms" : "\(milliseconds) ms"
+                LabeledContent("Tiempo de lectura", value: "\(model.activePlayer.name) · \(time)")
+            }
             HStack {
                 Button(model.connected ? "Reconectar Standby" : "Conectar Standby") { model.connectMusic() }
                 Button("Abrir reproductor") { model.openInstalledPlayer() }
@@ -206,7 +210,6 @@ struct SettingsPanel: View {
             Text("Automático: malla a 24 fps con corriente, estática en batería. Fluido: hasta 30 fps con corriente y 12 en batería. Ahorro, baja energía, calor o Reducir movimiento detienen la malla. Mantener la pantalla encendida consume energía y está desactivado inicialmente.")
                 .font(.caption).foregroundStyle(.secondary)
             LabeledContent("Estado", value: model.energyLabel)
-            LabeledContent("Lectura reciente de Música", value: String(format: "%.0f ms (no es latencia de audio)", model.syncRoundTrip * 1000))
         }
     }
 

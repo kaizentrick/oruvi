@@ -136,7 +136,7 @@ final class StandbyModel {
     var screenSleeping = false {
         didSet { if started && oldValue != screenSleeping { policyChanged() } }
     }
-    var syncRoundTrip: Double = 0
+    private(set) var playbackReadMilliseconds: Int?
     var settingsOpen = false
     var settingsSection: SettingsSection = .typography
     var isResynchronizing = true
@@ -443,6 +443,7 @@ final class StandbyModel {
     private func suspendPlaybackSampling() {
         SystemMediaBridge.shared.setEnabled(false)
         invalidatePlaybackRequests()
+        playbackReadMilliseconds = nil
         pendingMusicHint = false
         pollTimer?.invalidate(); pollTimer = nil
     }
@@ -458,6 +459,7 @@ final class StandbyModel {
                                             restarting: restartingSystem)
         invalidatePlaybackRequests()
         lyricsRetryAt = 0; artworkRetryAt = 0
+        playbackReadMilliseconds = nil
         recovery.invalidate(); isResynchronizing = true
         cueTimer?.invalidate(); cueTimer = nil
         if reading { pendingMusicHint = true } else { readMusic() }
@@ -479,6 +481,7 @@ final class StandbyModel {
     private func clearTrack() {
         lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = .empty; anchor = PlaybackAnchor(); artwork = nil; artworkLink = nil; palette = RGB.aurora
+        playbackReadMilliseconds = nil
         playerArtworkURL = ""; activeSystemBundleID = ""; systemArtworkData = nil; systemProhibitsSkip = false
         appliedSystemArtwork = nil
         lyricsAvailability = .idle; toastMessage = nil
@@ -513,6 +516,7 @@ final class StandbyModel {
             lastAppliedSnapshotSequence = sequence
         }
         let status = snapshot["status"] as? String ?? "error"
+        if status != "ok" { playbackReadMilliseconds = nil }
         if status == "denied" {
             // A denied provider suspends this surface, not the independent preference
             // or opt-in of the other surface. Only Disconnect persists an opt-out.
@@ -545,6 +549,7 @@ final class StandbyModel {
         }
         var next = TrackIdentity(id: snapshot["id"] as? String ?? "", title: snapshot["title"] as? String ?? "Sin título", artist: snapshot["artist"] as? String ?? "", album: snapshot["album"] as? String ?? "", duration: (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0)
         guard next.duration.isFinite, next.duration >= 0, next.duration < 86400 else {
+            playbackReadMilliseconds = nil
             recovery.fail(); isResynchronizing = true; updateCue(); return
         }
         let source = PlayerSource(rawValue: snapshot["source"] as? String ?? "") ?? .music
@@ -554,6 +559,7 @@ final class StandbyModel {
         let position = (snapshot["position"] as? NSNumber)?.doubleValue ?? 0
         let playing = (snapshot["playing"] as? NSNumber)?.boolValue ?? false
         guard sample.isFinite, position.isFinite, position >= 0 else {
+            playbackReadMilliseconds = nil
             recovery.fail(); isResynchronizing = true; updateCue(); return
         }
         // Never clear a valid song for a corrupt/incomplete playback sample.
@@ -597,7 +603,9 @@ final class StandbyModel {
         let rate = SafePreference.number(reportedRate, range: 0...16, fallback: 1)
         anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing, rate: rate)
         recovery.succeed(at: sample); isResynchronizing = false
-        syncRoundTrip = (snapshot["roundTrip"] as? NSNumber)?.doubleValue ?? 0
+        let duration = (snapshot["playbackReadDuration"] as? NSNumber)?.doubleValue
+        let milliseconds = duration.flatMap { $0 >= 0 ? Int(exactly: ($0 * 1000).rounded()) : nil }
+        if playbackReadMilliseconds != milliseconds { playbackReadMilliseconds = milliseconds }
         connectionStatus = activePlayer.name + (playing ? " · reproduciendo" : " · en pausa")
         // Missing resources recover without having to close and reopen the app. Cooldowns
         // prevent a failed or unavailable lyric from being requested on every playback tick.

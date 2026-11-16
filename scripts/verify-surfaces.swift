@@ -332,9 +332,12 @@ struct VerifySurfaces {
         running = [.spotify]
         var olderTrack = router.snapshot(preference: .spotify, preferred: .spotify)
         olderTrack["id"] = "spotify:track:previous"
-        let latestTrack = router.snapshot(preference: .spotify, preferred: .spotify)
+        var latestTrack = router.snapshot(preference: .spotify, preferred: .spotify)
         expect((closed["playbackSequence"] as? UInt64) == 1 && (latestTrack["playbackSequence"] as? UInt64) == 3,
                "the playback queue orders both terminal and successful snapshots")
+        expect(closed["playbackReadDuration"] == nil && latestTrack["playbackReadDuration"] != nil,
+               "the router measures successful reads and does not attach a time to a closed player")
+        latestTrack["playbackReadDuration"] = 0.027
         covers.apply(latestTrack)
         covers.apply(olderTrack)
         covers.apply(closed)
@@ -343,10 +346,23 @@ struct VerifySurfaces {
         covers.apply(oldDenial)
         expect(covers.connected && covers.track.id == "spotify:track:continuing",
                "late replies cannot restore a previous track, clear the newest state, or disconnect playback")
+        expect(covers.playbackReadMilliseconds == 27, "a late reply cannot overwrite the new playback timing")
         running = []
         covers.apply(router.snapshot(preference: .spotify, preferred: .spotify))
         covers.apply(latestTrack)
         expect(!covers.hasTrack, "a fresh no-player reply clears playback and rejects a late successful sample")
+        expect(covers.playbackReadMilliseconds == nil, "a stopped source cannot leave a stale reading in Settings")
+        let timingRouter = PlayerRouter(isRunning: { _ in true }, readNative: { _ in
+            Thread.sleep(forTimeInterval: 0.025)
+            return ["status": "ok", "id": "timed"]
+        })
+        let timed = timingRouter.snapshot(preference: .music, preferred: .music)
+        expect((timed["playbackReadDuration"] as? Double ?? 0) >= 0.02,
+               "timing includes the native metadata read, not just a position round trip")
+        var cached: [String: Any] = ["status": "ok", "source": PlayerSource.system.rawValue, "id": "system:cached"]
+        cached["playbackReadDuration"] = Double.infinity
+        covers.apply(cached)
+        expect(covers.playbackReadMilliseconds == nil, "invalid diagnostic durations are hidden")
         var commandSession = 1
         var commandReads = 0
         var deliveredCommands = 0

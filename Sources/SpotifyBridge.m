@@ -80,7 +80,7 @@ NSDictionary *OruviReadSpotifySnapshot(void) {
             if (!identifier.length || !title.length || ![identifier isEqualToString:endID] || state != endState) return @{ @"status": @"transition" };
             NSMutableDictionary *result = [@{ @"status": @"ok", @"id": identifier, @"title": title, @"artist": artist, @"album": album,
                   @"duration": @(duration), @"position": @(isfinite(position) ? MAX(0, position) : 0),
-                  @"sampleUptime": @((before + after) * 0.5), @"roundTrip": @(after - before), @"playing": @(state == 'kPSP'),
+                  @"sampleUptime": @((before + after) * 0.5), @"playing": @(state == 'kPSP'),
                   @"artworkURL": artwork, @"repeatOneSupported": @NO } mutableCopy];
             // Queue settings change much less often than position. An option read must
             // neither delay every sample nor turn valid playback metadata into an error.
