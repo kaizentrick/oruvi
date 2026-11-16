@@ -15,6 +15,10 @@ struct NotchTimerState {
         let value = remaining(at: now).components
         return max(0, Int(value.seconds) + (value.attoseconds > 0 ? 1 : 0))
     }
+    func text(at now: ContinuousClock.Instant = .now) -> String {
+        let value = seconds(at: now)
+        return String(format: "%02d:%02d", value / 60, value % 60)
+    }
     mutating func configure(seconds: Int) {
         totalSeconds = min(10800, max(1, seconds)); reset()
     }

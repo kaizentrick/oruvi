@@ -78,6 +78,8 @@ struct VerifyNotch {
         expect(timer.seconds(at: now) == 60 && !timer.running, "configured countdown")
         timer.start(at: now)
         expect(timer.running && timer.seconds(at: now) == 60, "start countdown")
+        expect(timer.text(at: now + .milliseconds(500)) == "01:00" && timer.text(at: now + .seconds(1)) == "00:59",
+               "compact and expanded readouts share the same second boundary")
         expect(timer.seconds(at: now.advanced(by: .milliseconds(10200))) == 50, "ceil partial seconds")
         timer.start(at: now.advanced(by: .seconds(20)))
         expect(timer.seconds(at: now.advanced(by: .seconds(20))) == 40, "start is idempotent while running")
@@ -86,6 +88,7 @@ struct VerifyNotch {
         timer.start(at: now.advanced(by: .seconds(400)))
         expect(timer.seconds(at: now.advanced(by: .seconds(425))) == 5, "resume uses remaining time")
         expect(timer.seconds(at: now.advanced(by: .seconds(500))) == 0, "sleep/late wake never negative")
+        expect(timer.text(at: now.advanced(by: .seconds(500))) == "00:00", "an expired readout stays at zero")
         timer.finish()
         expect(timer.completed && !timer.running && timer.seconds() == 0, "completion state")
         timer.start(at: now)

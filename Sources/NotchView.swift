@@ -51,9 +51,18 @@ struct NotchView: View {
             codexActive: usage.enabled && usage.pinned
         )
     }
-    private var compact: some View {
+    @ViewBuilder private var compact: some View {
         let mode = compactMode
-        return HStack(spacing: 0) {
+        if mode == .timer && !controller.expanded {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                compactRow(mode, timerText: controller.countdown.text)
+            }
+        } else {
+            compactRow(mode, timerText: mode == .timer ? controller.countdown.text : "")
+        }
+    }
+    private func compactRow(_ mode: NotchCompactMode, timerText: String) -> some View {
+        HStack(spacing: 0) {
             Group {
                 switch mode {
                 case .codex:
@@ -74,11 +83,7 @@ struct NotchView: View {
                 case .codex:
                     Text(usage.compactText).font(.system(size: 11, weight: .medium)).monospacedDigit()
                 case .timer:
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(controller.countdown.text)
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                    }
+                    Text(timerText).font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
                 case .music:
                     Image(systemName: "music.note").font(.system(size: 14, weight: .medium))
                 case .none:
@@ -86,15 +91,16 @@ struct NotchView: View {
                 }
             }.frame(width: 44)
         }.contentShape(Rectangle()).onTapGesture { openCompact() }
-            .help(compactHelp(mode))
+            .help(compactHelp(mode, timerText: timerText))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(compactAccessibilityLabel(mode))
+            .accessibilityValue(mode == .timer ? timerText : "")
             .accessibilityAddTraits(.isButton).accessibilityAction { openCompact() }
     }
-    private func compactHelp(_ mode: NotchCompactMode) -> String {
+    private func compactHelp(_ mode: NotchCompactMode, timerText: String) -> String {
         switch mode {
         case .codex: return usage.compactHelp
-        case .timer: return "Temporizador · \(controller.countdown.text)"
+        case .timer: return "Temporizador · \(timerText)"
         case .music: return "\(model.track.title) · \(model.track.artist)"
         case .none: return "Abrir Oruvi"
         }
@@ -102,7 +108,7 @@ struct NotchView: View {
     private func compactAccessibilityLabel(_ mode: NotchCompactMode) -> String {
         switch mode {
         case .codex: return usage.compactHelp
-        case .timer: return "Oruvi. Temporizador \(controller.countdown.text). Abrir widgets."
+        case .timer: return "Oruvi. Temporizador. Abrir widgets."
         case .music: return "Oruvi. \(model.track.title). Abrir widgets."
         case .none: return "Oruvi. Abrir widgets."
         }

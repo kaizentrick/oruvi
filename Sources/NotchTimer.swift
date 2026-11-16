@@ -26,8 +26,7 @@ final class NotchCountdown {
         if state.running { state.pause(at: now); return }
         state.start(at: now)
         guard let deadline = state.deadline else { return }
-        // One deadline, not a repeating background timer. The one-second visual
-        // updates belong exclusively to the expanded SwiftUI timer view.
+        // One deadline, not a repeating background timer. SwiftUI updates the visible readout.
         task = Task { [weak self] in
             do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
             guard !Task.isCancelled, let self, self.state.deadline == deadline else { return }
@@ -42,10 +41,7 @@ final class NotchCountdown {
     }
     func reset() { task?.cancel(); task = nil; state.reset() }
     func stop() { reset() }
-    var text: String {
-        let value = state.seconds()
-        return String(format: "%02d:%02d", value / 60, value % 60)
-    }
+    var text: String { state.text() }
 }
 
 struct NotchTimerView: View {
@@ -79,9 +75,10 @@ struct NotchTimerView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private var readout: some View {
-        VStack(spacing: 2) {
-            Text(countdown.text).font(.system(size: 38, weight: .light, design: .rounded)).monospacedDigit()
-                .accessibilityLabel("Tiempo restante: \(countdown.text)")
+        let time = countdown.text
+        return VStack(spacing: 2) {
+            Text(time).font(.system(size: 38, weight: .light, design: .rounded)).monospacedDigit()
+                .accessibilityLabel("Tiempo restante").accessibilityValue(time)
             Text(countdown.state.completed ? "Tiempo cumplido" : (countdown.state.running ? "En curso" : "Tu siguiente pausa"))
                 .font(.system(size: 10)).foregroundStyle(.secondary)
         }
