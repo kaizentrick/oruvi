@@ -19,11 +19,13 @@ private actor NotchCalendarReader {
     private let store = EKEventStore()
     func requestAccess() async throws -> Bool { try await store.requestFullAccessToEvents() }
     func read(now: Date, dates: NotchAgendaDates) -> (upcoming: [NotchCalendarEvent], month: [NotchCalendarEvent]) {
-        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return ([], []) }
+        guard !Task.isCancelled, EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return ([], []) }
         let upcoming = events(in: dates.upcoming, after: now)
+        guard !Task.isCancelled, EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return ([], []) }
         let month = dates.needsSeparateMonthQuery ? events(in: dates.month, after: now) : upcoming.filter {
             NotchAgendaDates.overlaps(start: $0.startDate, end: $0.endDate, range: dates.month)
         }
+        guard !Task.isCancelled else { return ([], []) }
         return (upcoming.prefix(6).map(eventSummary), month.map(eventSummary))
     }
     private func events(in range: DateInterval, after now: Date) -> [EKEvent] {
@@ -56,28 +58,37 @@ final class NotchAgenda {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var refreshTimer: Timer?
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     func setActive(_ value: Bool) {
         active = value
         task?.cancel(); generation += 1; loading = false
         refreshTimer?.invalidate(); refreshTimer = nil
-        observers.forEach(NotificationCenter.default.removeObserver)
+        for (center, token) in observers { center.removeObserver(token) }
         observers.removeAll()
         guard value else { events.removeAll(); monthEvents.removeAll(); monthOffset = 0; return }
         access = EKEventStore.authorizationStatus(for: .event)
         guard enabled else { events.removeAll(); monthEvents.removeAll(); return }
-        for name in [Notification.Name.EKEventStoreChanged, .NSCalendarDayChanged, .NSSystemClockDidChange,
-                     .NSSystemTimeZoneDidChange, NSApplication.didBecomeActiveNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
-            })
+        for name in [Notification.Name.EKEventStoreChanged, .NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            observe(.default, name) { [weak self] in self?.refresh() }
+        }
+        // The notch is a nonactivating panel. Observe foreground changes at
+        // workspace level so a round trip to Settings rechecks permission.
+        observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didActivateApplicationNotification) { [weak self] in
+            guard let self, self.access != EKEventStore.authorizationStatus(for: .event) else { return }
+            self.refresh()
         }
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         timer.tolerance = 5; refreshTimer = timer; RunLoop.main.add(timer, forMode: .common)
         refresh()
+    }
+    private func observe(_ center: NotificationCenter, _ name: Notification.Name, action: @escaping @MainActor () -> Void) {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { action() }
+        }
+        observers.append((center, token))
     }
     func showMonth(_ offset: Int) {
         guard monthOffset != offset, offset >= 0 else { return }
