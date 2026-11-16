@@ -39,7 +39,15 @@ struct CodexUsageSnapshot: Equatable, Sendable {
     let buckets: [CodexUsageBucket]
     let ordinaryUsageAllowed: Bool?
     static let maximumAge: TimeInterval = 180
-    func isFresh(at now: Date) -> Bool { (0...Self.maximumAge).contains(now.timeIntervalSince(fetchedAt)) }
+    func isFresh(at now: Date) -> Bool { (0..<Self.maximumAge).contains(now.timeIntervalSince(fetchedAt)) }
+    func canReportRemaining(at now: Date) -> Bool { ordinaryUsageAllowed != false && isFresh(at: now) }
+    func nextDisplayChange(after now: Date) -> Date? {
+        guard isFresh(at: now) else { return nil }
+        let expiresAt = fetchedAt.addingTimeInterval(Self.maximumAge)
+        guard ordinaryUsageAllowed != false else { return expiresAt }
+        let nextReset = buckets.flatMap(\.windows).compactMap(\.resetDate).filter { $0 > now }.min()
+        return min(expiresAt, nextReset ?? expiresAt)
+    }
     static func decode(_ data: Data, at now: Date = Date()) throws -> Self {
         struct Response: Decodable {
             let rateLimits: CodexUsageBucket?
@@ -47,13 +55,12 @@ struct CodexUsageSnapshot: Equatable, Sendable {
             let ordinaryUsageAllowed: Bool?
         }
         let response = try JSONDecoder().decode(Response.self, from: data)
-        let buckets: [CodexUsageBucket]
-        if let map = response.rateLimitsByLimitId, !map.isEmpty {
-            buckets = map.keys.sorted().compactMap { key in
-                guard var value = map[key] ?? nil else { return nil }
-                value.limitId = key; return value
-            }
-        } else { buckets = response.rateLimits.map { [$0] } ?? [] }
+        let map = response.rateLimitsByLimitId ?? [:]
+        let namedBuckets = map.keys.sorted().compactMap { key -> CodexUsageBucket? in
+            guard var value = map[key] ?? nil else { return nil }
+            value.limitId = key; return value
+        }
+        let buckets = namedBuckets.isEmpty ? (response.rateLimits.map { [$0] } ?? []) : namedBuckets
         guard buckets.count <= 64, buckets.allSatisfy({ $0.windows.allSatisfy(\.isValid) }) else {
             throw CodexUsageError.invalidResponse
         }

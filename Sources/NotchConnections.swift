@@ -54,14 +54,14 @@ struct NotchConnectionsView: View {
                                 Text("Codex").font(.system(size: 12, weight: .medium))
                                 Text(usage.status).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
                             }.frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: usage.fresh ? "checkmark" : "chevron.right")
+                            Image(systemName: usage.hasCurrentQuota ? "checkmark" : "chevron.right")
                                 .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
                         }.frame(minHeight: 32).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityHint("Ver límites de uso y fijarlos al notch")
                     Button { detail = .cursor } label: {
                         connection("Cursor", detail: cursor.summary, symbol: "gauge.with.dots.needle.33percent",
-                                   ready: cursor.snapshot != nil)
+                                   ready: cursor.currentSnapshot != nil)
                     }.buttonStyle(.plain)
                     Divider().overlay(.white.opacity(0.08))
                     Button { controller.select(.music) } label: {
@@ -94,7 +94,7 @@ struct NotchConnectionsView: View {
                         .accessibilityLabel("Actualizar uso de Cursor")
                 }
             }
-            if let snapshot = cursor.snapshot {
+            if let snapshot = cursor.currentSnapshot {
                 Text("≈\(snapshot.remainingPercent)% restante").font(.system(size: 12, weight: .semibold))
                     .monospacedDigit()
                 ProgressView(value: Double(snapshot.remainingPercent), total: 100)
@@ -135,14 +135,18 @@ private final class CursorConnection {
     static let shared = CursorConnection()
     private(set) var enabled = LumaEnvironment.preferences.bool(forKey: "cursorUsageEnabled")
     private(set) var refreshID = UUID()
-    private(set) var snapshot: CursorUsageSnapshot?
+    private var snapshot: CursorUsageSnapshot?
     private(set) var refreshing = false
     private var error: CursorUsageError?
     @ObservationIgnored private var activeRequest: UUID?
 
+    var currentSnapshot: CursorUsageSnapshot? {
+        guard enabled, snapshot?.isFresh(at: Date()) == true else { return nil }
+        return snapshot
+    }
     var summary: String {
-        if let snapshot { return "≈\(snapshot.remainingPercent)% restante · Reinicio: \(snapshot.resetLabel)" }
         if !enabled { return "Sin conectar" }
+        if let snapshot = currentSnapshot { return "≈\(snapshot.remainingPercent)% restante · Reinicio: \(snapshot.resetLabel)" }
         if let error { return error.message }
         return "Consultando Grok…"
     }
@@ -161,9 +165,9 @@ private final class CursorConnection {
 
     func poll() async {
         guard enabled, !LumaEnvironment.isTesting else { return }
-        let interval: TimeInterval = 300
+        let interval = CursorUsageSnapshot.maximumAge
         while !Task.isCancelled {
-            if let snapshot {
+            if let snapshot = currentSnapshot {
                 let wait = snapshot.fetchedAt.addingTimeInterval(interval).timeIntervalSinceNow
                 if wait > 0 && wait <= interval {
                     do { try await Task.sleep(for: .seconds(wait)) } catch { return }

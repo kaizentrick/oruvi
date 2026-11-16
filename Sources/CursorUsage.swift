@@ -6,6 +6,9 @@ struct CursorUsageSnapshot {
     let remainingPercent: Int
     let resetLabel: String
     let fetchedAt: Date
+    static let maximumAge: TimeInterval = 300
+
+    func isFresh(at now: Date) -> Bool { (0..<Self.maximumAge).contains(now.timeIntervalSince(fetchedAt)) }
 
     static func decode(_ transcript: String, at date: Date = Date()) throws -> Self {
         struct Reading: Decodable {

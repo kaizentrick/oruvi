@@ -14,14 +14,24 @@ import Foundation
         check(value.buckets[0].windows[0].title == "7 días", "periods come from the server, never assumed")
         check(value.buckets[1].limitingWindow(at: now)?.remainingPercent == 19, "compact uses the tightest remaining quota, rounded down")
         check(value.ordinaryUsageAllowed == false, "backend denial survives nonzero percentages")
+        check(!value.canReportRemaining(at: now), "nonzero quota must not imply current entitlement when the account is blocked")
+        check(value.nextDisplayChange(after: now) == now.addingTimeInterval(180), "account block expires with the snapshot")
         check(value.buckets[0].limitingWindow(at: Date(timeIntervalSince1970: 2_000_001)) == nil, "reset time is not fabricated recovery")
         check(value.isFresh(at: now) && !value.isFresh(at: now.addingTimeInterval(181)), "stale data is explicitly unavailable")
         check(!value.isFresh(at: now.addingTimeInterval(-1)), "clock going backwards cannot make stale data fresh")
+        check(!value.isFresh(at: now.addingTimeInterval(180)), "the display deadline marks the reading stale immediately")
+        let impending = try CodexUsageSnapshot.decode(Data(#"{"rateLimits":{"primary":{"usedPercent":70,"resetsAt":1000012},"secondary":{"usedPercent":50,"resetsAt":1000050}}}"#.utf8), at: now)
+        check(impending.nextDisplayChange(after: now) == now.addingTimeInterval(12), "display updates at the first reset, before the next poll")
+        let firstReset = now.addingTimeInterval(12)
+        check(impending.buckets[0].limitingWindow(at: firstReset)?.remainingPercent == 50 && impending.nextDisplayChange(after: firstReset) == now.addingTimeInterval(50),
+              "an expired window is excluded while another valid window remains")
         let missing = try CodexUsageSnapshot.decode(Data(#"{"rateLimitsByLimitId":{"codex":{"primary":null,"secondary":null}}}"#.utf8), at: now)
         check(missing.buckets[0].limitingWindow(at: now) == nil, "missing usage never becomes zero usage")
         let legacy = try CodexUsageSnapshot.decode(Data(#"{"rateLimits":{"primary":{"usedPercent":110,"windowDurationMins":null,"resetsAt":null}}}"#.utf8), at: now)
         check(legacy.buckets[0].windows[0].remainingPercent == 0, "remaining quota is clamped")
         check(legacy.buckets[0].windows[0].title == "Límite", "unknown duration is labeled honestly")
+        let legacyWithNullMap = try CodexUsageSnapshot.decode(Data(#"{"rateLimits":{"primary":{"usedPercent":40}},"rateLimitsByLimitId":{"codex":null}}"#.utf8), at: now)
+        check(legacyWithNullMap.buckets.first?.limitingWindow(at: now)?.remainingPercent == 60, "an empty named map preserves authoritative legacy data")
         for json in [#"{"rateLimits":{"primary":{"usedPercent":-1}}}"#, #"{"rateLimits":{"primary":{"usedPercent":"bad"}}}"#, #"{"rateLimits":{"primary":{"usedPercent":1,"windowDurationMins":0}}}"#] {
             do { _ = try CodexUsageSnapshot.decode(Data(json.utf8)); preconditionFailure("invalid window accepted") }
             catch { checks += 1 }
@@ -98,6 +108,9 @@ import Foundation
         checks = 0
         check(cursor.remainingPercent == 99 && cursor.resetLabel == "Nov 21" && cursor.fetchedAt == now,
               "Cursor usage survives Aside's tab messages and keeps the dashboard reset date")
+        check(cursor.isFresh(at: now) && cursor.isFresh(at: now.addingTimeInterval(299)), "recent Cursor readings can be reused when reopening Conexiones")
+        check(!cursor.isFresh(at: now.addingTimeInterval(300)) && !cursor.isFresh(at: now.addingTimeInterval(-1)),
+              "expired or future-dated Cursor readings never show as current")
         for reading in [
             #"{"status":"ok","usedPercent":-1,"resetLabel":"Nov 21"}"#,
             #"{"status":"ok","usedPercent":101,"resetLabel":"Nov 21"}"#,

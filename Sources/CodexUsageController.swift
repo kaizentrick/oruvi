@@ -20,19 +20,22 @@ final class CodexUsageController {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var request: CodexUsageRequest?
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var displayTimer: Timer?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var blocks = Set<String>()
     @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
-    @ObservationIgnored private var lastAttempt = Date.distantPast
+    @ObservationIgnored private var lastAttemptUptime = -Double.infinity
     @ObservationIgnored private var failures = 0
 
     var selectedBucket: CodexUsageBucket? {
         snapshot?.buckets.first { $0.id == selectedBucketID }
             ?? snapshot?.buckets.first { $0.id == "codex" } ?? snapshot?.buckets.first
     }
-    var fresh: Bool { enabled && blocks.isEmpty && error == nil && snapshot?.isFresh(at: now) == true }
+    var fresh: Bool { enabled && blocks.isEmpty && error == nil && snapshot?.canReportRemaining(at: now) == true }
+    private var currentWindow: CodexUsageWindow? { fresh ? selectedBucket?.limitingWindow(at: now) : nil }
+    var hasCurrentQuota: Bool { currentWindow != nil }
     var compactText: String {
-        guard fresh, let window = selectedBucket?.limitingWindow(at: now) else { return "—" }
+        guard let window = currentWindow else { return "—" }
         return "\(window.remainingPercent)%"
     }
     var status: String {
@@ -40,11 +43,12 @@ final class CodexUsageController {
         if !blocks.isEmpty { return "En pausa mientras tu Mac descansa" }
         if let error { return error.message }
         if snapshot == nil && refreshing { return "Consultando Codex…" }
+        if let snapshot, !snapshot.isFresh(at: now) { return "Datos pendientes de actualizar" }
         if snapshot?.ordinaryUsageAllowed == false { return "Codex informa que el uso incluido está bloqueado" }
-        if fresh, let window = selectedBucket?.limitingWindow(at: now) {
+        if let window = currentWindow {
             return "\(window.remainingPercent)% restante · \(window.title)"
         }
-        if snapshot != nil && !fresh { return "Datos pendientes de actualizar" }
+        if selectedBucket?.windows.isEmpty == false { return "Reinicio pendiente de confirmar" }
         return "Esta cuenta no informa de límites disponibles"
     }
     var compactHelp: String { "\(selectedBucket?.title ?? "Codex") · \(status). Abrir conexiones." }
@@ -62,6 +66,7 @@ final class CodexUsageController {
         }
         observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.block("lock", active: true) }
         observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.block("lock", active: false) }
+        observe(.default, .NSSystemClockDidChange) { [weak self] in self?.updateDisplayClock() }
         reschedule()
     }
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, action: @escaping @MainActor () -> Void) {
@@ -70,33 +75,49 @@ final class CodexUsageController {
     }
     func connect() {
         enabled = true; LumaEnvironment.preferences.set(true, forKey: "codexUsageEnabled")
-        error = nil; failures = 0; lastAttempt = .distantPast; reschedule()
+        error = nil; failures = 0; lastAttemptUptime = -Double.infinity; reschedule()
     }
     func disconnect() {
         enabled = false; LumaEnvironment.preferences.set(false, forKey: "codexUsageEnabled")
         cancel(); timer?.invalidate(); timer = nil; snapshot = nil; error = nil
+        updateDisplayClock()
     }
     private func block(_ key: String, active: Bool) {
-        if active { blocks.insert(key) } else { blocks.remove(key) }
+        let changed = active ? blocks.insert(key).inserted : blocks.remove(key) != nil
+        guard changed else { return }
         cancel(); reschedule()
     }
     private func reschedule() {
-        timer?.invalidate(); timer = nil; now = Date()
+        timer?.invalidate(); timer = nil; updateDisplayClock()
         guard started, enabled, blocks.isEmpty else { return }
         refresh()
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }; self.now = Date()
                 let delay: TimeInterval = self.failures == 0 ? 50 : (self.failures < 3 ? 120 : 300)
-                if self.now.timeIntervalSince(self.lastAttempt) >= delay { self.refresh() }
+                if ProcessInfo.processInfo.systemUptime - self.lastAttemptUptime >= delay { self.refresh() }
             }
         }
         timer.tolerance = 10; self.timer = timer; RunLoop.main.add(timer, forMode: .common)
     }
+    private func updateDisplayClock() {
+        displayTimer?.invalidate(); displayTimer = nil
+        now = Date()
+        guard started, enabled, blocks.isEmpty, error == nil,
+              let deadline = snapshot?.nextDisplayChange(after: now) else { return }
+        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateDisplayClock() }
+        }
+        displayTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
     func refresh() {
-        guard started, enabled, blocks.isEmpty, !refreshing, Date().timeIntervalSince(lastAttempt) >= 5 else { return }
-        now = Date(); lastAttempt = now
-        guard let executable = CodexExecutable.locate() else { error = .missingCLI; failures += 1; return }
+        let uptime = ProcessInfo.processInfo.systemUptime
+        guard started, enabled, blocks.isEmpty, !refreshing, uptime - lastAttemptUptime >= 5 else { return }
+        now = Date(); lastAttemptUptime = uptime
+        guard let executable = CodexExecutable.locate() else {
+            error = .missingCLI; failures += 1; updateDisplayClock(); return
+        }
         refreshing = true; generation += 1
         let serial = generation, request = CodexUsageRequest(); self.request = request
         task = Task { [weak self] in
@@ -109,7 +130,7 @@ final class CodexUsageController {
                 self.error = error as? CodexUsageError ?? .unavailable; self.failures += 1
             }
             guard let self, self.generation == serial else { return }
-            self.now = Date(); self.refreshing = false; self.task = nil; self.request = nil
+            self.updateDisplayClock(); self.refreshing = false; self.task = nil; self.request = nil
         }
     }
     private func cancel() {
@@ -118,6 +139,7 @@ final class CodexUsageController {
     }
     func stop() {
         cancel(); timer?.invalidate(); timer = nil; snapshot = nil; started = false
+        updateDisplayClock()
         for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
     }
 }
