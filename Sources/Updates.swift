@@ -65,11 +65,29 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
         lastChecked = Date()
         status = "Nueva versión disponible: \(item.displayVersionString)"
     }
-    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
-        availableVersion = nil; lastChecked = Date(); status = "Esta instalación está actualizada"
-    }
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
-        status = "No se pudo comprobar el feed. Verifica conexión y publicación de appcast.xml."
+        if let result = Self.noUpdateStatus(for: error) {
+            availableVersion = nil
+            lastChecked = Date()
+            status = result
+        } else {
+            status = "No se pudo comprobar el feed. Verifica conexión y publicación de appcast.xml."
+        }
+    }
+
+    static func noUpdateStatus(for error: Error) -> String? {
+        let detail = error as NSError
+        guard detail.domain == SUSparkleErrorDomain, detail.code == Int(SUError.noUpdateError.rawValue) else {
+            return nil
+        }
+        let reason = (detail.userInfo[SPUNoUpdateFoundReasonKey] as? NSNumber)
+            .flatMap { SPUNoUpdateFoundReason(rawValue: $0.int32Value) }
+        switch reason {
+        case .onLatestVersion: return "Oruvi está al día."
+        case .onNewerThanLatestVersion: return "Esta compilación es más reciente que la versión publicada."
+        case .systemIsTooOld, .systemIsTooNew: return "No hay una actualización compatible con esta versión de macOS."
+        default: return "No hay actualizaciones disponibles."
+        }
     }
     var supportsGentleScheduledUpdateReminders: Bool { true }
     func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
@@ -88,7 +106,7 @@ struct UpdatesSettings: View {
     @ObservedObject private var updates = OruviUpdates.shared
     @Binding var draft: String
     var body: some View {
-        Section("Actualizaciones") {
+        Section {
             Text(updates.status).font(.callout)
             LabeledContent("Repositorio público") {
                 TextField("Repositorio público", text: $draft, prompt: Text("propietario/oruvi"))

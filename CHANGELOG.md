@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1 — Estado de actualización y guía de la comunidad
+
+- Ajustes muestra **Oruvi está al día** cuando Sparkle confirma que tienes la última versión. Los errores de conexión y firma conservan su aviso.
+- El repositorio incluye capturas de demostración, instrucciones de instalación y una guía para contribuir con issues y pull requests.
+
 ## 0.14.0 — Ajustes visuales, letras y cuota de Cursor
 
 - **Ajustes:** navegación por secciones y muestras de fuentes en vivo. Personaliza por separado las letras, el reloj y el texto general. Las letras admiten un tamaño del 75 % al 135 %.

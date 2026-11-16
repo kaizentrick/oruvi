@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 
 /// Uses the real model, but never starts it, opens a window, prompts for access,
 /// launches a player or enables network artwork/lyrics. Preferences are isolated.
@@ -16,6 +17,18 @@ struct VerifySurfaces {
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             count += 1; precondition(condition(), message)
         }
+        func noUpdate(_ reason: SPUNoUpdateFoundReason) -> NSError {
+            NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue),
+                    userInfo: [SPUNoUpdateFoundReasonKey: NSNumber(value: reason.rawValue)])
+        }
+        expect(OruviUpdates.noUpdateStatus(for: noUpdate(.onLatestVersion)) == "Oruvi está al día.",
+               "Sparkle's no-update result must not become a feed error")
+        expect(OruviUpdates.noUpdateStatus(for: noUpdate(.systemIsTooOld)) != "Oruvi está al día.",
+               "an incompatible update must not be reported as the latest version")
+        expect(OruviUpdates.noUpdateStatus(for: NSError(domain: SUSparkleErrorDomain, code: Int(SUError.signatureError.rawValue))) == nil,
+               "preserve errors when the signature fails")
+        expect(OruviUpdates.noUpdateStatus(for: NSError(domain: "Other", code: Int(SUError.noUpdateError.rawValue))) == nil,
+               "only Sparkle's no-update error has special meaning")
         model.automaticLyrics = false; model.automaticArtwork = false
         model.contentTypeface = .rounded
         expect(model.lyricTypeface == .rounded && model.lyricSizePercent == 100, "existing preferences are inherited at the original size")
