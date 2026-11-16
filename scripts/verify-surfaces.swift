@@ -58,9 +58,23 @@ struct VerifySurfaces {
         expect(model.notchPlayerPreference == .automatic, "editing Standby preserves Notch")
         model.isVisible = true; model.refreshPower()
         expect(model.effectivePlayerPreference == .spotify, "new Standby choice survives handoff")
+        model.connected = true
+        model.apply(["status": "ok", "source": "com.spotify.client", "id": "spotify:qa",
+                     "title": "QA song", "duration": 120, "position": 12, "playing": true])
+        model.lines = [LyricLine(id: 0, time: 0, text: "Synthetic lyric")]
+        model.activeLine = 0
+        model.refreshPower()
+        expect(model.currentLyricText == "Synthetic lyric", "power notifications preserve the visible lyric and playback anchor")
+        model.energyMode = .saver
+        expect(model.currentLyricText == "Synthetic lyric", "changing cadence does not put playback back in recovery")
+        model.apply(["status": "stopped"])
+        expect(model.hasTrack && model.isResynchronizing, "a single stopped result retains the recording")
+        model.refreshPower()
+        model.apply(["status": "stopped"])
+        expect(!model.hasTrack && !model.isResynchronizing, "a power notification does not reset stopped confirmation")
         model.apply(["status": "denied"])
         expect(model.notchPlayerPreference == .automatic, "denial cannot change other surface selection")
-        expect(!model.connected, "denial suspends current connection")
+        expect(!model.connected && !model.isResynchronizing, "denial suspends current connection and ends resynchronizing")
         model.isVisible = false; model.refreshPower()
         expect(model.effectivePlayerPreference == .automatic && !model.connected, "respect independent saved opt-out")
         model.setNativeWidgetPresence(true)

@@ -203,7 +203,7 @@ final class AmbientRuntime {
         observe(NotificationCenter.default, NSApplication.didBecomeActiveNotification) { [weak self] in
             guard let self, self.window.isVisible else { return }
             self.applySystemPresentation()
-            self.model.refreshVisibility(); self.model.refreshPlayback()
+            self.model.refreshVisibility()
         }
         observe(workspace, NSWorkspace.didActivateApplicationNotification) { [weak self] in
             guard let self, !self.window.isVisible else { return }

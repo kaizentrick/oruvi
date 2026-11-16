@@ -236,12 +236,14 @@ final class StandbyModel {
     @ObservationIgnored private var recovery = PlaybackRecovery()
     @ObservationIgnored private let artworkRepository = ArtworkRepository()
     @ObservationIgnored private var pollTimer: Timer?
+    @ObservationIgnored private var scheduledPollInterval = 0.0
     @ObservationIgnored private var cueTimer: Timer?
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var artworkTask: Task<Void, Never>?
     @ObservationIgnored private var notificationTokens: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var powerSource: CFRunLoopSource?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var lastPlaybackDemand = false
     @ObservationIgnored private var reading = false
     @ObservationIgnored private var pendingMusicHint = false
     @ObservationIgnored private var lastMusicHint: Double = 0
@@ -378,19 +380,34 @@ final class StandbyModel {
         policyChanged()
     }
     private func policyChanged() {
+        let previousSurface = playbackSurface
         updatePlaybackSurface()
-        SystemMediaBridge.shared.setEnabled(connected && needsPlayback && !demoMode && !LumaEnvironment.isTesting && effectivePlayerPreference == .automatic)
-        pollTimer?.invalidate(); pollTimer = nil
-        updateDisplayAssertion(); runtime?.refreshPhrases()
-        if needsPlayback {
-            if connected { refreshPlayback() } else { updateCue() }
-            if !lyricsLookupVisible { stopLyricsUpdates() }
+        let demand = needsPlayback
+        let playbackChanged = previousSurface != playbackSurface || lastPlaybackDemand != demand
+        lastPlaybackDemand = demand
+        updateDisplayAssertion()
+
+        guard playbackChanged else {
+            if pollTimer != nil && scheduledPollInterval != playbackPollInterval { schedulePoll() }
+            return
+        }
+        runtime?.refreshPhrases()
+        if demand && connected && !demoMode {
+            refreshPlayback()
         } else {
-            generation += 1
-            recovery.invalidate(); isResynchronizing = !demoMode
-            stopLyricsUpdates()
+            suspendPlaybackSampling()
+            if demoMode { updateCue() }
+        }
+        if !lyricsLookupVisible { stopLyricsUpdates() }
+        if !demand {
             artworkTask?.cancel(); artworkTask = nil
         }
+    }
+    private func suspendPlaybackSampling() {
+        SystemMediaBridge.shared.setEnabled(false)
+        generation += 1
+        pendingMusicHint = false
+        pollTimer?.invalidate(); pollTimer = nil
     }
     private func updateDisplayAssertion() {
         if effectiveAwake && !hasAssertion {
@@ -398,9 +415,10 @@ final class StandbyModel {
         } else if !effectiveAwake && hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }
     }
     /// Every reveal, wake and explicit reconnect requests fresh metadata AND position.
-    func refreshPlayback() {
+    func refreshPlayback(restartingSystem: Bool = false) {
         guard connected, !demoMode, needsPlayback else { return }
-        SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic)
+        SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic,
+                                            restarting: restartingSystem)
         generation += 1
         lyricsRetryAt = 0; artworkRetryAt = 0
         recovery.invalidate(); isResynchronizing = true
@@ -412,14 +430,12 @@ final class StandbyModel {
         prefs.set(true, forKey: playbackSurface.enabledKey)
         connectionStatus = "Conectando reproductor…"
         musicQueue.async { [playerRouter] in playerRouter.reset() }
-        refreshPlayback()
-        if !LumaEnvironment.isTesting { SystemMediaBridge.shared.reconnect() }
+        refreshPlayback(restartingSystem: true)
     }
     func disconnectMusic() {
-        SystemMediaBridge.shared.setEnabled(false)
-        generation += 1; connected = false; demoMode = false
+        suspendPlaybackSampling()
+        connected = false; demoMode = false
         prefs.set(false, forKey: playbackSurface.enabledKey)
-        pollTimer?.invalidate(); pollTimer = nil
         retainedArtwork = nil
         clearTrack(); isResynchronizing = false; connectionStatus = "Música desconectada"
     }
@@ -435,7 +451,7 @@ final class StandbyModel {
         cueTimer?.invalidate(); cueTimer = nil
     }
     private func readMusic() {
-        guard connected, needsPlayback, !reading, !demoMode else { return }
+        guard !LumaEnvironment.isTesting, connected, needsPlayback, !reading, !demoMode else { return }
         reading = true; pollTimer?.invalidate(); pollTimer = nil
         let session = generation, preference = effectivePlayerPreference, preferred = activePlayer
         musicQueue.async { [weak self, playerRouter] in
@@ -458,7 +474,9 @@ final class StandbyModel {
         if status == "denied" {
             // A denied provider suspends this surface, not the independent preference
             // or opt-in of the other surface. Only Disconnect persists an opt-out.
-            connected = false; clearTrack()
+            connected = false
+            suspendPlaybackSampling()
+            clearTrack(); isResynchronizing = false
             connectionStatus = snapshot["message"] as? String ?? "Permiso de Automatización requerido."; return
         }
         if status == "notRunning" {
@@ -543,12 +561,16 @@ final class StandbyModel {
         if artworkTask == nil && now >= artworkRetryAt && (artwork == nil || needsSystemCover) { fetchArtwork() }
         updateCue()
     }
-    private func schedulePoll() {
-        guard connected, !demoMode, !reading, needsPlayback else { return }
+    private var playbackPollInterval: TimeInterval {
         let normalInterval = policy.visible ? (policy.pollingInterval(playing: anchor.playing) ?? 5) : (anchor.playing ? (onBattery ? 5.0 : 3.0) : 8.0)
-        let interval = recovery.waiting ? max(policy.visible ? 0.25 : 1.0, recovery.retryInterval) : normalInterval
+        return recovery.waiting ? max(policy.visible ? 0.25 : 1.0, recovery.retryInterval) : normalInterval
+    }
+    private func schedulePoll() {
+        guard !LumaEnvironment.isTesting, connected, !demoMode, !reading, needsPlayback else { return }
+        let interval = playbackPollInterval
         pollTimer?.invalidate()
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.readMusic() } }
+        scheduledPollInterval = interval
         timer.tolerance = 0.1; pollTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func control(_ command: String, position: Double = 0) {
@@ -815,10 +837,10 @@ final class StandbyModel {
         }
     }
     func useDemo() {
-        SystemMediaBridge.shared.setEnabled(false)
-        generation += 1; connected = false; demoMode = true; isResynchronizing = false
+        suspendPlaybackSampling()
+        connected = false; demoMode = true; isResynchronizing = false
         playbackOptionsAvailable = true; shuffleEnabled = false; repeatMode = 0
-        pollTimer?.invalidate(); pollTimer = nil; lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
+        lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = TrackIdentity(id: "luma-demo", title: "Still, here.", artist: "Oruvi · demostración", album: "Slow mornings", duration: 214)
         anchor = PlaybackAnchor(position: 84, uptime: ProcessInfo.processInfo.systemUptime, duration: 214, playing: true)
         artwork = nil; artworkLink = nil; palette = RGB.aurora
@@ -827,8 +849,8 @@ final class StandbyModel {
         lyricSource = "Demostración · texto original, sin audio"; connectionStatus = "Vista de demostración · sin audio"; updateCue()
     }
     func shutdown() {
-        SystemMediaBridge.shared.setEnabled(false)
-        generation += 1; pollTimer?.invalidate(); cueTimer?.invalidate(); lyricsTask?.cancel(); artworkTask?.cancel(); toastTask?.cancel(); runtime?.stop(); notch?.stop()
+        suspendPlaybackSampling()
+        cueTimer?.invalidate(); lyricsTask?.cancel(); artworkTask?.cancel(); toastTask?.cancel(); runtime?.stop(); notch?.stop()
         for (center, token) in notificationTokens { center.removeObserver(token) }; notificationTokens.removeAll()
         if let powerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes) }
         if hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }

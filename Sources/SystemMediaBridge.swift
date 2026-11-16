@@ -33,16 +33,14 @@ final class SystemMediaBridge: @unchecked Sendable {
             DispatchQueue.main.async { NotificationCenter.default.post(name: .oruviSystemMediaChanged, object: nil) }
         }
     }
-    func setEnabled(_ value: Bool) {
+    /// A manual reconnect restarts an existing helper. A newly enabled helper starts once.
+    func setEnabled(_ value: Bool, restarting: Bool = false) {
         queue.async { [self] in
-            guard !shuttingDown, enabled != value else { return }
+            guard !shuttingDown, enabled != value || (value && restarting) else { return }
+            if enabled { stop() }
             enabled = value
-            if value { start() } else { stop() }
+            if value { start() }
         }
-    }
-    /// Explicit reconnect is the only immediate retry after a helper failure.
-    func reconnect() {
-        queue.async { [self] in guard enabled && !shuttingDown else { return }; stop(); start() }
     }
     /// App termination must not leave a persistent child alive after its parent.
     /// Called from the application delegate, outside the bridge queue.
