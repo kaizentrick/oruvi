@@ -7,6 +7,7 @@ final class PlayerRouter: @unchecked Sendable {
     private var denials: [PlayerSource: [String: Any]] = [:]
     private var previouslyPlaying: Set<PlayerSource> = []
     private var lastAutomaticSource: PlayerSource?
+    private var snapshotSequence: UInt64 = 0
     private let isRunning: (PlayerSource) -> Bool
     private let readNative: (PlayerSource) -> [String: Any]
 
@@ -35,7 +36,12 @@ final class PlayerRouter: @unchecked Sendable {
     }
     func snapshot(preference: PlayerPreference, preferred: PlayerSource, refreshSystem: Bool = false) -> [String: Any] {
         let system = refreshSystem && preference == .automatic ? SystemMediaBridge.shared.readNow() : SystemMediaBridge.shared.current
-        return resolve(preference: preference, preferred: preferred, system: system)
+        var snapshot = resolve(preference: preference, preferred: preferred, system: system)
+        // Widget intents and timer reads return through different MainActor entry points.
+        // Order every result on the playback queue, including errors and stopped states.
+        snapshotSequence += 1
+        snapshot["playbackSequence"] = snapshotSequence
+        return snapshot
     }
     func resolve(preference: PlayerPreference, preferred: PlayerSource,
                  system: SystemMediaSnapshot?) -> [String: Any] {

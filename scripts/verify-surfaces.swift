@@ -328,6 +328,25 @@ struct VerifySurfaces {
         running = []
         expect(automaticSnapshot()["status"] as? String == "notRunning",
                "the last native session disappears when the app quits, even after permission was denied")
+        let closed = router.snapshot(preference: .spotify, preferred: .spotify)
+        running = [.spotify]
+        var olderTrack = router.snapshot(preference: .spotify, preferred: .spotify)
+        olderTrack["id"] = "spotify:track:previous"
+        let latestTrack = router.snapshot(preference: .spotify, preferred: .spotify)
+        expect((closed["playbackSequence"] as? UInt64) == 1 && (latestTrack["playbackSequence"] as? UInt64) == 3,
+               "the playback queue orders both terminal and successful snapshots")
+        covers.apply(latestTrack)
+        covers.apply(olderTrack)
+        covers.apply(closed)
+        var oldDenial = closed
+        oldDenial["status"] = "denied"
+        covers.apply(oldDenial)
+        expect(covers.connected && covers.track.id == "spotify:track:continuing",
+               "late replies cannot restore a previous track, clear the newest state, or disconnect playback")
+        running = []
+        covers.apply(router.snapshot(preference: .spotify, preferred: .spotify))
+        covers.apply(latestTrack)
+        expect(!covers.hasTrack, "a fresh no-player reply clears playback and rejects a late successful sample")
         let lockFile = support.appendingPathComponent("verification.instance")
         do {
             let owner = try ApplicationInstanceLock.acquire(at: lockFile)

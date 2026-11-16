@@ -249,6 +249,7 @@ final class StandbyModel {
     @ObservationIgnored private var notificationTokens: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var powerSource: CFRunLoopSource?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var lastAppliedSnapshotSequence: UInt64 = 0
     @ObservationIgnored private var lastPlaybackDemand = false
     @ObservationIgnored private var reading = false
     @ObservationIgnored private var pendingMusicHint = false
@@ -503,6 +504,10 @@ final class StandbyModel {
         }
     }
     func apply(_ snapshot: [String: Any]) {
+        if let sequence = snapshot["playbackSequence"] as? UInt64 {
+            guard sequence > lastAppliedSnapshotSequence else { return }
+            lastAppliedSnapshotSequence = sequence
+        }
         let status = snapshot["status"] as? String ?? "error"
         if status == "denied" {
             // A denied provider suspends this surface, not the independent preference
