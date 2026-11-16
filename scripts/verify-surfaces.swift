@@ -136,9 +136,13 @@ struct VerifySurfaces {
         model.setNativeWidgetPresence(true)
         expect(model.needsPlayback, "desktop widget keeps the single sampler eligible with notch hidden")
         expect(defaults.object(forKey: "nativeWidgetInUse") == nil, "placement belongs to macOS, not a saved app flag")
-        model.screenSleeping = true
+        model.setSleeping(true, source: .display)
+        model.setSleeping(true, source: .system)
         expect(!model.needsPlayback, "sleep suspends desktop playback")
-        model.screenSleeping = false
+        model.setSleeping(false, source: .system)
+        expect(model.screenSleeping && !model.needsPlayback, "a Mac wake does not resume playback while its display sleeps")
+        model.setSleeping(false, source: .display)
+        expect(model.needsPlayback, "desktop sampling resumes after both sources wake")
         model.setNativeWidgetPresence(false)
         expect(!model.needsPlayback, "no surface needs playback after desktop opt-out")
         model.apply(["status": "ok", "source": "oruvi.system", "id": "system:qa", "title": "QA video", "artist": "", "album": "", "duration": 0, "position": 12, "playing": true, "systemBundleID": "com.example.Player"])
@@ -182,10 +186,13 @@ struct VerifySurfaces {
         model.systemProhibitsSkip = true
         expect(!model.canSkip && !model.canSeek && !widgets.makeSnapshot().canSkip,
                "notch, Standby and native widget share system restrictions")
-        model.screenSleeping = true
+        model.setSleeping(true, source: .system)
         let asleep = widgets.makeSnapshot()
         expect(asleep.state == .sleeping && !asleep.canControl && asleep.artwork == nil, "sleep snapshot removes private media")
-        model.screenSleeping = false; model.connected = false
+        model.setSleeping(false, source: .display)
+        expect(widgets.makeSnapshot().state == .sleeping, "a display wake cannot resume a still-sleeping Mac")
+        model.setSleeping(false, source: .system)
+        model.connected = false
         expect(widgets.makeSnapshot().state == .disconnected, "disconnect cannot show playable media")
         model.connected = true; model.track = .empty
         expect(widgets.makeSnapshot().state == .idle, "empty session is not fabricated playback")

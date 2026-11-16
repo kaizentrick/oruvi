@@ -23,7 +23,6 @@ final class AmbientRuntime {
     private var phraseTimer: Timer?
     private var localEvents: Any?
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
-    private var sleeping = false
     private var sessionInactive = false
     private var locked = false
     private var lastDismissed = -Double.greatestFiniteMagnitude
@@ -35,7 +34,7 @@ final class AmbientRuntime {
     private var mediaSerial = 0
     private var wasMediaProtected = false
     private var lastMediaProtected = -Double.greatestFiniteMagnitude
-    var isBlocked: Bool { sleeping || sessionInactive || locked }
+    var isBlocked: Bool { model.screenSleeping || sessionInactive || locked }
     init(model: StandbyModel, window: NSWindow) {
         self.model = model; self.window = window; model.runtime = self
         installObservers()
@@ -181,12 +180,6 @@ final class AmbientRuntime {
     }
     private func installObservers() {
         let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
-            observe(workspace, name) { [weak self] in self?.sleeping = true; self?.dismiss() }
-        }
-        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
-            observe(workspace, name) { [weak self] in self?.sleeping = false; self?.didWake() }
-        }
         observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { [weak self] in self?.sessionInactive = true; self?.dismiss() }
         observe(workspace, NSWorkspace.sessionDidBecomeActiveNotification) { [weak self] in self?.sessionInactive = false; self?.didWake() }
         // Additional best-effort lock notifications, not relied on as a public API contract.
@@ -211,7 +204,7 @@ final class AmbientRuntime {
             guard let self else { return }; if self.window.isVisible { self.activate(automatic: self.model.automaticSession) }
         }
     }
-    private func didWake() { lastWake = ProcessInfo.processInfo.systemUptime; rescheduleIdle() }
+    func didWake() { lastWake = ProcessInfo.processInfo.systemUptime; rescheduleIdle() }
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard window.isVisible else { return event }
         let belongs = event.window === window || event.window?.sheetParent === window

@@ -79,10 +79,14 @@ import Observation
         check(store.read()?.title == "Video B" && store.read()?.playing == false, "Track and pause propagate together")
         check(store.read()?.artwork == nil, "New title never inherits old cover")
         check(store.read()?.artworkPalette == nil, "New title never inherits old cover colors")
-        model.screenSleeping = true
+        model.setSleeping(true, source: .system)
+        model.setSleeping(true, source: .display)
         try await settle()
         check(store.read()?.state == .sleeping && store.read()?.artwork == nil && store.read()?.artworkPalette == nil, "Sleep removes media presentation")
-        model.screenSleeping = false
+        model.setSleeping(false, source: .display)
+        try await settle()
+        check(store.read()?.state == .sleeping, "Partial wake keeps the published widget asleep")
+        model.setSleeping(false, source: .system)
         try await settle()
         check(store.read()?.title == "Video B", "Wake restores current state")
         for source in ["com.apple.Music", "com.spotify.client"] {

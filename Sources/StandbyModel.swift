@@ -133,7 +133,9 @@ final class StandbyModel {
     var hot = false
     var reduceMotion = false
     var reduceTransparency = false
-    var screenSleeping = false {
+    enum SleepSource: Hashable { case system, display }
+    @ObservationIgnored private var sleepingSources: Set<SleepSource> = []
+    private(set) var screenSleeping = false {
         didSet { if started && oldValue != screenSleeping { policyChanged() } }
     }
     private(set) var playbackReadMilliseconds: Int?
@@ -369,11 +371,12 @@ final class StandbyModel {
         for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
             observe(standard, name) { [weak self] in self?.refreshVisibility() }
         }
-        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification] {
-            observe(workspace, name) { [weak self] in self?.screenSleeping = true; self?.refreshVisibility() }
-        }
-        for name in [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification] {
-            observe(workspace, name) { [weak self] in self?.screenSleeping = false; self?.refreshPower(); self?.refreshVisibility() }
+        for (source, sleep, wake) in [
+            (SleepSource.system, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
+            (SleepSource.display, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification)
+        ] {
+            observe(workspace, sleep) { [weak self] in self?.setSleeping(true, source: source) }
+            observe(workspace, wake) { [weak self] in self?.setSleeping(false, source: source) }
         }
         observe(workspace, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) { [weak self] in self?.refreshPower() }
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
@@ -403,6 +406,21 @@ final class StandbyModel {
         }, Unmanaged.passUnretained(self).toOpaque())?.takeRetainedValue() {
             powerSource = source; CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
+    }
+    func setSleeping(_ sleeping: Bool, source: SleepSource) {
+        if sleeping { sleepingSources.insert(source) } else { sleepingSources.remove(source) }
+        // System and display wake can arrive independently. Keep all playback surfaces
+        // suspended until neither source is asleep.
+        let blocked = !sleepingSources.isEmpty
+        guard blocked != screenSleeping else { return }
+        screenSleeping = blocked
+        if blocked {
+            runtime?.dismiss()
+        } else {
+            refreshPower()
+            runtime?.didWake()
+        }
+        refreshVisibility()
     }
     private func nativePlayerLifecycleChanged(_ bundleID: String) {
         guard let source = PlayerSource(rawValue: bundleID), source != .system,
