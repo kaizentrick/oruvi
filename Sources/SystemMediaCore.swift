@@ -1,6 +1,18 @@
 // Copyright (c) 2026 KaizenTrick. SPDX-License-Identifier: MIT
 import Foundation
 
+struct SystemMediaRestartPolicy {
+    private var failures = 0
+
+    mutating func delay(afterRunningFor duration: TimeInterval) -> TimeInterval {
+        if duration >= 30 { failures = 0 }
+        let delays: [TimeInterval] = [1, 2, 4, 8, 16, 30]
+        let delay = delays[failures]
+        failures = min(failures + 1, delays.count - 1)
+        return delay
+    }
+}
+
 /// A bounded, complete snapshot from the system's active Now Playing session.
 /// No URLs are fetched and no history is persisted by this transport.
 struct SystemMediaSnapshot: Equatable, Sendable {

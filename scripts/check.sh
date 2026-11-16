@@ -22,7 +22,7 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
     Sources/PlaybackSelection.swift Sources/NotchLayout.swift Sources/NotchHoverGeometry.swift scripts/verify-player-hover.swift -o "$WORK/verify-player-hover"
 "$WORK/verify-player-hover"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
-    Sources/SystemMediaCore.swift scripts/verify-system-media.swift -o "$WORK/verify-system-media"
+    Sources/SystemMediaCore.swift Sources/SystemMediaBridge.swift Sources/PlaybackSelection.swift scripts/verify-system-media.swift -o "$WORK/verify-system-media"
 "$WORK/verify-system-media"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
     Sources/WidgetShared/WidgetSnapshot.swift Sources/WidgetShared/WidgetRoute.swift scripts/verify-widgetkit.swift -o "$WORK/verify-widgetkit"

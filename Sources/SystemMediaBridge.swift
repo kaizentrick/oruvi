@@ -23,6 +23,15 @@ final class SystemMediaBridge: @unchecked Sendable {
     private var pipe: Pipe?
     private var generation = 0
     private var frames = SystemMediaFrames()
+    private let makeStreamProcess: () -> Process?
+    private var streamStartedAt = 0.0
+    private var restartPolicy = SystemMediaRestartPolicy()
+
+    init(makeStreamProcess: @escaping () -> Process? = {
+        SystemMediaBridge.makeProcess(["stream", "--no-diff", "--debounce=100", "--micros", "--allow-missing-title"])
+    }) {
+        self.makeStreamProcess = makeStreamProcess
+    }
 
     var current: SystemMediaSnapshot? {
         lock.lock(); defer { lock.unlock() }; return cached
@@ -39,7 +48,10 @@ final class SystemMediaBridge: @unchecked Sendable {
             guard !shuttingDown, enabled != value || (value && restarting) else { return }
             if enabled { stop() }
             enabled = value
-            if value { start() }
+            if value {
+                restartPolicy = SystemMediaRestartPolicy()
+                start()
+            }
         }
     }
     /// App termination must not leave a persistent child alive after its parent.
@@ -70,7 +82,8 @@ final class SystemMediaBridge: @unchecked Sendable {
     private func start() {
         generation += 1
         let session = generation
-        guard let task = Self.makeProcess(["stream", "--no-diff", "--debounce=100", "--micros", "--allow-missing-title"]) else { publish(nil); return }
+        guard let task = makeStreamProcess() else { publish(nil); return }
+        streamStartedAt = ProcessInfo.processInfo.systemUptime
         let output = Pipe()
         frames = SystemMediaFrames(); process = task; pipe = output
         task.standardOutput = output
@@ -79,23 +92,34 @@ final class SystemMediaBridge: @unchecked Sendable {
             // Apply pipe backpressure instead of enqueueing unbounded data chunks.
             self?.queue.sync { [weak self] in
                 guard let self, self.generation == session else { return }
-                if bytes.isEmpty { self.stop(); return }
+                if bytes.isEmpty { self.streamFailed(); return }
                 do {
                     for frame in try self.frames.append(bytes) {
-                        guard let envelope = try JSONSerialization.jsonObject(with: frame) as? [String: Any],
+                        guard let envelope = (try? JSONSerialization.jsonObject(with: frame)) as? [String: Any],
                               envelope["type"] as? String == "data", envelope["diff"] as? Bool != true else { continue }
                         let payload = envelope["payload"] as? [String: Any] ?? [:]
                         self.publish(SystemMediaSnapshot(payload: payload, uptime: ProcessInfo.processInfo.systemUptime, epoch: Date().timeIntervalSince1970))
                     }
-                } catch { self.stop() }
+                } catch { self.streamFailed() }
             }
         }
         task.terminationHandler = { [weak self] _ in
             self?.queue.async { [weak self] in
-                guard let self, self.generation == session else { return }; self.stop()
+                guard let self, self.generation == session else { return }
+                self.streamFailed()
             }
         }
-        do { try task.run() } catch { stop() }
+        do { try task.run() } catch { streamFailed() }
+    }
+    private func streamFailed() {
+        let duration = ProcessInfo.processInfo.systemUptime - streamStartedAt
+        stop()
+        let session = generation
+        let delay = restartPolicy.delay(afterRunningFor: duration)
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.enabled, !self.shuttingDown, self.generation == session else { return }
+            self.start()
+        }
     }
     private func stop() {
         generation += 1

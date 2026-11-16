@@ -47,6 +47,55 @@ import Foundation
         check(frames.count == 2, "Multiple complete frames")
         do { _ = try parser.append(Data(repeating: 65, count: SystemMediaFrames.maximumBytes + 1)); fatalError("Missing size limit") }
         catch SystemMediaFrames.FrameError.oversized { check(parser.buffer.isEmpty, "Oversized frame clears buffer") }
+
+        var retry = SystemMediaRestartPolicy()
+        let rapidFailures = (0..<8).map { _ in retry.delay(afterRunningFor: 0.1) }
+        check(rapidFailures == [1, 2, 4, 8, 16, 30, 30, 30], "Rapid failures use capped exponential backoff")
+        check(retry.delay(afterRunningFor: 60) == 1, "A sustained run restores quick recovery")
+
+        func child(_ script: String) -> Process {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", script]
+            process.standardInput = FileHandle.nullDevice
+            return process
+        }
+        let firstAttempt = DispatchSemaphore(value: 0), secondAttempt = DispatchSemaphore(value: 0)
+        var launches = 0
+        let bridge = SystemMediaBridge {
+            launches += 1
+            if launches == 1 {
+                firstAttempt.signal()
+                return child("exit 1")
+            }
+            secondAttempt.signal()
+            return child(#"""
+            printf '%s\n' 'malformed frame' '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.example.Player","title":"Recovered","playing":true}}'
+            exec /bin/sleep 10
+            """#)
+        }
+        defer { bridge.shutdown() }
+        bridge.setEnabled(true)
+        check(firstAttempt.wait(timeout: .now() + 3) == .success, "The first stream helper starts")
+        check(secondAttempt.wait(timeout: .now() + 0.3) == .timedOut, "A failed helper is not restarted in a tight loop")
+        check(secondAttempt.wait(timeout: .now() + 5) == .success, "An unexpected helper exit restarts the stream")
+        let until = ContinuousClock.now + .seconds(3)
+        while bridge.current == nil && ContinuousClock.now < until { Thread.sleep(forTimeInterval: 0.01) }
+        check(bridge.current?.title == "Recovered", "A valid event survives a preceding malformed frame")
+        bridge.shutdown()
+        check(bridge.current == nil, "Shutdown clears the cached system session")
+
+        let stoppedAttempts = DispatchSemaphore(value: 0)
+        let stopped = SystemMediaBridge {
+            stoppedAttempts.signal()
+            return child("exit 1")
+        }
+        defer { stopped.shutdown() }
+        stopped.setEnabled(true)
+        check(stoppedAttempts.wait(timeout: .now() + 3) == .success, "The second stream helper starts")
+        Thread.sleep(forTimeInterval: 0.2)
+        stopped.setEnabled(false)
+        check(stoppedAttempts.wait(timeout: .now() + 1.4) == .timedOut, "Disabling a stream cancels a pending restart")
         print("System media: \(assertions) assertions passed.")
     }
 }
