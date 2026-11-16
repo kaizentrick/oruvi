@@ -25,6 +25,8 @@
 @interface OruviSpotifyState : NSObject <SBApplicationDelegate>
 @property (strong) OruviSpotifyApplication *app;
 @property (strong) NSError *error;
+@property (copy) NSDictionary *options;
+@property double optionsReadAt;
 @end
 @implementation OruviSpotifyState
 - (instancetype)init {
@@ -32,6 +34,7 @@
         self.app = (OruviSpotifyApplication *)[[SBApplication alloc] initWithBundleIdentifier:@"com.spotify.client"];
         self.app.delegate = self;
         self.app.timeout = 45;
+        self.optionsReadAt = -INFINITY;
     }
     return self;
 }
@@ -79,9 +82,17 @@ NSDictionary *OruviReadSpotifySnapshot(void) {
                   @"duration": @(duration), @"position": @(isfinite(position) ? MAX(0, position) : 0),
                   @"sampleUptime": @((before + after) * 0.5), @"roundTrip": @(after - before), @"playing": @(state == 'kPSP'),
                   @"artworkURL": artwork, @"repeatOneSupported": @NO } mutableCopy];
-            BOOL shuffle = bridge.app.shuffling;
-            BOOL repeated = bridge.app.repeating;
-            if (!bridge.error) { result[@"shuffle"] = @(shuffle); result[@"repeatMode"] = @(repeated ? 1 : 0); }
+            // Queue settings change much less often than position. An option read must
+            // neither delay every sample nor turn valid playback metadata into an error.
+            if (NSProcessInfo.processInfo.systemUptime - bridge.optionsReadAt >= 5) {
+                BOOL shuffle = bridge.app.shuffling;
+                BOOL repeated = !bridge.error && bridge.app.repeating;
+                bridge.optionsReadAt = NSProcessInfo.processInfo.systemUptime;
+                if (!bridge.error) {
+                    bridge.options = @{ @"shuffle": @(shuffle), @"repeatMode": @(repeated ? 1 : 0) };
+                }
+            }
+            if (bridge.options) [result addEntriesFromDictionary:bridge.options];
             return result;
         } @catch (NSException *exception) { return @{ @"status": @"error", @"message": @"Spotify no respondió." }; }
     }
@@ -101,14 +112,28 @@ NSDictionary *OruviSpotifyCommand(NSString *command, double position, BOOL check
             else if ([command isEqualToString:@"next"]) [bridge.app nextTrack];
             else if ([command isEqualToString:@"previous"]) [bridge.app previousTrack];
             else if ([command isEqualToString:@"seek"] && isfinite(position)) bridge.app.playerPosition = MAX(0, position);
-            else if ([command isEqualToString:@"shuffle"]) { BOOL current = bridge.app.shuffling; if (!bridge.error) bridge.app.shuffling = !current; }
-            else if ([command isEqualToString:@"repeat"]) { BOOL current = bridge.app.repeating; if (!bridge.error) bridge.app.repeating = !current; }
+            else if ([command isEqualToString:@"shuffle"]) {
+                BOOL current = bridge.app.shuffling;
+                if (!bridge.error) bridge.app.shuffling = !current;
+                bridge.optionsReadAt = -INFINITY;
+            }
+            else if ([command isEqualToString:@"repeat"]) {
+                BOOL current = bridge.app.repeating;
+                if (!bridge.error) bridge.app.repeating = !current;
+                bridge.optionsReadAt = -INFINITY;
+            }
             else return @{ @"status": @"error", @"message": @"Control no compatible." };
             return bridge.error ? SpotifyFailure(bridge) : @{ @"status": @"ok" };
         } @catch (NSException *exception) { return @{ @"status": @"error", @"message": @"Spotify no pudo ejecutar el control." }; }
     }
 }
-void OruviResetSpotifyBridge(void) { if ([NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.spotify.client"].count) Spotify().error = nil; }
+void OruviResetSpotifyBridge(void) {
+    if (![NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.spotify.client"].count) return;
+    OruviSpotifyState *bridge = Spotify();
+    bridge.error = nil;
+    bridge.options = nil;
+    bridge.optionsReadAt = -INFINITY;
+}
 BOOL OruviValidateSpotifyBindings(void) {
     // A missing app is an expected state, not evidence that live controls were tested.
     if (![NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.spotify.client"]) return NO;
