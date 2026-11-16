@@ -71,15 +71,41 @@ struct SystemMediaSnapshot: Equatable, Sendable {
         !value.isEmpty && value.utf8.count <= 255 && value.contains(".") &&
         value.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 46 || $0 == 95 }
     }
+    func position(at uptime: Double, elapsed: Double, sampledAt: Double) -> Double {
+        let advanced = elapsed + (playing ? max(0, uptime - sampledAt) * rate : 0)
+        return duration > 0 ? min(duration, advanced) : advanced
+    }
     func dictionary(at uptime: Double) -> [String: Any] {
-        let delta = playing ? max(0, uptime - sampledAt) * rate : 0
-        let position = duration > 0 ? min(duration, elapsed + delta) : elapsed + delta
+        let position = position(at: uptime, elapsed: elapsed, sampledAt: sampledAt)
         var value: [String: Any] = ["status": "ok", "source": "oruvi.system", "id": id, "title": title,
                 "artist": artist, "album": album, "duration": duration,
                 "position": position, "sampleUptime": uptime, "playing": playing, "playbackRate": rate,
                 "systemBundleID": bundleID, "systemProhibitsSkip": prohibitsSkip]
         if let artwork { value["systemArtwork"] = artwork }
         return value
+    }
+}
+
+struct SystemMediaUpdates {
+    private(set) var latest: SystemMediaSnapshot?
+    private var announcedPosition: (elapsed: Double, sampledAt: Double)?
+
+    /// Keep the latest sample for transport while only waking playback for meaningful changes.
+    mutating func update(_ value: SystemMediaSnapshot?) -> Bool {
+        defer { latest = value }
+        guard let value else {
+            announcedPosition = nil
+            return latest != nil
+        }
+        if let previous = latest, let position = announcedPosition,
+           previous.id == value.id, previous.playing == value.playing, previous.rate == value.rate,
+           previous.duration == value.duration, previous.prohibitsSkip == value.prohibitsSkip,
+           previous.artwork == value.artwork {
+            let predicted = value.position(at: value.sampledAt, elapsed: position.elapsed, sampledAt: position.sampledAt)
+            if abs(value.elapsed - predicted) < 0.25 { return false }
+        }
+        announcedPosition = (value.elapsed, value.sampledAt)
+        return true
     }
 }
 

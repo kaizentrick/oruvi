@@ -20,6 +20,26 @@ import Foundation
         check(fast["position"] as? Double == 16 && fast["playbackRate"] as? Double == 1.5, "System rate reaches the lyric clock")
         check(sample.dictionary(at: 1000)["position"] as? Double == 120, "Finite duration clamp")
         check(sample.id == SystemMediaSnapshot(payload: base, uptime: 999, epoch: 1002)!.id, "Identity independent of time")
+        func tick(position: Double, uptime: Double, overrides: [String: Any] = [:]) -> SystemMediaSnapshot {
+            var payload = base
+            payload["timestampEpochMicros"] = nil
+            payload["elapsedTimeMicros"] = position * 1_000_000
+            payload.merge(overrides) { _, replacement in replacement }
+            return SystemMediaSnapshot(payload: payload, uptime: uptime, epoch: 1002)!
+        }
+        var updates = SystemMediaUpdates()
+        check(updates.update(tick(position: 10, uptime: 100)), "Initial Now Playing session is announced")
+        let ordinaryTicks = (1...100).filter { frame in
+            let elapsed = Double(frame) / 10
+            return updates.update(tick(position: 10 + elapsed, uptime: 100 + elapsed))
+        }
+        check(ordinaryTicks.isEmpty && updates.latest?.sampledAt == 110, "Routine samples stay fresh without waking the player")
+        check(!updates.update(tick(position: 20.12, uptime: 110)), "A small correction does not trigger an extra read")
+        check(updates.update(tick(position: 20.28, uptime: 110)), "Accumulated drift is detected against the announced position")
+        check(updates.update(tick(position: 8, uptime: 111)), "A backward seek is announced immediately")
+        check(updates.update(tick(position: 8, uptime: 111, overrides: ["playing": false])), "Pausing is announced at the same position")
+        check(updates.update(tick(position: 8, uptime: 111, overrides: ["playing": false, "artworkData": "YQ=="])), "A new cover is announced")
+        check(updates.update(nil) && !updates.update(nil), "Disappearance is announced once")
         var changed = base; changed["title"] = "Otro vídeo"
         check(sample.id != SystemMediaSnapshot(payload: changed, uptime: 20, epoch: 1002)!.id, "Changed content invalidates identity")
         changed = base; changed["parentApplicationBundleIdentifier"] = "com.google.Chrome"
@@ -70,18 +90,28 @@ import Foundation
             }
             secondAttempt.signal()
             return child(#"""
-            printf '%s\n' 'malformed frame' '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.example.Player","title":"Recovered","playing":true}}'
+            printf '%s\n' 'malformed frame' \
+            '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.example.Player","title":"Starting","playing":true}}' \
+            '{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.example.Player","title":"Recovered","playing":true}}'
             exec /bin/sleep 10
             """#)
         }
         defer { bridge.shutdown() }
+        let notification = DispatchSemaphore(value: 0)
+        let token = NotificationCenter.default.addObserver(forName: .oruviSystemMediaChanged, object: nil, queue: nil) { _ in
+            notification.signal()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
         bridge.setEnabled(true)
         check(firstAttempt.wait(timeout: .now() + 3) == .success, "The first stream helper starts")
         check(secondAttempt.wait(timeout: .now() + 0.3) == .timedOut, "A failed helper is not restarted in a tight loop")
         check(secondAttempt.wait(timeout: .now() + 5) == .success, "An unexpected helper exit restarts the stream")
         let until = ContinuousClock.now + .seconds(3)
-        while bridge.current == nil && ContinuousClock.now < until { Thread.sleep(forTimeInterval: 0.01) }
+        while bridge.current?.title != "Recovered" && ContinuousClock.now < until { Thread.sleep(forTimeInterval: 0.01) }
         check(bridge.current?.title == "Recovered", "A valid event survives a preceding malformed frame")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        check(notification.wait(timeout: .now()) == .success && notification.wait(timeout: .now()) == .timedOut,
+              "A burst of meaningful events queues only one main-thread notification")
         bridge.shutdown()
         check(bridge.current == nil, "Shutdown clears the cached system session")
 

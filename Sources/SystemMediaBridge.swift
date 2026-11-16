@@ -16,7 +16,8 @@ final class SystemMediaBridge: @unchecked Sendable {
     static let shared = SystemMediaBridge()
     private let queue = DispatchQueue(label: "com.kaizentrick.Oruvi.systemMedia", qos: .utility)
     private let lock = NSLock()
-    private var cached: SystemMediaSnapshot?
+    private var updates = SystemMediaUpdates()
+    private var notificationPending = false
     private var enabled = false
     private var shuttingDown = false
     private var process: Process?
@@ -34,12 +35,21 @@ final class SystemMediaBridge: @unchecked Sendable {
     }
 
     var current: SystemMediaSnapshot? {
-        lock.lock(); defer { lock.unlock() }; return cached
+        lock.lock(); defer { lock.unlock() }; return updates.latest
     }
     private func publish(_ value: SystemMediaSnapshot?) {
-        lock.lock(); let changed = cached != value; cached = value; lock.unlock()
-        if changed {
-            DispatchQueue.main.async { NotificationCenter.default.post(name: .oruviSystemMediaChanged, object: nil) }
+        lock.lock()
+        let notify = updates.update(value) && !notificationPending
+        if notify { notificationPending = true }
+        lock.unlock()
+        if notify {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.lock.lock()
+                self.notificationPending = false
+                self.lock.unlock()
+                NotificationCenter.default.post(name: .oruviSystemMediaChanged, object: self)
+            }
         }
     }
     /// A manual reconnect restarts an existing helper. A newly enabled helper starts once.
