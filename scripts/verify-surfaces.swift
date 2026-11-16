@@ -1,11 +1,12 @@
 import AppKit
+import os
 import Sparkle
 
 /// Uses the real model, but never starts it, opens a window, prompts for access,
-/// launches a player or enables network artwork/lyrics. Preferences are isolated.
+/// launches a player or contacts artwork/lyrics services. Preferences are isolated.
 @main
 struct VerifySurfaces {
-    @MainActor static func main() {
+    @MainActor static func main() async {
         precondition(LumaEnvironment.isTesting)
         let defaults = LumaEnvironment.preferences
         defaults.set("music", forKey: "playerPreference")
@@ -155,6 +156,72 @@ struct VerifySurfaces {
         model.control("next")
         model.control("seek", position: 100)
         expect(model.anchor == protected, "model rejects restricted controls even if a gesture already started")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ArtworkFixture.self]
+        let session = URLSession(configuration: configuration)
+        let covers = StandbyModel(artworkRepository: ArtworkRepository(client: BoundedHTTPClient(session: session)))
+        defer { covers.shutdown(); session.invalidateAndCancel() }
+        covers.connected = true
+        covers.setNativeWidgetPresence(true)
+        func applySpotify(_ path: String, id: String = "spotify:track:qa", embedded: Data? = nil) {
+            var snapshot: [String: Any] = ["status": "ok", "source": PlayerSource.spotify.rawValue,
+                                           "id": id, "title": "QA song", "artist": "QA", "duration": 120,
+                                           "artworkURL": path.isEmpty ? "" : "https://i.scdn.co/" + path]
+            if let embedded { snapshot["systemArtwork"] = embedded }
+            covers.apply(snapshot)
+        }
+        applySpotify("original")
+        await until { covers.artworkStatus == "Portada de Spotify" }
+        guard let first = covers.artwork else { preconditionFailure("fixture cover must decode") }
+        applySpotify("pending")
+        await until { ArtworkFixture.usedPendingRequest }
+        expect(covers.artwork === first, "retain the visible cover while Spotify retrieves its replacement")
+        applySpotify("")
+        covers.automaticArtwork.toggle()
+        expect(covers.artworkStatus == "Recuperando portada…", "omitted URLs and Apple-catalog settings do not interrupt Spotify")
+        let corruptArtwork = Data([0, 1, 2, 3])
+        applySpotify("replacement", embedded: corruptArtwork)
+        await until { covers.artworkStatus == "Portada de Spotify" }
+        expect(covers.artwork != nil && covers.artwork !== first, "a later Spotify URL replaces the artwork even when embedded data is corrupt")
+        applySpotify("replacement")
+        expect(covers.artworkStatus == "Portada de Spotify", "unchanged Spotify URLs keep the decoded cover")
+        applySpotify("replacement", embedded: ArtworkFixture.png)
+        await until { covers.artworkStatus == "Portada del reproductor" }
+        applySpotify("different")
+        expect(covers.artworkStatus == "Portada del reproductor", "prefer embedded artwork while it is valid for the same song")
+        applySpotify("", id: "spotify:track:next")
+        expect(covers.artwork == nil, "a different song never inherits Spotify's previous cover or URL")
+        applySpotify("late", id: "spotify:track:next")
+        await until { covers.artworkStatus == "Portada de Spotify" }
+        expect(covers.artwork != nil, "a URL arriving after the song did should be used immediately")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
+
+    @MainActor private static func until(_ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !condition() {
+            precondition(ContinuousClock.now < deadline, "timed out waiting for the artwork state")
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+}
+
+private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
+    static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQ6LkDAAJYAYnV4HfcAAAAAElFTkSuQmCC")!
+    private static let pending = OSAllocatedUnfairLock(initialState: false)
+    static var usedPendingRequest: Bool { pending.withLock { $0 } }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let url = request.url!
+        if url.path == "/pending" {
+            Self.pending.withLock { $0 = true }
+            return
+        }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.png)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

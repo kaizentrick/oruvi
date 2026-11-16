@@ -97,7 +97,7 @@ final class StandbyModel {
     private(set) var activeSystemBundleID = ""
     @ObservationIgnored private var systemArtworkData: Data?
     @ObservationIgnored private var appliedSystemArtwork: Data?
-    @ObservationIgnored private var retainedArtwork: (track: TrackIdentity, image: NSImage, palette: [RGB], link: URL?, systemData: Data?)?
+    @ObservationIgnored private var retainedArtwork: (track: TrackIdentity, image: NSImage, palette: [RGB], link: URL?, systemData: Data?, spotifyURL: String?)?
     var notchVisible = false
     var notchExpanded = false {
         didSet {
@@ -105,7 +105,7 @@ final class StandbyModel {
             updateLyricsVisibility()
         }
     }
-    var playerArtworkURL = ""
+    @ObservationIgnored private var playerArtworkURL = ""
     var meshTheme: MeshTheme = .aurora {
         didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
     }
@@ -185,7 +185,12 @@ final class StandbyModel {
         didSet { prefs.set(automaticLyrics, forKey: "automaticLyrics"); fetchLyrics() }
     }
     var automaticArtwork = true {
-        didSet { prefs.set(automaticArtwork, forKey: "automaticArtwork"); artworkTask?.cancel(); artworkTask = nil; if artwork == nil { fetchArtwork() } }
+        didSet {
+            prefs.set(automaticArtwork, forKey: "automaticArtwork")
+            guard oldValue != automaticArtwork, activePlayer == .music else { return }
+            artworkTask?.cancel(); artworkTask = nil
+            if artwork == nil { fetchArtwork() }
+        }
     }
     var meshFollowsMusic = true {
         didSet { prefs.set(meshFollowsMusic, forKey: "meshFollowsMusic") }
@@ -233,7 +238,7 @@ final class StandbyModel {
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private let artworkQueue = DispatchQueue(label: "com.kaizentrick.luma.artwork", qos: .utility)
     @ObservationIgnored private var recovery = PlaybackRecovery()
-    @ObservationIgnored private let artworkRepository = ArtworkRepository()
+    @ObservationIgnored private let artworkRepository: ArtworkRepository
     @ObservationIgnored private var pollTimer: Timer?
     @ObservationIgnored private var scheduledPollInterval = 0.0
     @ObservationIgnored private var cueTimer: Timer?
@@ -270,7 +275,8 @@ final class StandbyModel {
     var preferredScheme: ColorScheme? { appearance == "Sistema" ? nil : (appearance == "Claro" ? .light : .dark) }
     var effectiveAwake: Bool { keepAwake && isVisible && !screenSleeping && !onBattery && !lowPower && !hot }
 
-    private init() {
+    init(artworkRepository: ArtworkRepository = ArtworkRepository()) {
+        self.artworkRepository = artworkRepository
         let defaults = LumaEnvironment.preferences
         defaults.register(defaults: ["twentyFourHour": true, "energyMode": "Automático", "appearance": "Oscuro", "automaticArtwork": true,
                                      "meshFollowsMusic": true, "idleEnabled": true, "idleMinutes": 5.0, "showPhrases": true, "phraseInterval": 60.0, "avoidMedia": true, "protectBrowsers": true, "notchEnabled": true])
@@ -546,11 +552,13 @@ final class StandbyModel {
         let nextSystemArtwork = snapshot["systemArtwork"] as? Data
         let nextArtworkURL = snapshot["artworkURL"] as? String ?? ""
         let newSystemArtwork = nextSystemArtwork.map { $0 != systemArtworkData } ?? false
-        let newArtworkURL = !nextArtworkURL.isEmpty && playerArtworkURL != nextArtworkURL
-        if (newSystemArtwork && nextSystemArtwork != appliedSystemArtwork) || (artwork == nil && newArtworkURL) {
+        if changed { playerArtworkURL = "" }
+        let newArtworkURL = source == .spotify && playerArtworkURL != nextArtworkURL
+            && ArtworkURLPolicy.spotify(nextArtworkURL) != nil
+        if newArtworkURL { playerArtworkURL = nextArtworkURL }
+        if (newSystemArtwork && nextSystemArtwork != appliedSystemArtwork) || (newArtworkURL && needsSpotifyCover) {
             artworkTask?.cancel(); artworkTask = nil; artworkRetryAt = 0
         }
-        playerArtworkURL = nextArtworkURL
         if changed || nextSystemArtwork != nil { systemArtworkData = nextSystemArtwork }
         if let shuffle = snapshot["shuffle"] as? NSNumber, let repeated = snapshot["repeatMode"] as? NSNumber {
             shuffleEnabled = shuffle.boolValue; repeatMode = min(2, max(0, repeated.intValue)); playbackOptionsAvailable = true
@@ -567,7 +575,7 @@ final class StandbyModel {
         let now = ProcessInfo.processInfo.systemUptime
         if lines.isEmpty && lyricsTask == nil && now >= lyricsRetryAt && lyricsLookupVisible { fetchLyrics() }
         let needsSystemCover = systemArtworkData.map { $0 != appliedSystemArtwork } ?? false
-        if artworkTask == nil && now >= artworkRetryAt && (artwork == nil || needsSystemCover) { fetchArtwork() }
+        if artworkTask == nil && now >= artworkRetryAt && (artwork == nil || needsSystemCover || needsSpotifyCover) { fetchArtwork() }
         updateCue()
     }
     private var playbackPollInterval: TimeInterval {
@@ -709,14 +717,21 @@ final class StandbyModel {
         if lines.isEmpty && lyricsTask == nil && ProcessInfo.processInfo.systemUptime >= lyricsRetryAt { fetchLyrics() }
         updateCue()
     }
+    private var needsSpotifyCover: Bool {
+        guard activePlayer == .spotify, !playerArtworkURL.isEmpty else { return false }
+        guard let artwork, let retainedArtwork, artwork === retainedArtwork.image else { return true }
+        return retainedArtwork.systemData == nil && retainedArtwork.spotifyURL != playerArtworkURL
+    }
+
     func fetchArtwork() {
         artworkTask?.cancel(); artworkTask = nil
         guard !demoMode, hasTrack, connected, needsPlayback, !isResynchronizing else { return }
         let identity = track, source = activePlayer, artworkURL = playerArtworkURL, allowNetwork = automaticArtwork
-        let embedded = systemArtworkData
+        let embedded = systemArtworkData == appliedSystemArtwork ? nil : systemArtworkData
         artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
         artworkStatus = "Recuperando portada…"
         artworkTask = Task { [weak self, artworkRepository] in
+            guard !Task.isCancelled else { return }
             if let embedded {
                 let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(embedded) }.value
                 guard !Task.isCancelled, let self, self.track == identity, self.needsPlayback else { return }
@@ -725,9 +740,9 @@ final class StandbyModel {
                     self.setArtwork(decoded, systemData: embedded)
                     self.artworkStatus = "Portada del reproductor"; self.artworkTask = nil; return
                 }
-                if self.artwork != nil { self.artworkTask = nil; return }
+                if self.artwork != nil && !self.needsSpotifyCover { self.artworkTask = nil; return }
             }
-            if source == .system {
+            if source == .system || (source == .spotify && artworkURL.isEmpty) {
                 self?.artworkStatus = "Portada no disponible"; self?.artworkTask = nil; return
             }
             for attempt in 0..<3 {
@@ -739,7 +754,10 @@ final class StandbyModel {
                         if let remote = try await artworkRepository.loadSpotify(artworkURL) {
                             let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(remote.data) }.value
                             guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
-                            if let decoded { self.setArtwork(decoded); self.artworkStatus = "Portada de Spotify"; self.artworkTask = nil; return }
+                            if let decoded {
+                                self.setArtwork(decoded, spotifyURL: artworkURL)
+                                self.artworkStatus = "Portada de Spotify"; self.artworkTask = nil; return
+                            }
                         }
                     } catch { if Task.isCancelled { return } }
                     continue
@@ -772,10 +790,10 @@ final class StandbyModel {
             self.artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60; self.artworkTask = nil
         }
     }
-    private func setArtwork(_ decoded: (NSImage, [RGB]), link: URL? = nil, systemData: Data? = nil) {
+    private func setArtwork(_ decoded: (NSImage, [RGB]), link: URL? = nil, systemData: Data? = nil, spotifyURL: String? = nil) {
         artwork = decoded.0; artworkLink = link
         setPalette(decoded.1)
-        retainedArtwork = (track, decoded.0, decoded.1, link, systemData)
+        retainedArtwork = (track, decoded.0, decoded.1, link, systemData, spotifyURL)
     }
     private func setPalette(_ value: [RGB]) {
         palette = value // Interpolate only the mesh, not every view in the application.
