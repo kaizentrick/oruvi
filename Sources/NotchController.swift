@@ -424,10 +424,14 @@ final class NotchDropHostingView: NSHostingView<NotchView> {
         return cachedURLs
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard !dropURLs(sender).isEmpty else { return [] }; controller?.beginFileDrag(); return .copy
+        draggingUpdated(sender)
     }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard !dropURLs(sender).isEmpty else { return [] }; controller?.beginFileDrag(); return .copy
+        let count = dropURLs(sender).count
+        guard count > 0 else { return [] }
+        sender.numberOfValidItemsForDrop = count
+        controller?.beginFileDrag()
+        return .copy
     }
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !dropURLs(sender).isEmpty }
     override func draggingExited(_ sender: NSDraggingInfo?) { controller?.fileDragExited() }
