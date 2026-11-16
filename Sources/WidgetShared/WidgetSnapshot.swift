@@ -121,7 +121,8 @@ struct WidgetSnapshotStore: Sendable {
         if case .value(let value) = load(at: date) { return value }; return nil
     }
     func write(_ snapshot: WidgetSnapshot) throws {
-        guard snapshot.isValid(at: Date()), let directory, let file else { throw StoreError.unavailable }
+        guard snapshot.isValid(at: Date()) else { throw StoreError.invalidSnapshot }
+        guard let directory, let file else { throw StoreError.unavailable }
         let data = try JSONEncoder().encode(snapshot)
         guard data.count <= WidgetSnapshot.maximumFileBytes else { throw StoreError.oversized }
         let manager = FileManager.default
@@ -135,7 +136,7 @@ struct WidgetSnapshotStore: Sendable {
         var target = directory; try? target.setResourceValues(excluded)
     }
     func clear() { if let file { try? FileManager.default.removeItem(at: file) } }
-    enum StoreError: Error { case unavailable, oversized }
+    enum StoreError: Error { case unavailable, invalidSnapshot, oversized }
 }
 
 struct WidgetPublicationPolicy {

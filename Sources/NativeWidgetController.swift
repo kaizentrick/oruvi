@@ -5,27 +5,65 @@ import Observation
 import ImageIO
 import UniformTypeIdentifiers
 
+private enum WidgetPublicationError: Error {
+    case containerUnavailable, accessDenied, invalidSnapshot, storageFailure
+
+    var message: String {
+        switch self {
+        case .containerUnavailable:
+            return "macOS no puso a disposición los datos compartidos de Oruvi. Si solicita acceso, autorízalo y pulsa Conectar y actualizar widgets."
+        case .accessDenied:
+            return "macOS denegó el acceso a los datos compartidos. Si solicita acceso, autorízalo y pulsa Conectar y actualizar widgets."
+        case .invalidSnapshot:
+            return "Oruvi no pudo preparar un estado válido para el widget. Cambia de pista o pulsa Conectar y actualizar widgets."
+        case .storageFailure:
+            return "Oruvi no pudo guardar o verificar el estado del widget. Pulsa Conectar y actualizar widgets para reintentarlo."
+        }
+    }
+}
+
 /// Lookup stays off the main actor and outside the lock because macOS may ask
 /// for access. Closing is serialized with writes, even before their callbacks.
 private final class WidgetPublicationStorage: @unchecked Sendable {
     private let lock = NSLock()
     private var store: WidgetSnapshotStore?
+    private var needsResolution = true
     private var closed = false
     private let resolve: @Sendable () -> WidgetSnapshotStore
 
     init(resolve: @escaping @Sendable () -> WidgetSnapshotStore) { self.resolve = resolve }
 
-    func writeVerified(_ snapshot: WidgetSnapshot) -> Bool {
-        let (closed, cached) = lock.withLock { (self.closed, store) }
-        guard !closed else { return false }
-        let target = cached.flatMap { $0.directory == nil ? nil : $0 } ?? resolve()
+    func writeVerified(_ snapshot: WidgetSnapshot) -> WidgetPublicationError? {
+        let (closed, cached) = lock.withLock { (self.closed, needsResolution ? nil : store) }
+        guard !closed else { return .storageFailure }
+        let target = cached ?? resolve()
         return lock.withLock {
-            guard !self.closed else { return false }
+            guard !self.closed else { return .storageFailure }
+            guard target.directory != nil else {
+                needsResolution = true
+                return .containerUnavailable
+            }
+            if let store, store.directory != target.directory { store.clear() }
             store = target
             do {
                 try target.write(snapshot)
-                return target.read() == snapshot
-            } catch { return false }
+                guard target.read() == snapshot else {
+                    needsResolution = true
+                    return .storageFailure
+                }
+                needsResolution = false
+                return nil
+            } catch WidgetSnapshotStore.StoreError.invalidSnapshot, WidgetSnapshotStore.StoreError.oversized {
+                return .invalidSnapshot
+            } catch {
+                needsResolution = true
+                let failure = error as NSError
+                if (failure.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(failure.code)) ||
+                    (failure.domain == NSPOSIXErrorDomain && [Int(EACCES), Int(EPERM)].contains(failure.code)) {
+                    return .accessDenied
+                }
+                return .storageFailure
+            }
         }
     }
 
@@ -237,7 +275,7 @@ final class NativeWidgetController {
             }
         }
         guard !stopped, !Task.isCancelled, work == serial, policy.needsWrite(value, force: force) else { return }
-        let verified = await withCheckedContinuation { continuation in
+        let failure = await withCheckedContinuation { continuation in
             io.async { [storage, value] in
                 // Container lookup may ask for access. Do not block the UI, and
                 // never keep a failed nil-container result forever after consent.
@@ -245,9 +283,9 @@ final class NativeWidgetController {
             }
         }
         guard !stopped, work == serial else { return }
-        guard verified else {
+        if let failure {
             retryWriteAt = Date().addingTimeInterval(60)
-            storageError = "No se pudo leer/escribir el contenedor compartido. Autoriza el acceso a datos de Oruvi si macOS lo solicita y pulsa Conectar y actualizar. La firma ad-hoc no autoriza App Groups de forma permanente."
+            storageError = failure.message
             return
         }
         retryWriteAt = .distantPast; storageError = ""; lastPublishedAt = value.generatedAt
@@ -321,6 +359,10 @@ final class NativeWidgetController {
         previous.generatedAt = Date().addingTimeInterval(-601)
         policy.record(previous, reload: false)
         requestPublication()
+    }
+    func republishForVerification() {
+        precondition(LumaEnvironment.isTesting)
+        requestPublication(force: true)
     }
     #endif
     nonisolated static func jpegThumbnail(_ image: CGImage) -> Data? {

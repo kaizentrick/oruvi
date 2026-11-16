@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import os
 
 /// Tests the actual async observer -> thumbnail -> atomic write -> reload path.
 /// Does not start the app delegate, playback router, a real player or networking.
@@ -133,6 +134,36 @@ import Observation
         try await settle()
         check(interrupted.didStop, "Shutdown overlapped first lookup of the cache container")
         check(store.read() == nil, "Shutdown removes a write even before its result reaches the main actor")
+
+        let blockedPath = root.appendingPathComponent("not-a-directory")
+        try Data([0]).write(to: blockedPath)
+        let resolutions = OSAllocatedUnfairLock(initialState: 0)
+        let recovery = NativeWidgetController(model: model, resolveStore: {
+            let attempt = resolutions.withLock { count in count += 1; return count }
+            switch attempt {
+            case 1: return WidgetSnapshotStore(directory: nil)
+            case 2: return WidgetSnapshotStore(directory: blockedPath)
+            default: return store
+            }
+        })
+        defer { recovery.stop() }
+        recovery.startForVerification {}
+        try await settle()
+        check(recovery.storageError.contains("no puso a disposición") && recovery.lastPublishedAt == nil,
+              "A missing container has its own diagnostic")
+        recovery.republishForVerification()
+        try await settle()
+        check(recovery.storageError.contains("guardar o verificar") && recovery.lastPublishedAt == nil,
+              "A failed write is distinct from a missing container or denied access")
+        recovery.republishForVerification()
+        try await settle()
+        check(resolutions.withLock { $0 } == 3 && recovery.storageError.isEmpty && recovery.lastPublishedAt != nil,
+              "The next attempt resolves the container again after a write failure")
+        check(store.read()?.trackID == "first-write", "Recovery writes the current media to the usable store")
+        model.track = TrackIdentity(id: String(repeating: "a", count: 4097), title: "Invalid", artist: "", album: "", duration: 120)
+        try await settle()
+        check(recovery.storageError.contains("estado válido") && resolutions.withLock { $0 } == 3,
+              "Invalid data is not diagnosed as denied access or a stale container")
         print("PASS: \(count) actual async widget pipeline checks, including bootstrap, enumeration races, cover, pause, sleep and shutdown.")
     }
 }
