@@ -10,15 +10,19 @@ struct IdleActivationPolicy {
     var lastDismissed: Double
     var lastWake: Double
     func shouldActivate(idle: Double) -> Bool {
-        guard enabled, !visible, !blocked, idle.isFinite, idle >= 0 else { return false }
-        let threshold = max(15, delay.isFinite ? delay : 300)
-        return idle >= threshold && now - lastDismissed >= threshold && now - lastWake >= threshold
+        guard enabled, !visible, !blocked, let remaining = remainingUntilEligible(idle: idle) else { return false }
+        return remaining <= 0
     }
     func nextCheck(idle: Double) -> Double {
-        guard idle.isFinite else { return 30 }
+        // Input can only postpone eligibility. Checking sooner cannot activate Standby.
+        max(1, remainingUntilEligible(idle: idle) ?? 30)
+    }
+    private func remainingUntilEligible(idle: Double) -> Double? {
+        guard idle.isFinite, idle >= 0, now.isFinite, lastDismissed.isFinite, lastWake.isFinite else { return nil }
         let threshold = max(15, delay.isFinite ? delay : 300)
-        let remaining = max(threshold - max(0, idle), max(threshold - (now - lastDismissed), threshold - (now - lastWake)))
-        return min(30, max(1, remaining.isFinite ? remaining : 30))
+        let freshestActivity = min(idle, now - max(lastDismissed, lastWake))
+        let remaining = threshold - freshestActivity
+        return remaining.isFinite ? remaining : nil
     }
 }
 

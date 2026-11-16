@@ -31,6 +31,21 @@ struct ReleaseVerification {
         check(activationPause.remainingSeconds(at: pauseStart + .seconds(3600)) == nil
               && activationPause.remainingSeconds(at: pauseStart + .seconds(4500)) == nil,
               "an expired pause stays expired after a long sleep")
+        var idle = IdleActivationPolicy(enabled: true, delay: 300, visible: false, blocked: false,
+                                        now: 1000, lastDismissed: 0, lastWake: 0)
+        check(!idle.shouldActivate(idle: 0) && idle.nextCheck(idle: 0) == 300,
+              "Standby waits for the earliest possible activation without polling every 30 seconds")
+        idle.now += idle.nextCheck(idle: 0)
+        check(!idle.shouldActivate(idle: 1) && idle.nextCheck(idle: 1) == 299,
+              "input during the wait postpones activation at the next check")
+        idle.now += idle.nextCheck(idle: 1)
+        check(idle.shouldActivate(idle: 300), "activation is eligible at the exact new threshold")
+        idle.lastWake = idle.now - 12
+        idle.lastDismissed = idle.now - 4
+        check(!idle.shouldActivate(idle: 300) && idle.nextCheck(idle: 300) == 296,
+              "the most recent wake or dismissal still requires a full idle interval")
+        check(!idle.shouldActivate(idle: .nan) && idle.nextCheck(idle: .nan) == 30,
+              "a missing system reading gets a short retry")
         check(MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowser", conservative: true)?.contains("Navegador") == true,
               "a foreground Aside session triggers conservative protection")
         check(MediaProtection.foregroundProtectionReason(bundleID: "at.studio.AsideBrowser", conservative: false) == nil,
