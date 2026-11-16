@@ -30,6 +30,7 @@ final class AmbientRuntime {
     private var lastWake = ProcessInfo.processInfo.systemUptime
     private var stopped = false
     private var presentationSerial = 0
+    private var presentationDisplayID: String?
     private var savedPresentation: NSApplication.PresentationOptions?
     private var mediaCheck = IdleMediaCheckState.idle
     private var wasMediaProtected = false
@@ -53,10 +54,7 @@ final class AmbientRuntime {
         model.automaticActivationStatus = automatic ? "Presentación automática" : "Presentación manual"
         model.automaticSession = automatic
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? window.screen ?? NSScreen.main
-        if let screen {
-            window.setFrame(screen.frame, display: true)
-            window.contentView?.setFrameSize(screen.frame.size)
-        }
+        if let screen { fitPresentation(to: screen) }
         NSApp.setActivationPolicy(.accessory)
         applyAppearance()
         if savedPresentation == nil { savedPresentation = NSApp.presentationOptions }
@@ -75,6 +73,21 @@ final class AmbientRuntime {
             self.model.refreshVisibility()
         }
     }
+    private func fitPresentation(to screen: NSScreen) {
+        presentationDisplayID = NotchDisplays.identifier(screen)
+        if window.frame != screen.frame { window.setFrame(screen.frame, display: true) }
+        if let content = window.contentView, content.frame.size != screen.frame.size {
+            content.setFrameSize(screen.frame.size)
+        }
+    }
+    private func refreshPresentationDisplay() {
+        guard !stopped, window.isVisible, !isBlocked else { return }
+        let retained = presentationDisplayID.flatMap { id in
+            NSScreen.screens.first { NotchDisplays.identifier($0) == id }
+        }
+        if let screen = retained ?? window.screen ?? NSScreen.main { fitPresentation(to: screen) }
+        model.refreshVisibility()
+    }
     private func applySystemPresentation() {
         guard window.isVisible, !isBlocked else { return }
         NSApp.presentationOptions = [.hideDock, .hideMenuBar]
@@ -84,6 +97,7 @@ final class AmbientRuntime {
     }
     func dismiss() {
         presentationSerial += 1
+        presentationDisplayID = nil
         model.settingsOpen = false
         model.notch?.resumeDesktop()
         window.orderOut(nil)
@@ -224,7 +238,7 @@ final class AmbientRuntime {
             self.rescheduleIdle()
         }
         observe(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { [weak self] in
-            guard let self else { return }; if self.window.isVisible { self.activate(automatic: self.model.automaticSession) }
+            self?.refreshPresentationDisplay()
         }
     }
     func didWake() { lastWake = ProcessInfo.processInfo.systemUptime; rescheduleIdle() }
@@ -259,6 +273,7 @@ final class AmbientRuntime {
         if let localEvents { NSEvent.removeMonitor(localEvents); self.localEvents = nil }
         for (center, token) in tokens { center.removeObserver(token) }; tokens.removeAll()
         presentationSerial += 1
+        presentationDisplayID = nil
         if let savedPresentation { NSApp.presentationOptions = savedPresentation; self.savedPresentation = nil }
         window.level = .normal
     }
