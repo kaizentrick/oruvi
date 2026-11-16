@@ -65,11 +65,15 @@ enum NotchCompactPolicy {
 
 enum NotchFilePolicy {
     static let limit = 20
-    static func candidates(_ urls: some Sequence<URL>, existing: [URL]) -> [URL] {
+    static let inspectionLimit = 256
+    static func candidates(_ urls: some Sequence<URL>, existing: [URL], forInspection: Bool = false) -> [URL] {
+        let capacity = limit - existing.count
+        guard capacity > 0 else { return [] }
+        let maximum = forInspection ? inspectionLimit : capacity
         var seen = Set(existing.map { $0.standardizedFileURL })
         var result: [URL] = []
         for url in urls {
-            guard result.count + existing.count < limit else { break }
+            guard result.count < maximum else { break }
             guard isLocal(url) else { continue }
             let normalized = url.standardizedFileURL
             guard seen.insert(normalized).inserted else { continue }

@@ -612,6 +612,26 @@ struct VerifySurfaces {
         expect(agenda.selectedDay == nil && agenda.monthOffset == 0 && agenda.events.isEmpty && !agenda.enabled,
                "disconnecting leaves no retained date filter or event data")
         agenda.stop()
+
+        let shelf = NotchShelf()
+        let shelfDirectory = support.appendingPathComponent("ShelfVerification", isDirectory: true)
+        try manager.createDirectory(at: shelfDirectory, withIntermediateDirectories: true)
+        let originals = try (0..<20).map { index in
+            let file = shelfDirectory.appendingPathComponent("original-\(index).txt")
+            try Data([UInt8(index)]).write(to: file)
+            return file
+        }
+        shelf.add(Array(originals.prefix(19)))
+        await until { !shelf.importing }
+        expect(shelf.items.count == 19, "the file shelf keeps the initial selection")
+        let missingFile = shelfDirectory.appendingPathComponent("no-longer-present.txt")
+        shelf.add([missingFile, originals[19]])
+        await until { !shelf.importing }
+        expect(shelf.isFull && shelf.items.last?.url == originals[19].standardizedFileURL && shelf.message.contains("no existen"),
+               "a missing first entry does not take the final shelf slot away from a valid later file")
+        shelf.clear()
+        expect(shelf.items.isEmpty && originals.allSatisfy { manager.fileExists(atPath: $0.path) },
+               "clearing the file shelf leaves every original in place")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 

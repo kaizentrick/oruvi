@@ -423,7 +423,7 @@ final class NotchDropHostingView: NSHostingView<NotchView> {
             cachedSequence = sender.draggingSequenceNumber; cachedChangeCount = pasteboard.changeCount; cachedShelfURLs = existing
             let objects = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? []
             let urls = objects.lazy.compactMap { ($0 as? NSURL).map { $0 as URL } }
-            cachedURLs = NotchFilePolicy.candidates(urls, existing: existing)
+            cachedURLs = NotchFilePolicy.candidates(urls, existing: existing, forInspection: true)
         }
         return cachedURLs
     }
@@ -433,8 +433,9 @@ final class NotchDropHostingView: NSHostingView<NotchView> {
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         let count = dropURLs(sender).count
         guard count > 0 else { return [] }
-        sender.numberOfValidItemsForDrop = count
-        controller?.beginFileDrag()
+        guard let controller else { return [] }
+        sender.numberOfValidItemsForDrop = min(count, NotchFilePolicy.limit - controller.shelf.items.count)
+        controller.beginFileDrag()
         return .copy
     }
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !dropURLs(sender).isEmpty }

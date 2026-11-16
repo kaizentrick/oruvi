@@ -58,6 +58,8 @@ struct VerifyNotch {
         let many = (0..<100).map { URL(fileURLWithPath: "/tmp/oruvi-test/\($0).txt") }
         expect(NotchFilePolicy.candidates(many, existing: []).count == 20, "bounded shelf")
         expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(19))).count == 1, "remaining capacity")
+        expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(19)), forInspection: true).count == 81,
+               "validating a batch can look past the first available slot")
         expect(NotchFilePolicy.candidates(many, existing: Array(many.prefix(20))).isEmpty, "full shelf")
         let duplicateFirst = Array(repeating: a, count: 40) + [b]
         expect(NotchFilePolicy.candidates(duplicateFirst.lazy, existing: [a]) == [b],

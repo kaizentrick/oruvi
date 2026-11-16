@@ -29,7 +29,7 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
     func add(_ urls: [URL]) {
         // Bound work before touching the filesystem. Validation never opens file contents.
         guard !isFull else { message = "Límite de 20 archivos. Retira alguno para añadir más."; return }
-        let candidates = NotchFilePolicy.candidates(urls, existing: items.map(\.url))
+        let candidates = NotchFilePolicy.candidates(urls, existing: items.map(\.url), forInspection: true)
         guard !candidates.isEmpty else {
             message = NotchFilePolicy.candidates(urls, existing: []).isEmpty
                 ? "Arrastra archivos locales desde Finder." : "Estos archivos ya están en la bandeja."
@@ -38,20 +38,27 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
         let serial = generation
         imports += 1; importing = true
         Task { [weak self] in
-            let available: [NotchShelfItem] = await Task.detached(priority: .utility) {
-                candidates.compactMap { url in
+            let (available, skipped) = await Task.detached(priority: .utility) {
+                var available: [NotchShelfItem] = []
+                var skipped = false
+                for url in candidates {
                     var directory: ObjCBool = false
-                    guard NotchFilePolicy.isSafeFile(url),
-                          FileManager.default.fileExists(atPath: url.path, isDirectory: &directory),
-                          FileManager.default.isReadableFile(atPath: url.path) else { return nil }
-                    return NotchShelfItem(url: url, isDirectory: directory.boolValue)
+                    if NotchFilePolicy.isSafeFile(url),
+                       FileManager.default.fileExists(atPath: url.path, isDirectory: &directory),
+                       FileManager.default.isReadableFile(atPath: url.path) {
+                        available.append(NotchShelfItem(url: url, isDirectory: directory.boolValue))
+                        if available.count == NotchFilePolicy.limit { break }
+                    } else {
+                        skipped = true
+                    }
                 }
+                return (available, skipped)
             }.value
             guard let self, self.generation == serial else { return }
             self.imports = max(0, self.imports - 1); self.importing = self.imports > 0
             let accepted = Set(NotchFilePolicy.candidates(available.map(\.url), existing: self.items.map(\.url)))
             self.items.append(contentsOf: available.filter { accepted.contains($0.url) })
-            if available.count < candidates.count {
+            if skipped {
                 self.message = "Algunos archivos ya no existen o no se pueden leer."
             } else if accepted.isEmpty {
                 self.message = self.items.count >= NotchFilePolicy.limit ? "Límite de 20 archivos. Retira alguno para añadir más." : "Estos archivos ya están en la bandeja."
