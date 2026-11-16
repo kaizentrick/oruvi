@@ -91,11 +91,11 @@ struct MusicPlayerView: View {
         HStack(spacing: 0) {
             playbackButton("shuffle", label: "Reproducción aleatoria", command: "shuffle", size: 19, selected: model.shuffleEnabled).disabled(!model.playbackOptionsAvailable)
             Spacer(minLength: 18)
-            playbackButton("backward.fill", label: "Anterior", command: "previous", size: compact ? 25 : 29)
+            playbackButton("backward.fill", label: "Anterior", command: "previous", size: compact ? 25 : 29).disabled(!model.canSkip)
             Spacer(minLength: 18)
             playbackButton(model.anchor.playing ? "pause.fill" : "play.fill", label: model.anchor.playing ? "Pausar" : "Reproducir", command: "toggle", size: compact ? 32 : 38)
             Spacer(minLength: 18)
-            playbackButton("forward.fill", label: "Siguiente", command: "next", size: compact ? 25 : 29)
+            playbackButton("forward.fill", label: "Siguiente", command: "next", size: compact ? 25 : 29).disabled(!model.canSkip)
             Spacer(minLength: 18)
             playbackButton(model.repeatMode == 2 ? "repeat.1" : "repeat", label: ["Repetición desactivada", "Repetir todas", "Repetir una"][model.repeatMode], command: "repeat", size: 19, selected: model.repeatMode > 0).disabled(!model.playbackOptionsAvailable)
         }.frame(height: compact ? 42 : 48)

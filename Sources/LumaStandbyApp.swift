@@ -255,7 +255,7 @@ struct LyricsStage: View {
                     .font(LyricTypography.font(model.lyricTypeface, baseSize: size, sizePercent: model.lyricSizePercent))
                     .lineLimit(2).multilineTextAlignment(.leading).opacity(prominence)
             }.buttonStyle(.plain).help("Ir a este momento de la canción")
-                .disabled(model.track.duration <= 0 || model.isResynchronizing)
+                .disabled(!model.canSeek)
         } else { Text(" ").font(.system(size: size)) }
     }
 }
@@ -279,9 +279,9 @@ private struct TransportBar: View {
     }
     private var buttons: some View {
         HStack(spacing: 22) {
-            control("backward.end.fill", name: "Anterior", command: "previous", size: 16)
+            control("backward.end.fill", name: "Anterior", command: "previous", size: 16).disabled(!model.canSkip)
             control(model.anchor.playing ? "pause.fill" : "play.fill", name: model.anchor.playing ? "Pausar" : "Reproducir", command: "toggle", size: 22)
-            control("forward.end.fill", name: "Siguiente", command: "next", size: 16)
+            control("forward.end.fill", name: "Siguiente", command: "next", size: 16).disabled(!model.canSkip)
         }
     }
     private func control(_ symbol: String, name: String, command: String, size: Double) -> some View {
@@ -295,57 +295,90 @@ struct TrackProgress: View {
     var prominent = false
     @Environment(\.colorScheme) private var scheme
     @State private var dragProgress: Double?
-    @State private var draggedTrackKey: String?
     var body: some View {
         Group {
             if model.anchor.playing && model.policy.visible && !model.isResynchronizing {
-                TimelineView(.periodic(from: .now, by: model.onBattery ? 0.5 : 0.25)) { _ in progress }
+                let interval = model.track.duration <= 0 ? 1 : (model.onBattery ? 0.5 : 0.25)
+                TimelineView(.periodic(from: .now, by: interval)) { _ in progress }
             } else { progress }
         }
     }
     private var progress: some View {
         let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
-        let duration = max(model.track.duration, 1)
-        let fraction = dragProgress ?? min(1, max(0, position / duration))
-        let shownPosition = dragProgress.map { $0 * duration } ?? position
+        let duration = model.track.duration
+        let shownPosition = model.canSeek ? (dragProgress.map { $0 * duration } ?? position) : position
         return VStack(spacing: 7) {
-            GeometryReader { geometry in
-                Capsule().fill(.primary.opacity(0.14))
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(.primary.opacity(0.75)).frame(width: max(0, geometry.size.width * fraction))
-                    }
-                    .frame(height: prominent ? 5 : 3).frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if draggedTrackKey == nil { draggedTrackKey = model.track.cacheKey }
-                            dragProgress = min(1, max(0, value.location.x / max(1, geometry.size.width)))
-                        }
-                        .onEnded { value in
-                            let target = min(1, max(0, value.location.x / max(1, geometry.size.width)))
-                            if draggedTrackKey == model.track.cacheKey { model.control("seek", position: target * duration) }
-                            dragProgress = nil; draggedTrackKey = nil
-                        })
-                    .accessibilityLabel("Posición de reproducción")
-                    .accessibilityValue(Self.time(position) + " de " + Self.time(duration))
-                    .accessibilityAdjustableAction { direction in model.control("seek", position: position + (direction == .increment ? 5 : -5)) }
-            }.frame(height: prominent ? 20 : 12)
+            if duration > 0 {
+                PlaybackScrubber(model: model, position: position, thickness: prominent ? 5 : 3,
+                                 trackColor: .primary.opacity(0.14), fillColor: .primary.opacity(0.75), dragProgress: $dragProgress)
+                    .frame(height: prominent ? 20 : 12)
+            }
             HStack {
-                Text(Self.time(shownPosition))
+                Text(PlaybackTime.format(shownPosition))
                     .foregroundStyle(scheme == .dark ? Color.white : Color.black)
                 Spacer()
-                Text("−" + Self.time(max(0, duration - shownPosition)))
-                    .foregroundStyle(scheme == .dark ? Color.white : Color.black)
+                if duration > 0 {
+                    Text("−" + PlaybackTime.format(duration - shownPosition))
+                        .foregroundStyle(scheme == .dark ? Color.white : Color.black)
+                }
             }.font(.system(size: 10, weight: .medium, design: .monospaced)).opacity(0.5)
         }
         .frame(minWidth: 120)
-        .disabled(!model.hasTrack || model.track.duration <= 0 || model.isResynchronizing)
-        .onChange(of: model.track.cacheKey) { _, _ in dragProgress = nil; draggedTrackKey = nil }
     }
-    private static func time(_ seconds: Double) -> String {
-        guard seconds.isFinite else { return "0:00" }
-        let value = Int(max(0, seconds)); return String(format: "%d:%02d", value / 60, value % 60)
+}
+
+struct PlaybackScrubber: View {
+    let model: StandbyModel
+    let position: Double
+    let thickness: CGFloat
+    let trackColor: Color
+    let fillColor: Color
+    @Binding var dragProgress: Double?
+    @State private var draggedTrack: TrackIdentity?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let duration = model.track.duration
+            let width = geometry.size.width
+            let fraction = (model.canSeek ? dragProgress : nil) ?? unit(position / duration)
+            let bar = Capsule().fill(trackColor)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(fillColor).frame(width: max(0, width * fraction))
+                }
+                .frame(height: thickness).frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Posición de reproducción")
+                .accessibilityValue(PlaybackTime.format(position) + " de " + PlaybackTime.format(duration))
+            if model.canSeek {
+                bar.gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if draggedTrack == nil { draggedTrack = model.track }
+                        dragProgress = unit(value.location.x / max(1, width))
+                    }
+                    .onEnded { value in
+                        if draggedTrack == model.track {
+                            model.control("seek", position: unit(value.location.x / max(1, width)) * duration)
+                        }
+                        resetDrag()
+                    })
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: model.control("seek", position: position + 5)
+                        case .decrement: model.control("seek", position: position - 5)
+                        @unknown default: break
+                        }
+                    }
+            } else {
+                bar
+            }
+        }
+        .onChange(of: model.track) { _, _ in resetDrag() }
+        .onChange(of: model.canSeek) { _, _ in resetDrag() }
+        .onDisappear { resetDrag() }
     }
+    private func unit(_ value: Double) -> Double { min(1, max(0, value)) }
+    private func resetDrag() { dragProgress = nil; draggedTrack = nil }
 }
 
 private struct WindowAccessor: NSViewRepresentable {

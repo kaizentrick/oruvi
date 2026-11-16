@@ -233,9 +233,9 @@ struct NotchView: View {
                     .foregroundStyle(.white.opacity(0.7))
                 Spacer(minLength: 8)
                 if model.hasTrack {
-                    control("backward.fill", command: "previous", label: "Anterior")
+                    control("backward.fill", command: "previous", label: "Anterior").disabled(!model.canSkip)
                     control(model.anchor.playing ? "pause.fill" : "play.fill", command: "toggle", label: model.anchor.playing ? "Pausar" : "Reproducir")
-                    control("forward.fill", command: "next", label: "Siguiente")
+                    control("forward.fill", command: "next", label: "Siguiente").disabled(!model.canSkip)
                 } else if !model.connected {
                     Button("Conectar") { model.connectMusic() }.font(.system(size: 11, weight: .medium)).buttonStyle(.plain)
                 } else {
@@ -255,7 +255,6 @@ private struct NotchTrackProgress: View {
     let model: StandbyModel
     let active: Bool
     @State private var dragProgress: Double?
-    @State private var draggedTrackKey: String?
     var body: some View {
         Group {
             if model.anchor.playing && active && !model.isResynchronizing {
@@ -265,45 +264,20 @@ private struct NotchTrackProgress: View {
     }
     private var bar: some View {
         let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
-        let duration = max(model.track.duration, 1)
-        let fraction = dragProgress ?? min(1, max(0, position / duration))
-        let shown = dragProgress.map { $0 * duration } ?? position
+        let duration = model.track.duration
+        let shown = model.canSeek ? (dragProgress.map { $0 * duration } ?? position) : position
         return HStack(spacing: 8) {
-            Text(Self.time(shown))
+            Text(PlaybackTime.format(shown))
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.5))
                 .frame(width: 28, alignment: .leading)
-            GeometryReader { geometry in
-                Capsule().fill(.white.opacity(0.16))
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(.white.opacity(0.82)).frame(width: max(0, geometry.size.width * fraction))
-                    }
-                    .frame(height: 3).frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if draggedTrackKey == nil { draggedTrackKey = model.track.cacheKey }
-                            dragProgress = min(1, max(0, value.location.x / max(1, geometry.size.width)))
-                        }
-                        .onEnded { value in
-                            let target = min(1, max(0, value.location.x / max(1, geometry.size.width)))
-                            if draggedTrackKey == model.track.cacheKey { model.control("seek", position: target * duration) }
-                            dragProgress = nil; draggedTrackKey = nil
-                        })
-                    .accessibilityLabel("Posición de la canción")
-                    .accessibilityValue(Self.time(position) + " de " + Self.time(duration))
-            }.frame(height: 12)
-            Text("−" + Self.time(max(0, duration - shown)))
+            PlaybackScrubber(model: model, position: position, thickness: 3,
+                             trackColor: .white.opacity(0.16), fillColor: .white.opacity(0.82), dragProgress: $dragProgress)
+                .frame(height: 12)
+            Text("−" + PlaybackTime.format(duration - shown))
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.5))
                 .frame(width: 34, alignment: .trailing)
         }
-        .disabled(!model.hasTrack || model.track.duration <= 0 || model.isResynchronizing)
-        .onChange(of: model.track.cacheKey) { _, _ in dragProgress = nil; draggedTrackKey = nil }
-    }
-    private static func time(_ seconds: Double) -> String {
-        guard seconds.isFinite else { return "0:00" }
-        let value = Int(max(0, seconds))
-        return String(format: "%d:%02d", value / 60, value % 60)
     }
 }

@@ -197,7 +197,7 @@ final class NativeWidgetController {
             value.sourceName = String((systemApp?.localizedName ?? source.name).prefix(512))
             value.title = String(model.track.title.prefix(512))
             value.artist = String((model.track.artist.isEmpty ? model.activePlayer.name : model.track.artist).prefix(512))
-            value.playing = model.playbackIsPlaying; value.canSkip = !model.systemProhibitsSkip
+            value.playing = model.playbackIsPlaying; value.canSkip = model.canSkip
         }
         return value
     }

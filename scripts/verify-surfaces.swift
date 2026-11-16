@@ -102,6 +102,7 @@ struct VerifySurfaces {
         model.apply(["status": "ok", "source": "oruvi.system", "id": "system:qa", "title": "QA video", "artist": "", "album": "", "duration": 0, "position": 12, "playing": true, "systemBundleID": "com.example.Player"])
         expect(model.activePlayer == .system && model.hasTrack, "system video enters real model")
         expect(!model.playbackOptionsAvailable, "system cannot invent shuffle/repeat support")
+        expect(!model.canSeek, "a stream with no duration cannot advertise seeking")
         model.fetchLyrics()
         expect(model.lyricsAvailability == .unavailable, "video metadata never requests music lyrics")
         model.musicShowsLyrics = true
@@ -120,8 +121,11 @@ struct VerifySurfaces {
         expect(ready.state == .ready && ready.canControl, "native snapshot has real content")
         expect(ready.trackID == model.track.id && ready.sourceID == "oruvi.system", "snapshot preserves active identity")
         expect(ready.preference == "automatic", "native widget preserves automatic selection")
+        model.track.duration = 120
+        expect(model.canSkip && model.canSeek, "known duration and a permitted session enable seeking")
         model.systemProhibitsSkip = true
-        expect(!widgets.makeSnapshot().canSkip, "native widget disables prohibited skips")
+        expect(!model.canSkip && !model.canSeek && !widgets.makeSnapshot().canSkip,
+               "notch, Standby and native widget share system restrictions")
         model.screenSleeping = true
         let asleep = widgets.makeSnapshot()
         expect(asleep.state == .sleeping && !asleep.canControl && asleep.artwork == nil, "sleep snapshot removes private media")
@@ -131,6 +135,13 @@ struct VerifySurfaces {
         expect(widgets.makeSnapshot().state == .idle, "empty session is not fabricated playback")
         expect(model.playerPreference == .spotify && model.notchPlayerPreference == .automatic, "widget never rewrites independent selectors")
         expect(!model.nativeWidgetInUse, "removing widget releases its sampler demand")
+        model.useDemo()
+        expect(model.canSkip && model.canSeek, "demo clears restrictions inherited from the last video")
+        model.systemProhibitsSkip = true
+        let protected = model.anchor
+        model.control("next")
+        model.control("seek", position: 100)
+        expect(model.anchor == protected, "model rejects restricted controls even if a gesture already started")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 }

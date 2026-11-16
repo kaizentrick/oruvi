@@ -265,6 +265,8 @@ final class StandbyModel {
         return onBattery ? "Batería · malla suave" : "Con corriente · malla fluida"
     }
     var hasTrack: Bool { !track.id.isEmpty }
+    var canSkip: Bool { hasTrack && !systemProhibitsSkip }
+    var canSeek: Bool { canSkip && track.duration > 0 && !isResynchronizing }
     var preferredScheme: ColorScheme? { appearance == "Sistema" ? nil : (appearance == "Claro" ? .light : .dark) }
     var effectiveAwake: Bool { keepAwake && isVisible && !screenSleeping && !onBattery && !lowPower && !hot }
 
@@ -581,6 +583,8 @@ final class StandbyModel {
         timer.tolerance = 0.1; pollTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func control(_ command: String, position: Double = 0) {
+        if command == "seek" && !canSeek { return }
+        if (command == "next" || command == "previous") && !canSkip { return }
         if demoMode {
             let now = ProcessInfo.processInfo.systemUptime, current = anchor.value(at: ProcessInfo.processInfo.systemUptime)
             if command == "toggle" { anchor = PlaybackAnchor(position: current, uptime: now, duration: track.duration, playing: !anchor.playing) }
@@ -613,6 +617,7 @@ final class StandbyModel {
             _ = await synchronizeNativeWidget(connectIfNeeded: false)
             return "El contenido cambió. Vuelve a pulsar el control."
         }
+        if command != "toggle" && !canSkip { return "Este contenido no permite saltar." }
         let session = generation, source = activePlayer, selection = effectivePlayerPreference, queue = musicQueue
         let result: ([String: Any], [String: Any]) = await withCheckedContinuation { continuation in
             queue.async { [playerRouter] in
@@ -846,6 +851,7 @@ final class StandbyModel {
     func useDemo() {
         suspendPlaybackSampling()
         connected = false; demoMode = true; isResynchronizing = false
+        systemProhibitsSkip = false
         playbackOptionsAvailable = true; shuffleEnabled = false; repeatMode = 0
         lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
         track = TrackIdentity(id: "luma-demo", title: "Still, here.", artist: "Oruvi · demostración", album: "Slow mornings", duration: 214)

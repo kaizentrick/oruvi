@@ -76,6 +76,13 @@ struct PlaybackAnchor: Equatable, Sendable {
     }
 }
 
+enum PlaybackTime {
+    static func format(_ seconds: Double) -> String {
+        guard seconds.isFinite, let value = Int64(exactly: max(0, seconds).rounded(.down)) else { return "—" }
+        return String(format: "%lld:%02lld", value / 60, value % 60)
+    }
+}
+
 struct TrackIdentity: Equatable, Codable, Sendable {
     var id: String
     var title: String

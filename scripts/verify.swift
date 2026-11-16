@@ -23,6 +23,8 @@ struct ReleaseVerification {
         check(fast.delay(until: 61, at: 25) == nil, "A cue past the end cannot repeatedly wake the timer")
         let paused = PlaybackAnchor(position: 10, uptime: 20, duration: 60, playing: false)
         check(paused.value(at: 25) == 10 && paused.delay(until: 12, at: 25) == nil, "Pause freezes the lyric clock")
+        check(PlaybackTime.format(121.9) == "2:01" && PlaybackTime.format(-2) == "0:00", "Playback time rounds down and clamps negative remaining time")
+        check(PlaybackTime.format(.greatestFiniteMagnitude) == "—" && PlaybackTime.format(.nan) == "—", "Unknown or out-of-range media time never traps")
         var recovery = PlaybackRecovery()
         recovery.succeed(at: 10); recovery.fail()
         check(recovery.waiting && recovery.retryInterval <= 1, "quick failure recovery")
