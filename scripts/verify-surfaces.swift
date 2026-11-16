@@ -39,8 +39,15 @@ struct VerifySurfaces {
                                            userInfo: [NSUnderlyingErrorKey: badSignature])
         expect(OruviUpdates.failureStatus(for: signedArchiveFailure).contains("firma"),
                "installer failures should report the underlying signature error")
-        expect(OruviUpdates.failureStatus(for: NSError(domain: SUSparkleErrorDomain, code: Int(SUError.downloadError.rawValue))).contains("descargar"),
+        let downloadFailure = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.downloadError.rawValue))
+        expect(OruviUpdates.failureStatus(for: downloadFailure, downloadingArchive: true).contains("descargar"),
                "a download failure should explain the failed operation")
+        expect(OruviUpdates.failureStatus(for: downloadFailure).contains("catálogo"),
+               "Sparkle can also return a download error before it selects an archive")
+        let unavailableFeed = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.appcastError.rawValue),
+                                      userInfo: [NSUnderlyingErrorKey: downloadFailure])
+        expect(OruviUpdates.failureStatus(for: unavailableFeed).contains("catálogo"),
+               "a download error wrapped by Sparkle's feed phase is a catalog failure")
         expect(OruviUpdates.failureStatus(for: NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)).contains("conexión"),
                "a network failure still offers connection troubleshooting")
         model.automaticLyrics = false; model.automaticArtwork = false

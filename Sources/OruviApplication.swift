@@ -134,7 +134,8 @@ final class OruviApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDel
         let loginItem = item("Abrir al iniciar sesión", #selector(toggleLaunchAtLogin))
         loginItem.state = LaunchAtLogin.shared.enabled ? .on : .off
         let updates = OruviUpdates.shared
-        _ = item(updates.availableVersion.map { "Actualizar a \($0)…" } ?? "Buscar actualizaciones…", #selector(checkUpdates))
+        _ = item(updates.availableVersion.map { "Actualizar a \($0)…" } ?? "Buscar actualizaciones…",
+                 #selector(checkUpdates), enabled: !updates.configured || updates.canCheck)
         _ = item("Ajustes…", #selector(showSettings), key: ",")
         _ = item("Salir de Oruvi", #selector(quit), key: "q")
     }

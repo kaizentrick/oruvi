@@ -10,16 +10,24 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
     @Published private(set) var availableVersion: String?
     @Published private(set) var lastChecked: Date?
     private var controller: SPUStandardUpdaterController!
+    private var availabilityObservation: NSKeyValueObservation?
     private var started = false
+    private var downloadingArchive = false
 
     override private init() {
         super.init()
         repository = LumaEnvironment.preferences.string(forKey: "updatesRepository")
             ?? (Bundle.main.object(forInfoDictionaryKey: "OruviUpdateRepository") as? String ?? "")
         controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: self)
+        availabilityObservation = controller.updater.observe(\.canCheckForUpdates) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }
     }
     var configured: Bool { UpdateConfiguration.repository(repository) != nil && UpdateConfiguration.hasEmbeddedKey }
-    var canCheck: Bool { configured && (controller.updater.canCheckForUpdates || availableVersion != nil) }
+    var canCheck: Bool { configured && (!started || controller.updater.canCheckForUpdates) }
+    var settingsStatus: String {
+        configured && !canCheck ? "Comprobación o actualización en curso…" : status
+    }
     var automaticChecks: Bool {
         get { controller.updater.automaticallyChecksForUpdates }
         set { controller.updater.automaticallyChecksForUpdates = newValue; objectWillChange.send() }
@@ -41,9 +49,11 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
         guard let validated = UpdateConfiguration.repository(value) else {
             status = "Escribe el repositorio como propietario/nombre"; return
         }
+        guard validated != repository else { return }
         repository = validated
         LumaEnvironment.preferences.set(validated, forKey: "updatesRepository")
         availableVersion = nil
+        lastChecked = nil
         status = "Repositorio configurado: \(validated)"
         if started { controller.updater.resetUpdateCycleAfterShortDelay() }
         else { startIfConfigured() }
@@ -56,6 +66,7 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
             status = "Primero configura el repositorio publicado"; return
         }
         startIfConfigured()
+        guard canCheck else { return }
         StandbyModel.shared.dismissStandby()
         controller.checkForUpdates(nil)
     }
@@ -65,17 +76,24 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
         lastChecked = Date()
         status = "Nueva versión disponible: \(item.displayVersionString)"
     }
+    func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
+        downloadingArchive = true
+    }
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        downloadingArchive = false
+    }
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         availableVersion = nil
         if let result = Self.noUpdateStatus(for: error) {
             lastChecked = Date()
             status = result
         } else {
-            status = Self.failureStatus(for: error)
+            status = Self.failureStatus(for: error, downloadingArchive: downloadingArchive)
         }
     }
 
-    static func failureStatus(for error: Error) -> String {
+    static func failureStatus(for error: Error, downloadingArchive: Bool = false) -> String {
+        let catalogFailure = "No se pudo comprobar el catálogo de actualizaciones. Revisa la conexión y el repositorio."
         var underlying: NSError? = error as NSError
         var status: String?
         // Sparkle wraps signature failures inside appcast or installation errors.
@@ -85,8 +103,11 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
                 switch code {
                 case .signatureError, .validationError, .notValidUpdateError:
                     return "No se pudo verificar la firma o la integridad de la actualización."
+                case .appcastError, .appcastParseError, .resumeAppcastError:
+                    status = status ?? catalogFailure
                 case .downloadError:
-                    status = status ?? "No se pudo descargar la actualización. Vuelve a intentarlo."
+                    let failure = downloadingArchive ? "No se pudo descargar la actualización. Vuelve a intentarlo." : catalogFailure
+                    status = status ?? failure
                 case .installationCanceledError, .installationAuthorizeLaterError:
                     status = status ?? "Instalación pendiente. Puedes volver a buscar la actualización."
                 case .installationWriteNoPermissionError:
@@ -98,7 +119,7 @@ final class OruviUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, @preco
             }
             underlying = cause.userInfo[NSUnderlyingErrorKey] as? NSError
         }
-        return status ?? "No se pudo comprobar el catálogo de actualizaciones. Revisa la conexión y el repositorio."
+        return status ?? catalogFailure
     }
 
     static func noUpdateStatus(for error: Error) -> String? {
@@ -132,16 +153,21 @@ struct UpdatesSettings: View {
     @ObservedObject private var updates = OruviUpdates.shared
     @Binding var draft: String
     var body: some View {
+        let validatedDraft = UpdateConfiguration.repository(draft)
         Section {
-            Text(updates.status).font(.callout)
+            Text(updates.settingsStatus).font(.callout)
+            if let checked = updates.lastChecked {
+                LabeledContent("Última comprobación correcta", value: checked.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+            }
             LabeledContent("Repositorio público") {
                 TextField("Repositorio público", text: $draft, prompt: Text("propietario/oruvi"))
                     .labelsHidden().textFieldStyle(.roundedBorder).frame(width: 220)
             }
             HStack {
                 Button("Guardar repositorio") { updates.configure(repository: draft) }
-                    .disabled(UpdateConfiguration.repository(draft) == nil)
-                Button("Buscar actualizaciones…") { updates.checkNow() }.disabled(!updates.configured)
+                    .disabled(validatedDraft == nil || validatedDraft == updates.repository)
+                Button("Buscar actualizaciones…") { updates.checkNow() }.disabled(!updates.canCheck)
             }
             Toggle("Buscar versiones nuevas automáticamente", isOn: Binding(get: { updates.automaticChecks }, set: { updates.automaticChecks = $0 }))
                 .disabled(!updates.configured)
