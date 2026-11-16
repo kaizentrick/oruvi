@@ -249,13 +249,15 @@ struct LyricsStage: View {
         // Stable row heights prevent adjacent cues from shifting the entire player.
     }
     @ViewBuilder private func cue(_ index: Int, prominence: Double, size: Double) -> some View {
-        if index >= 0 && index < model.lines.count {
-            Button { model.control("seek", position: max(0, model.lines[index].time - model.lyricOffset)) } label: {
-                Text(model.lines[index].text.isEmpty ? "♪" : model.lines[index].text)
+        if model.lines.indices.contains(index) {
+            let line = model.lines[index]
+            let recording = model.track
+            Button { model.seekToLyric(line, at: index, on: recording) } label: {
+                Text(line.text.isEmpty ? "♪" : line.text)
                     .font(LyricTypography.font(model.lyricTypeface, baseSize: size, sizePercent: model.lyricSizePercent))
                     .lineLimit(2).multilineTextAlignment(.leading).opacity(prominence)
             }.buttonStyle(.plain).help("Ir a este momento de la canción")
-                .disabled(!model.canSeek)
+                .disabled(model.lyricSeekPosition(at: index) == nil)
         } else { Text(" ").font(.system(size: size)) }
     }
 }

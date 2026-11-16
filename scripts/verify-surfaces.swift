@@ -197,6 +197,24 @@ struct VerifySurfaces {
         model.control("seek", position: 220)
         expect(model.anchor.position == 210 && model.track.duration == 214,
                "seek clamps to the current transport duration even when track metadata differs")
+        let displayedRecording = model.track
+        let displayedLyric = model.lines[1]
+        model.lyricOffset = 1.5
+        expect(model.lyricSeekPosition(at: 0) == 0, "a lyric before playback begins seeks to zero")
+        model.seekToLyric(displayedLyric, at: 1, on: displayedRecording)
+        expect(model.anchor.position == displayedLyric.time - 1.5, "a current lyric jump uses the latest synchronization offset")
+        let afterLyricSeek = model.anchor
+        model.lines.removeAll()
+        model.seekToLyric(displayedLyric, at: 1, on: displayedRecording)
+        expect(model.anchor == afterLyricSeek, "an already-rendered lyric action is safe after the lyrics are removed")
+        model.lines = [displayedLyric, LyricLine(id: 1, time: 215, text: "Replacement")]
+        model.seekToLyric(displayedLyric, at: 1, on: displayedRecording)
+        expect(model.lyricSeekPosition(at: 1) == nil && model.anchor == afterLyricSeek,
+               "a replaced cue outside the current duration cannot jump to the end")
+        model.track.id = "different-demo-recording"
+        model.seekToLyric(displayedLyric, at: 0, on: displayedRecording)
+        expect(model.anchor == afterLyricSeek, "lyrics from an old recording cannot seek the next recording")
+        model.lyricOffset = 0
         model.systemProhibitsSkip = true
         let protected = model.anchor
         model.control("next")

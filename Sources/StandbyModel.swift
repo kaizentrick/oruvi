@@ -282,6 +282,17 @@ final class StandbyModel {
     var hasTrack: Bool { !track.id.isEmpty }
     var canSkip: Bool { hasTrack && !systemProhibitsSkip }
     var canSeek: Bool { canSkip && anchor.duration > 0 && !isResynchronizing }
+
+    func lyricSeekPosition(at index: Int) -> TimeInterval? {
+        guard canSeek, lines.indices.contains(index) else { return nil }
+        let position = lines[index].time - lyricOffset
+        guard position.isFinite, position <= anchor.duration else { return nil }
+        return max(0, position)
+    }
+    func seekToLyric(_ line: LyricLine, at index: Int, on recording: TrackIdentity) {
+        guard track == recording, let position = lyricSeekPosition(at: index), lines[index] == line else { return }
+        control("seek", position: position)
+    }
     var preferredScheme: ColorScheme? { appearance == "Sistema" ? nil : (appearance == "Claro" ? .light : .dark) }
     var effectiveAwake: Bool { keepAwake && isVisible && !screenSleeping && !onBattery && !lowPower && !hot }
 
