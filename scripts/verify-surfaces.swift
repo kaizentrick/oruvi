@@ -299,6 +299,35 @@ struct VerifySurfaces {
         await until { covers.artworkStatus.contains("limitó temporalmente") }
         applySpotify("spotify-limited", id: "spotify:track:rate")
         expect(covers.artworkStatus.contains("limitó temporalmente"), "the model keeps the rate-limit state on the next playback sample")
+        let closedMusic = SystemMediaSnapshot(payload: ["bundleIdentifier": PlayerSource.music.rawValue,
+                                                        "title": "Previous song", "playing": true], uptime: 100, epoch: 100)!
+        var running: Set<PlayerSource> = [.spotify]
+        var lastMusicStatus = "stopped"
+        var inspected: [PlayerSource] = []
+        let router = PlayerRouter(isRunning: { running.contains($0) }, readNative: { source in
+            inspected.append(source)
+            if source == .music { return ["status": lastMusicStatus] }
+            return ["status": "ok", "id": "spotify:track:continuing", "playing": true]
+        })
+        func automaticSnapshot() -> [String: Any] {
+            router.resolve(preference: .automatic, preferred: .music, system: closedMusic)
+        }
+        expect(automaticSnapshot()["source"] as? String == PlayerSource.spotify.rawValue && inspected == [.spotify],
+               "a closed Music process cannot mask the active Spotify session or receive Apple Events")
+        running = [.music, .spotify]
+        inspected.removeAll()
+        expect(automaticSnapshot()["source"] as? String == PlayerSource.spotify.rawValue
+               && inspected.filter { $0 == .music }.count == 1,
+               "a stopped native session falls back without another query to that same player")
+        lastMusicStatus = "error"
+        expect(automaticSnapshot()["source"] as? String == PlayerSource.system.rawValue,
+               "a temporary native failure still permits a valid Now Playing session")
+        lastMusicStatus = "denied"
+        expect(automaticSnapshot()["source"] as? String == PlayerSource.system.rawValue,
+               "Now Playing remains available when a running app denies Apple Events")
+        running = []
+        expect(automaticSnapshot()["status"] as? String == "notRunning",
+               "the last native session disappears when the app quits, even after permission was denied")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 

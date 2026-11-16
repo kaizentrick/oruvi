@@ -7,17 +7,28 @@ final class PlayerRouter: @unchecked Sendable {
     private var denials: [PlayerSource: [String: Any]] = [:]
     private var previouslyPlaying: Set<PlayerSource> = []
     private var lastAutomaticSource: PlayerSource?
+    private let isRunning: (PlayerSource) -> Bool
+    private let readNative: (PlayerSource) -> [String: Any]
+
+    init(isRunning: @escaping (PlayerSource) -> Bool = {
+        NSRunningApplication.runningApplications(withBundleIdentifier: $0.rawValue).contains { !$0.isTerminated }
+    }, readNative: @escaping (PlayerSource) -> [String: Any] = {
+        $0 == .music ? LumaReadMusicSnapshot() : OruviReadSpotifySnapshot()
+    }) {
+        self.isRunning = isRunning
+        self.readNative = readNative
+    }
     func reset() {
         denials.removeAll(); previouslyPlaying.removeAll(); lastAutomaticSource = nil
         LumaResetMusicBridge(); OruviResetSpotifyBridge()
     }
     private func native(_ source: PlayerSource) -> [String: Any] {
         guard source != .system else { return ["status": "notRunning"] }
-        if let denial = denials[source] { return denial }
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: source.rawValue).isEmpty else {
+        guard isRunning(source) else {
             return ["status": "notRunning", "source": source.rawValue]
         }
-        var value = source == .music ? LumaReadMusicSnapshot() : OruviReadSpotifySnapshot()
+        if let denial = denials[source] { return denial }
+        var value = readNative(source)
         value["source"] = source.rawValue
         if value["status"] as? String == "denied" { denials[source] = value }
         return value
@@ -26,11 +37,11 @@ final class PlayerRouter: @unchecked Sendable {
         let system = refreshSystem && preference == .automatic ? SystemMediaBridge.shared.readNow() : SystemMediaBridge.shared.current
         return resolve(preference: preference, preferred: preferred, system: system)
     }
-    private func resolve(preference: PlayerPreference, preferred: PlayerSource,
-                         system: SystemMediaSnapshot?) -> [String: Any] {
+    func resolve(preference: PlayerPreference, preferred: PlayerSource,
+                 system: SystemMediaSnapshot?) -> [String: Any] {
         if let explicit = preference.source { return native(explicit) }
         // Follow the same session as Control Center, not the frontmost window.
-        var stoppedSession: PlayerSource?
+        var inactiveSession: (source: PlayerSource, snapshot: [String: Any])?
         if let system {
             if let source = PlayerSource(rawValue: system.bundleID), source != .system {
                 var value = native(source)
@@ -45,18 +56,21 @@ final class PlayerRouter: @unchecked Sendable {
                     }
                     return value
                 }
-                // A stopped player can remain in the system cache during a queue transition.
-                // Keep checking the other player instead of publishing the cached song again.
-                if value["status"] as? String == "stopped" { stoppedSession = source }
+                // Now Playing may still report a recording after its player stopped or quit.
+                // Keep the native result and check the other player before displaying anything.
+                switch value["status"] as? String {
+                case "stopped", "notRunning": inactiveSession = (source, value)
+                default: break
+                }
             }
-            if stoppedSession == nil { return system.dictionary(at: ProcessInfo.processInfo.systemUptime) }
+            if inactiveSession == nil { return system.dictionary(at: ProcessInfo.processInfo.systemUptime) }
         }
         // A missing/private API must never remove the existing native integrations.
         let tie = lastAutomaticSource ?? preferred
         let preferred: PlayerSource = tie == .system ? .music : tie
         let sources: [PlayerSource] = [preferred, preferred == .music ? .spotify : .music]
         let results = sources.map { source in
-            (source, source == stoppedSession ? ["status": "stopped"] : native(source))
+            (source, inactiveSession.flatMap { $0.source == source ? $0.snapshot : nil } ?? native(source))
         }
         let candidates = results.map { PlayerCandidate(source: $0.0, status: $0.1["status"] as? String ?? "error",
                                                        playing: ($0.1["playing"] as? NSNumber)?.boolValue ?? false) }

@@ -357,6 +357,14 @@ final class StandbyModel {
             observe(workspace, name) { [weak self] in self?.screenSleeping = false; self?.refreshPower(); self?.refreshVisibility() }
         }
         observe(workspace, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) { [weak self] in self?.refreshPower() }
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      let bundleID = app.bundleIdentifier else { return }
+                MainActor.assumeIsolated { self?.nativePlayerLifecycleChanged(bundleID) }
+            }
+            notificationTokens.append((workspace, token))
+        }
         observe(standard, .NSProcessInfoPowerStateDidChange) { [weak self] in self?.refreshPower() }
         observe(standard, ProcessInfo.thermalStateDidChangeNotification) { [weak self] in self?.refreshPower() }
         for name in ["com.apple.Music.playerInfo", "com.apple.iTunes.playerInfo", "com.spotify.client.PlaybackStateChanged"] {
@@ -376,6 +384,14 @@ final class StandbyModel {
         }, Unmanaged.passUnretained(self).toOpaque())?.takeRetainedValue() {
             powerSource = source; CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
+    }
+    private func nativePlayerLifecycleChanged(_ bundleID: String) {
+        guard let source = PlayerSource(rawValue: bundleID), source != .system,
+              connected, needsPlayback, !demoMode else { return }
+        if let explicit = effectivePlayerPreference.source, explicit != source { return }
+        // Discard any queued sample from before the process started or stopped.
+        generation += 1
+        if reading { pendingMusicHint = true } else { readMusic() }
     }
     func refreshPower() {
         var battery = false
@@ -498,7 +514,9 @@ final class StandbyModel {
         }
         if status == "notRunning" {
             clearTrack(); recovery.succeed(at: ProcessInfo.processInfo.systemUptime); isResynchronizing = false
-            connectionStatus = effectivePlayerPreference == .automatic ? "Reproduce contenido compatible con Ahora suena en este Mac" : "Abre " + activePlayer.name + " en este Mac"; return
+            connectionStatus = effectivePlayerPreference.source.map { "Abre " + $0.name + " en este Mac" }
+                ?? "Reproduce contenido compatible con Ahora suena en este Mac"
+            return
         }
         if status == "stopped" {
             if recovery.observeStopped() {
