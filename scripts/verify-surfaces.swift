@@ -596,6 +596,22 @@ struct VerifySurfaces {
         await until { codexAttempts == 2 }
         expect(codex.error == .missingCLI && !codex.refreshing,
                "after a quick wake, Codex rechecks when the cooldown ends instead of waiting for a full polling interval")
+
+        let agenda = NotchAgenda()
+        agenda.selectedDay = agenda.today
+        agenda.showMonth(1)
+        expect(agenda.selectedDay == nil && agenda.monthOffset == 1, "switching months clears the day's filter in the agenda model")
+        agenda.selectedDay = Calendar.current.date(byAdding: .month, value: 1, to: agenda.today)
+        agenda.setActive(false)
+        expect(agenda.selectedDay == nil && agenda.monthOffset == 0 && agenda.monthEventsByDay.isEmpty && !agenda.loading,
+               "closing Agenda clears the selection before the view's closing animation is over")
+        agenda.setActive(true)
+        agenda.showMonth(1)
+        agenda.selectedDay = Calendar.current.date(byAdding: .month, value: 1, to: agenda.today)
+        agenda.disconnect()
+        expect(agenda.selectedDay == nil && agenda.monthOffset == 0 && agenda.events.isEmpty && !agenda.enabled,
+               "disconnecting leaves no retained date filter or event data")
+        agenda.stop()
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 
