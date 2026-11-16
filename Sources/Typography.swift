@@ -121,3 +121,19 @@ struct MusicLayoutMetrics {
         lyricsWidth = supportsSidebar ? max(0, min(490, width - playerWidth - gap)) : playerWidth
     }
 }
+
+struct EditorialLayoutMetrics {
+    let width: CGFloat
+    let clockWidth: CGFloat
+    let musicWidth: CGFloat
+    let gap: CGFloat
+
+    init(windowWidth: CGFloat, inset: CGFloat) {
+        let fullWidth = windowWidth.isFinite ? max(0, windowWidth) : 0
+        let margin = inset.isFinite ? max(0, inset) : 0
+        width = min(1240, max(0, fullWidth - margin * 2))
+        gap = min(70, fullWidth * 0.05, width * 0.1)
+        clockWidth = width * 0.43
+        musicWidth = width - clockWidth - gap
+    }
+}

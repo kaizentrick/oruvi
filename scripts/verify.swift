@@ -125,6 +125,17 @@ struct ReleaseVerification {
                 if on.supportsSidebar { check(on.playerWidth + on.gap + on.lyricsWidth <= width + 1, "sidebar fits viewport") }
             }
         }
+        let narrowColumns = EditorialLayoutMetrics(windowWidth: 480, inset: 28)
+        check(narrowColumns.width == 424 && narrowColumns.musicWidth > 200,
+              "the clock and music columns retain usable space at the minimum window width")
+        let normalColumns = EditorialLayoutMetrics(windowWidth: 1180, inset: 54)
+        check(normalColumns.width == 1072 && normalColumns.clockWidth == 1072 * 0.43 && normalColumns.gap == 59,
+              "ordinary displays keep their clock proportion and column spacing")
+        let wideColumns = EditorialLayoutMetrics(windowWidth: 5120, inset: 64)
+        check(wideColumns.width == 1240 && wideColumns.clockWidth < 540 && wideColumns.musicWidth > 600,
+              "the clock cannot claim the right column on an ultrawide display")
+        check(abs(wideColumns.clockWidth + wideColumns.gap + wideColumns.musicWidth - wideColumns.width) < 0.01,
+              "the two columns and their gap fit within the same width budget")
         for text in ["account/oruvi", "brand-team/Oruvi.app", "org/my_repo"] {
             check(UpdateConfiguration.feed(for: text)?.scheme == "https", "secure release feed")
         }

@@ -87,9 +87,10 @@ struct StandbyView: View {
                     TransportBar(model: model).frame(maxWidth: 500)
                 } else { connectBar }
             } else {
-                HStack(alignment: .center, spacing: min(70, size.width * 0.05)) {
+                let layout = EditorialLayoutMetrics(windowWidth: size.width, inset: inset)
+                HStack(alignment: .center, spacing: layout.gap) {
                     EditorialClock(model: model, compact: compact)
-                        .frame(width: (size.width - inset * 2) * 0.43)
+                        .frame(width: layout.clockWidth)
                     VStack(alignment: .leading, spacing: compact ? 16 : 26) {
                         if model.hasTrack {
                             TrackHeading(model: model, compact: compact)
@@ -97,8 +98,11 @@ struct StandbyView: View {
                             LyricsVisibilityButton(model: model)
                             if model.visibleLyrics { LyricsStage(model: model, compact: compact) }
                         } else { connectBar }
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                }.frame(maxWidth: 1240, maxHeight: .infinity)
+                    }
+                    .frame(width: layout.musicWidth, alignment: .leading)
+                    .frame(maxHeight: .infinity, alignment: .leading)
+                }.frame(width: layout.width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
