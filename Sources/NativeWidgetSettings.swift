@@ -21,5 +21,9 @@ struct NativeWidgetSettings: View {
 }
 
 @MainActor extension StandbyModel {
-    func showNativeWidgetSettings() { showWindow(); settingsOpen = true }
+    func showNativeWidgetSettings() {
+        showWindow()
+        settingsSection = .widgets
+        settingsOpen = true
+    }
 }

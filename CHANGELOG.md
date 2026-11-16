@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0 — Ajustes visuales, letras y cuota de Cursor
+
+- **Ajustes:** navegación por secciones y muestras de fuentes en vivo. Personaliza por separado las letras, el reloj y el texto general. Las letras admiten un tamaño del 75 % al 135 %.
+- **Standby:** Reloj + música coloca el reloj a la izquierda y los controles debajo de la pista a la derecha. Música centra el reproductor cuando falta letra. El botón Letras aparece al encontrar una letra sincronizada.
+- **Conexiones:** Cursor muestra la cuota semanal restante compartida con Grok y su fecha de reinicio. La consulta requiere Aside y una sesión de Grok iniciada.
+- **Portadas y widgets:** sincronización de portadas entre reproductor, notch y widgets, y mejoras en los controles del widget de escritorio.
+
 ## 0.13.0 — Seguridad endurecida, calendario mensual, scrubber, letras y mejoras en el notch
 
 - Seguridad endurecida: verificación de propietario y permisos de binario/directorio en `CodexExecutable`, sanitización de `CODEX_HOME`, rechazo de symlinks en la bandeja del notch (`NotchFilePolicy.isSafeFile`), rate-limiting de notificaciones distribuidas y `ENABLE_HARDENED_RUNTIME = YES`.

@@ -236,7 +236,6 @@ final class AmbientRuntime {
             if flags.contains(.command) && text == "," { model.settingsOpen = true; return nil }
             if flags.contains(.command) && text == "w" { dismiss(); return nil }
             if flags.contains(.command) && text == "q" { NSApp.terminate(nil); return nil }
-            if flags.contains(.command) && text == "o" { model.importLRC(); return nil }
         }
         return event
     }

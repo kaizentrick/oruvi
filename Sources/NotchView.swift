@@ -216,7 +216,8 @@ struct NotchView: View {
                         .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
                     if let lyric = model.currentLyricText {
                         Text("♪ " + lyric)
-                            .font(.system(size: 10, weight: .medium)).italic()
+                            .font(LyricTypography.font(model.lyricTypeface, baseSize: 10, sizePercent: model.lyricSizePercent)
+                                .weight(.medium).italic())
                             .foregroundStyle(.white.opacity(0.82)).lineLimit(1)
                             .contentTransition(.opacity)
                     }

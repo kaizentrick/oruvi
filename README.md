@@ -44,13 +44,15 @@ Abre **Notch → … → Personalizar notch**. **Avisos breves** muestra una fra
 
 Esta primera integración toma como referencia la presentación notch/isla de Glance, con implementación propia. No incorpora sus modelos, imágenes, videos ni código de credenciales. **No añade cámara, reconocimiento facial ni desbloqueo de macOS.**
 
-## Conexiones y uso de Codex
+## Conexiones y uso de Codex y Cursor
 
 Abre **Notch → Conexiones → Codex → Conectar Codex**. Oruvi consulta la sesión de ChatGPT de Codex instalada en tu Mac mediante `account/rateLimits/read` del app server local. Requiere Codex CLI accesible en una ubicación habitual (`~/.local/bin`, Homebrew o el bundle de Codex); no solicita ni copia tokens, contraseñas o archivos de autenticación. Las cuentas con API key pueden no informar de estos límites.
 
 Muestra los límites que la cuenta publique, sus periodos reales, el porcentaje restante y la fecha de reinicio. Si hay varios límites puedes elegir uno. **Uso visible en el notch** fija en el compacto el menor porcentaje restante entre las ventanas vigentes del límite elegido. No asume periodos de cinco horas ni interpreta un reinicio como permiso confirmado para volver a usar la cuenta.
 
 Consulta aproximadamente cada minuto, suspende al bloquear o dormir la Mac y espacia reintentos cuando hay errores. Puedes actualizar manualmente o desconectar. Los estados sin sesión, sin CLI, sin conexión o vencidos se distinguen de 0% y 100%; no se guarda historial. Esta conexión no inicia conversaciones, no ejecuta tareas y no compra ni consume créditos de reinicio. Los límites pertenecen a la cuenta, no solo a este chat o a esta Mac.
+
+En **Notch → Conexiones → Cursor → Conectar Cursor** puedes ver el porcentaje restante y el próximo reinicio de la cuota semanal compartida por Cursor y Grok. Requiere Aside con su CLI y una sesión de Grok iniciada en Aside. Oruvi lee la tarjeta de uso del panel de Grok cada cinco minutos mientras Conexiones está abierto, o cuando pulsas Actualizar.
 
 Conexiones también lleva a reproducción, Agenda y widgets nativos. Los permisos se solicitan al activar cada función.
 
@@ -78,7 +80,7 @@ El widget no está ejecutándose continuamente: WidgetKit representa instantáne
 
 Para compartir datos entre procesos se conserva una instantánea local en la caché del App Group. Incluye el estado, los metadatos actuales, una miniatura JPEG de hasta 192 píxeles y su paleta. Si se detiene Apple Music o Spotify, el widget conserva la última portada disponible con el mensaje «Nada en reproducción». El archivo se sobrescribe de forma atómica, caduca y se elimina al cerrar Oruvi. WidgetKit también administra sus propias representaciones. La extensión no tiene permisos de red, Apple Events, cámara o micrófono.
 
-En **Ajustes → Widgets nativos de macOS** se muestran instrucciones y detección de widgets añadidos. La distribución actual sigue siendo ad-hoc, no notarizada: macOS puede solicitar acceso a datos compartidos o bloquear componentes según sus políticas. La validación del runner no reemplaza comprobar la galería en una instalación normal. No desactives SIP o Gatekeeper. Detalles de firma y diagnóstico en [Resources/MEDIA.md](Resources/MEDIA.md).
+En **Ajustes → Widgets** se muestran instrucciones y detección de widgets añadidos. La distribución actual sigue siendo ad-hoc, no notarizada: macOS puede solicitar acceso a datos compartidos o bloquear componentes según sus políticas. La validación del runner no reemplaza comprobar la galería en una instalación normal. No desactives SIP o Gatekeeper. Detalles de firma y diagnóstico en [Resources/MEDIA.md](Resources/MEDIA.md).
 
 ## Widgets del notch
 
@@ -98,7 +100,9 @@ Standby conserva Reloj, Música y Reloj + música a pantalla completa. Oculta el
 
 El selector de Standby está en Música y en la barra superior de las otras dos vistas; Ajustes permite cambiar ambos selectores. La portada abre el reproductor mostrado: el destino se captura antes de abandonar la presentación y volver a la preferencia del notch.
 
-Las letras de LRCLIB y de tus archivos LRC se sincronizan por línea. La disponibilidad depende de la grabación. Abre Letras para ver el estado de la búsqueda, reintentar si falla o importar un LRC propio.
+Las letras de LRCLIB y de archivos LRC ya guardados se sincronizan por línea. El botón Letras aparece cuando hay una letra disponible. Sin letra, la vista Música centra el reproductor. Reloj + música coloca el reloj a la izquierda y la pista con sus controles a la derecha.
+
+En Ajustes → Tipografía puedes comparar fuentes y ver al instante el tamaño de las letras, el grosor del reloj y la fuente del texto general.
 
 La malla Aurora tiene alternativas Atardecer y Medianoche, con adaptación a la portada e interpolación de color independiente de los controles. Una respuesta de portada antigua no cambia la canción nueva. Las imágenes de Spotify se descargan únicamente desde dominios permitidos de la URL suministrada por la app, sin sustituirlas por otro catálogo ni guardarlas en la caché persistente.
 

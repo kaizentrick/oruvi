@@ -29,18 +29,25 @@ struct NotchConnectionsView: View {
     @Bindable var controller: NotchController
     @Bindable private var usage = CodexUsageController.shared
     @Bindable private var widgets = NativeWidgetController.shared
-    @State private var codexDetail = false
+    @State private var cursor = CursorConnection.shared
+    @State private var detail: UsageDetail?
+
+    private enum UsageDetail { case codex, cursor }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if codexDetail {
-                    Button { codexDetail = false } label: {
+                if let detail {
+                    Button { self.detail = nil } label: {
                         Label("Conexiones", systemImage: "chevron.left").font(.system(size: 11))
                     }.buttonStyle(.plain).foregroundStyle(.secondary)
-                    CodexConnectionView(usage: usage)
+                    switch detail {
+                    case .codex: CodexConnectionView(usage: usage)
+                    case .cursor: cursorDetail
+                    }
                 } else {
                     Text("Conexiones").font(.system(size: 13, weight: .semibold))
-                    Button { codexDetail = true } label: {
+                    Button { detail = .codex } label: {
                         HStack(spacing: 10) {
                             CodexVectorIcon(size: 15).frame(width: 20)
                             VStack(alignment: .leading, spacing: 3) {
@@ -52,6 +59,10 @@ struct NotchConnectionsView: View {
                                 .accessibilityHidden(true)
                         }.frame(minHeight: 32).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityHint("Ver límites de uso y fijarlos al notch")
+                    Button { detail = .cursor } label: {
+                        connection("Cursor", detail: cursor.summary, symbol: "gauge.with.dots.needle.33percent",
+                                   ready: cursor.snapshot != nil)
+                    }.buttonStyle(.plain)
                     Divider().overlay(.white.opacity(0.08))
                     Button { controller.select(.music) } label: {
                         connection("Reproducción", detail: model.connected ? model.connectionStatus : "Conectar Apple Music, Spotify o Ahora suena", symbol: "music.note", ready: model.connected)
@@ -64,7 +75,46 @@ struct NotchConnectionsView: View {
                     }.buttonStyle(.plain)
                 }
             }.padding(.vertical, 2).padding(.trailing, 4)
-        }.scrollIndicators(.automatic)
+        }
+        .scrollIndicators(.automatic)
+        .task(id: cursor.refreshID) { await cursor.poll() }
+    }
+
+    private var cursorDetail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                Image(systemName: "gauge.with.dots.needle.33percent").accessibilityHidden(true)
+                Text("Cursor").font(.system(size: 14, weight: .semibold))
+                Spacer()
+                if cursor.refreshing { ProgressView().controlSize(.mini).accessibilityLabel("Consultando Grok") }
+                if cursor.enabled {
+                    Button { cursor.refresh() } label: {
+                        Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
+                    }.buttonStyle(.plain).disabled(cursor.refreshing).help("Actualizar uso de Cursor")
+                        .accessibilityLabel("Actualizar uso de Cursor")
+                }
+            }
+            if let snapshot = cursor.snapshot {
+                Text("≈\(snapshot.remainingPercent)% restante").font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                ProgressView(value: Double(snapshot.remainingPercent), total: 100)
+                    .tint(snapshot.remainingPercent <= 10 ? .orange : .white)
+                    .accessibilityLabel("Cuota semanal restante")
+                Text("Reinicio: \(snapshot.resetLabel)").font(.system(size: 11))
+                Text("Última consulta: " + snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            } else if cursor.enabled {
+                Text(cursor.summary).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Cuota semanal incluida que comparten Cursor y Grok. Se actualiza al abrir Conexiones mediante tu sesión de Grok en Aside.")
+                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if cursor.enabled {
+                Button("Desconectar") { cursor.setEnabled(false) }.buttonStyle(.plain)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            } else {
+                Button("Conectar Cursor") { cursor.setEnabled(true) }.controlSize(.small)
+            }
+        }
     }
     private func connection(_ title: String, detail: String, symbol: String, ready: Bool) -> some View {
         HStack(spacing: 10) {
@@ -77,6 +127,69 @@ struct NotchConnectionsView: View {
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 .accessibilityHidden(true)
         }.frame(minHeight: 32).contentShape(Rectangle())
+    }
+}
+
+@MainActor @Observable
+private final class CursorConnection {
+    static let shared = CursorConnection()
+    private(set) var enabled = LumaEnvironment.preferences.bool(forKey: "cursorUsageEnabled")
+    private(set) var refreshID = UUID()
+    private(set) var snapshot: CursorUsageSnapshot?
+    private(set) var refreshing = false
+    private var error: CursorUsageError?
+    @ObservationIgnored private var activeRequest: UUID?
+
+    var summary: String {
+        if let snapshot { return "≈\(snapshot.remainingPercent)% restante · Reinicio: \(snapshot.resetLabel)" }
+        if !enabled { return "Sin conectar" }
+        if let error { return error.message }
+        return "Consultando Grok…"
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        self.enabled = enabled
+        LumaEnvironment.preferences.set(enabled, forKey: "cursorUsageEnabled")
+        refresh()
+    }
+
+    func refresh() {
+        snapshot = nil
+        error = nil
+        refreshID = UUID()
+    }
+
+    func poll() async {
+        guard enabled, !LumaEnvironment.isTesting else { return }
+        let interval: TimeInterval = 300
+        while !Task.isCancelled {
+            if let snapshot {
+                let wait = snapshot.fetchedAt.addingTimeInterval(interval).timeIntervalSinceNow
+                if wait > 0 && wait <= interval {
+                    do { try await Task.sleep(for: .seconds(wait)) } catch { return }
+                }
+            }
+            snapshot = nil
+            let id = UUID()
+            activeRequest = id
+            refreshing = true
+            let result: Result<CursorUsageSnapshot, Error>
+            do { result = .success(try await CursorUsageRequest().read()) }
+            catch { result = .failure(error) }
+            guard activeRequest == id else { return }
+            activeRequest = nil
+            refreshing = false
+            guard !Task.isCancelled, enabled else { return }
+            switch result {
+            case .success(let reading):
+                snapshot = reading
+                error = nil
+            case .failure(let failure):
+                snapshot = nil
+                error = failure as? CursorUsageError ?? .unavailable
+                do { try await Task.sleep(for: .seconds(interval)) } catch { return }
+            }
+        }
     }
 }
 

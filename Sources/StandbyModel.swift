@@ -37,7 +37,6 @@ final class StandbyModel {
     var palette = RGB.aurora
     var lines: [LyricLine] = []
     var activeLine: Int?
-    var lyricStatus = "La letra se buscará al reproducir una canción."
     var lyricSource = ""
     var lyricsAvailability: LyricsAvailability = .idle
     var toastMessage: String?
@@ -106,8 +105,12 @@ final class StandbyModel {
     var meshTheme: MeshTheme = .aurora {
         didSet { prefs.set(meshTheme.rawValue, forKey: "meshTheme") }
     }
-    var visibleLyrics: Bool { musicShowsLyrics && hasTrack }
-    var lyricsSurfaceVisible: Bool { ((isVisible && visibleLyrics && layout != .clock) || (notchVisible && notchExpanded)) && !screenSleeping }
+    var hasLyrics: Bool { hasTrack && !lines.isEmpty }
+    var visibleLyrics: Bool { musicShowsLyrics && hasLyrics }
+    private var standbyCanShowLyrics: Bool { isVisible && layout != .clock }
+    private var notchCanShowLyrics: Bool { notchVisible && notchExpanded }
+    private var lyricsLookupVisible: Bool { (standbyCanShowLyrics || notchCanShowLyrics) && !screenSleeping }
+    private var lyricsSurfaceVisible: Bool { ((standbyCanShowLyrics && visibleLyrics) || notchCanShowLyrics) && !screenSleeping }
     var currentLyricText: String? {
         guard !isResynchronizing, let activeLine, lines.indices.contains(activeLine) else { return nil }
         let text = lines[activeLine].text
@@ -128,6 +131,7 @@ final class StandbyModel {
     }
     var syncRoundTrip: Double = 0
     var settingsOpen = false
+    var settingsSection: SettingsSection = .typography
     var isResynchronizing = true
     var automaticActivationStatus = "En espera"
     var autoPausedUntil: Date?
@@ -145,6 +149,17 @@ final class StandbyModel {
     }
     var contentTypeface: AmbientTypeface = .modern {
         didSet { prefs.set(contentTypeface.rawValue, forKey: "contentTypeface") }
+    }
+    var lyricTypefaceOverride: AmbientTypeface? {
+        didSet { prefs.set(lyricTypefaceOverride?.rawValue, forKey: "lyricTypeface") }
+    }
+    var lyricTypeface: AmbientTypeface { lyricTypefaceOverride ?? contentTypeface }
+    var lyricSizePercent = LyricTypography.defaultSize {
+        didSet {
+            let value = SafePreference.number(lyricSizePercent, range: LyricTypography.sizeRange, fallback: LyricTypography.defaultSize)
+            if !lyricSizePercent.isFinite || lyricSizePercent != value { lyricSizePercent = value; return }
+            prefs.set(value, forKey: "lyricSizePercent")
+        }
     }
     var avoidMedia = true {
         didSet { prefs.set(avoidMedia, forKey: "avoidMedia"); runtime?.rescheduleIdle() }
@@ -270,6 +285,11 @@ final class StandbyModel {
         clockTypeface = AmbientTypeface(rawValue: defaults.string(forKey: "clockTypeface") ?? "") ?? .editorial
         clockWeight = ClockWeight(rawValue: defaults.string(forKey: "clockWeight") ?? "") ?? .ultraLight
         contentTypeface = AmbientTypeface(rawValue: defaults.string(forKey: "contentTypeface") ?? "") ?? .modern
+        if let name = defaults.string(forKey: "lyricTypeface"), let typeface = AmbientTypeface(rawValue: name), typeface.installed {
+            lyricTypefaceOverride = typeface
+        }
+        lyricSizePercent = SafePreference.number(defaults.object(forKey: "lyricSizePercent") as? Double ?? LyricTypography.defaultSize,
+                                                 range: LyricTypography.sizeRange, fallback: LyricTypography.defaultSize)
         showPhrases = defaults.bool(forKey: "showPhrases")
         phraseInterval = SafePreference.number(defaults.double(forKey: "phraseInterval"), range: 15...600, fallback: 60)
         keepAwake = defaults.bool(forKey: "keepAwake")
@@ -359,7 +379,7 @@ final class StandbyModel {
         updateDisplayAssertion(); runtime?.refreshPhrases()
         if needsPlayback {
             if connected { refreshPlayback() } else { updateCue() }
-            if !lyricsSurfaceVisible { stopLyricsUpdates() }
+            if !lyricsLookupVisible { stopLyricsUpdates() }
         } else {
             generation += 1
             recovery.invalidate(); isResynchronizing = !demoMode
@@ -407,7 +427,6 @@ final class StandbyModel {
         lyricsRetryAt = 0; artworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
         playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
-        lyricStatus = "Elige una canción en Música para empezar."
         cueTimer?.invalidate(); cueTimer = nil
     }
     private func readMusic() {
@@ -478,7 +497,7 @@ final class StandbyModel {
             track = next; artwork = nil; artworkLink = nil
             appliedSystemArtwork = nil
             toastTask?.cancel(); toastMessage = nil; lyricsAvailability = .idle
-            lyricStatus = "Buscando letra sincronizada…"; artworkStatus = ""
+            artworkStatus = ""
             if let retainedArtwork, PlaybackRecovery.sameRecording(retainedArtwork.track, next),
                retainedArtwork.track.sourceID == next.sourceID {
                 artwork = retainedArtwork.image; artworkLink = retainedArtwork.link
@@ -514,7 +533,7 @@ final class StandbyModel {
         // Missing resources recover without having to close and reopen the app. Cooldowns
         // prevent a failed or unavailable lyric from being requested on every playback tick.
         let now = ProcessInfo.processInfo.systemUptime
-        if lines.isEmpty && lyricsTask == nil && now >= lyricsRetryAt && lyricsSurfaceVisible { fetchLyrics() }
+        if lines.isEmpty && lyricsTask == nil && now >= lyricsRetryAt && lyricsLookupVisible { fetchLyrics() }
         let needsSystemCover = systemArtworkData.map { $0 != appliedSystemArtwork } ?? false
         if artworkTask == nil && now >= artworkRetryAt && (artwork == nil || needsSystemCover) { fetchArtwork() }
         updateCue()
@@ -610,12 +629,11 @@ final class StandbyModel {
         // Browser/video titles must never be sent to a music-lyrics service.
         guard activePlayer != .system else {
             lyricsAvailability = .unavailable; lyricsRetryAt = .greatestFiniteMagnitude
-            lyricStatus = "Letras automáticas no disponibles para esta fuente."; return
+            return
         }
-        guard !demoMode, hasTrack, lyricsSurfaceVisible, !isResynchronizing else { return }
+        guard !demoMode, hasTrack, lyricsLookupVisible, !isResynchronizing else { return }
         lines = []; activeLine = nil; lyricSource = ""
         lyricsAvailability = .loading
-        lyricStatus = automaticLyrics ? "Recuperando letra sincronizada…" : "Buscando tu archivo LRC local…"
         let identity = track, allowed = automaticLyrics
         lyricsRetryAt = ProcessInfo.processInfo.systemUptime + 600
         lyricsTask = Task { [weak self, repository] in
@@ -623,17 +641,16 @@ final class StandbyModel {
                 do { if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000) }; try Task.checkCancellation() }
                 catch { return }
                 let result = await repository.load(for: identity, allowNetwork: allowed)
-                guard !Task.isCancelled, let self, self.track == identity, self.automaticLyrics == allowed, self.lyricsSurfaceVisible else { return }
+                guard !Task.isCancelled, let self, self.track == identity, self.automaticLyrics == allowed, self.lyricsLookupVisible else { return }
                 switch result {
                 case .available(let payload):
-                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""; self.updateCue(); self.lyricsTask = nil; return
-                case .unavailable(let message): self.lyricsAvailability = .unavailable; self.lyricStatus = message; self.lyricsTask = nil; return
-                case .message(let message): self.lyricsAvailability = allowed ? .offline : .disabled; self.lyricStatus = message; self.lyricsTask = nil; return
-                case .retry(let message): self.lyricsAvailability = .offline; self.lyricStatus = message
+                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.updateCue(); self.lyricsTask = nil; return
+                case .unavailable: self.lyricsAvailability = .unavailable; self.lyricsTask = nil; return
+                case .message: self.lyricsAvailability = allowed ? .offline : .disabled; self.lyricsTask = nil; return
+                case .retry: self.lyricsAvailability = .offline
                 }
             }
             guard !Task.isCancelled, let self, self.track == identity else { return }
-            self.lyricStatus = "Letra temporalmente no disponible. Reintentando automáticamente."
             self.lyricsRetryAt = ProcessInfo.processInfo.systemUptime + 30
             self.lyricsTask = nil
         }
@@ -644,7 +661,7 @@ final class StandbyModel {
     }
     private func updateLyricsVisibility() {
         guard started else { return }
-        guard lyricsSurfaceVisible else { stopLyricsUpdates(); return }
+        guard lyricsLookupVisible else { stopLyricsUpdates(); return }
         if lines.isEmpty && lyricsTask == nil && ProcessInfo.processInfo.systemUptime >= lyricsRetryAt { fetchLyrics() }
         updateCue()
     }
@@ -731,39 +748,6 @@ final class StandbyModel {
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.updateCue() } }
         timer.tolerance = 0.012; cueTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
-    func importLRC() {
-        guard hasTrack, let window = mainWindow else { return }
-        let identity = track
-        if settingsOpen || window.attachedSheet != nil {
-            settingsOpen = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                guard let self, self.track == identity, self.mainWindow?.attachedSheet == nil else { return }
-                self.importLRC()
-            }
-            return
-        }
-        let panel = NSOpenPanel()
-        panel.title = "Importar letra sincronizada para \(identity.title)"
-        panel.allowedContentTypes = [.plainText, .data]; panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url, let self else { return }
-            Task {
-                let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-                do {
-                    let file = try FileHandle(forReadingFrom: url)
-                    defer { try? file.close() }
-                    let data = try file.read(upToCount: LRCParser.maximumBytes + 1) ?? Data()
-                    guard data.count <= LRCParser.maximumBytes else { throw NSError(domain: "Luma", code: 2, userInfo: [NSLocalizedDescriptionKey: "El límite es 512 KB por archivo LRC."]) }
-                    let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16)
-                    let payload = try await self.repository.importLocal(text ?? "", for: identity)
-                    guard self.track == identity else { return }
-                    self.lyricsTask?.cancel(); self.lyricsTask = nil
-                    self.lines = payload.lines; self.lyricsAvailability = .ready; self.lyricSource = payload.source; self.lyricStatus = ""
-                    self.musicShowsLyrics = true
-                } catch { self.showToast(error.localizedDescription) }
-            }
-        }
-    }
     func clearLyricsCache() {
         Task { await repository.clearDownloadedCache(); await artworkRepository.clearCache() }
     }
@@ -773,6 +757,7 @@ final class StandbyModel {
         if started { policyChanged() }
     }
     func toggleLyrics() {
+        guard hasLyrics else { return }
         musicShowsLyrics.toggle()
     }
     func showToast(_ text: String) {
@@ -834,7 +819,7 @@ final class StandbyModel {
         artwork = nil; artworkLink = nil; palette = RGB.aurora
         lyricsAvailability = .ready
         lines = LRCParser.parse("[00:00.00]Un espacio para bajar el ritmo.\n[00:32.00]La luz se mueve despacio.\n[01:00.00]Deja que el día espere.\n[01:20.00]Quédate en este instante.\n[01:36.00]La música encuentra su lugar.\n[02:00.00]Todo lo demás puede esperar.\n[02:35.00]Respira. Ya estás aquí.\n[03:25.00]")
-        lyricSource = "Demostración · texto original, sin audio"; lyricStatus = ""; connectionStatus = "Vista de demostración · sin audio"; updateCue()
+        lyricSource = "Demostración · texto original, sin audio"; connectionStatus = "Vista de demostración · sin audio"; updateCue()
     }
     func shutdown() {
         SystemMediaBridge.shared.setEnabled(false)

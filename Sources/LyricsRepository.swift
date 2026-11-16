@@ -2,9 +2,9 @@ import Foundation
 
 enum LyricsResult: Sendable {
     case available(LyricsPayload)
-    case message(String)
-    case unavailable(String)
-    case retry(String)
+    case message
+    case unavailable
+    case retry
 }
 
 actor LyricsRepository {
@@ -31,7 +31,6 @@ actor LyricsRepository {
         self.local = root.appendingPathComponent("ImportedLyrics", isDirectory: true)
         self.client = client
         try? FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: self.local, withIntermediateDirectories: true)
         var cacheURL = self.root
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try? cacheURL.setResourceValues(values)
@@ -43,15 +42,6 @@ actor LyricsRepository {
               payload.lines.contains(where: { !$0.text.isEmpty }), payload.lines.allSatisfy({ $0.time.isFinite && $0.time >= 0 }),
               zip(payload.lines, payload.lines.dropFirst()).allSatisfy({ $0.time <= $1.time }) else { return nil }
         if let maxAge, Date().timeIntervalSince(payload.savedAt) > maxAge { return nil }
-        return payload
-    }
-    func importLocal(_ source: String, for track: TrackIdentity) throws -> LyricsPayload {
-        let lines = LRCParser.parse(source)
-        guard lines.contains(where: { !$0.text.isEmpty }) else {
-            throw NSError(domain: "LumaStandby", code: 1, userInfo: [NSLocalizedDescriptionKey: "El archivo no contiene tiempos LRC válidos o supera 512 KB."])
-        }
-        let payload = LyricsPayload(lines: lines, source: "LRC local · por línea", savedAt: Date())
-        try JSONEncoder().encode(payload).write(to: local.appendingPathComponent(filename(track)), options: .atomic)
         return payload
     }
     func clearDownloadedCache() {
@@ -74,13 +64,13 @@ actor LyricsRepository {
     func load(for track: TrackIdentity, allowNetwork: Bool) async -> LyricsResult {
         let name = filename(track)
         if let saved = read(local.appendingPathComponent(name)) { return .available(saved) }
-        guard allowNetwork else { return .message("Letras automáticas desactivadas. Puedes importar un .lrc local.") }
+        guard allowNetwork else { return .message }
         if let saved = read(root.appendingPathComponent(name), maxAge: 30 * 86400) { return .available(saved) }
         guard !track.id.isEmpty, !track.title.isEmpty, !track.artist.isEmpty,
               track.duration.isFinite, track.duration >= 1, track.duration <= 3600 else {
-            return .message("Faltan datos de esta grabación para buscar su letra.")
+            return .message
         }
-        if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable("Esta canción no tiene letra sincronizada disponible.") }
+        if let date = misses[name], Date().timeIntervalSince(date) < 600 { return .unavailable }
         do {
             await acquireSlot()
             defer { releaseSlot() }
@@ -89,11 +79,11 @@ actor LyricsRepository {
                 URLQueryItem(name: "track_name", value: track.title), URLQueryItem(name: "artist_name", value: track.artist),
                 URLQueryItem(name: "album_name", value: track.album), URLQueryItem(name: "duration", value: String(Int(track.duration.rounded())))
             ])
-            if reply.status == 429 { return .retry("El proveedor pidió una pausa; se reintentará automáticamente.") }
-            guard reply.status == 200 || reply.status == 404 else { return .retry("El proveedor de letras no respondió. Se reintentará.") }
+            if reply.status == 429 { return .retry }
+            guard reply.status == 200 || reply.status == 404 else { return .retry }
             var records: [RemoteLyrics] = []
             if reply.status == 200 { records = [try JSONDecoder().decode(RemoteLyrics.self, from: reply.data)] }
-            if let record = records.first, record.matches(track), record.instrumental == true { return .unavailable("Esta canción es instrumental y no tiene letra.") }
+            if let record = records.first, record.matches(track), record.instrumental == true { return .unavailable }
             if let record = records.first, record.matches(track), let payload = payload(record) {
                 save(payload, name: name); return .available(payload)
             }
@@ -103,8 +93,8 @@ actor LyricsRepository {
                 URLQueryItem(name: "track_name", value: track.title),
                 URLQueryItem(name: "artist_name", value: RecordingMatcher.primaryArtist(track.artist))
             ])
-            if search.status == 429 { return .retry("El proveedor pidió una pausa; se reintentará automáticamente.") }
-            guard search.status == 200 else { return .retry("No se pudo completar la búsqueda de letras.") }
+            if search.status == 429 { return .retry }
+            guard search.status == 200 else { return .retry }
             records = try JSONDecoder().decode([RemoteLyrics].self, from: search.data)
                 .filter { $0.matches(track) }
                 .sorted {
@@ -117,9 +107,9 @@ actor LyricsRepository {
                 if let payload = payload(record) { save(payload, name: name); return .available(payload) }
             }
             rememberMiss(name)
-            return .unavailable("Esta canción no tiene letra sincronizada disponible.")
-        } catch is CancellationError { return .message("") }
-        catch { return .retry("Letras temporalmente sin conexión. Se reintentará automáticamente.") }
+            return .unavailable
+        } catch is CancellationError { return .message }
+        catch { return .retry }
     }
     private func payload(_ record: RemoteLyrics) -> LyricsPayload? {
         let lines = LRCParser.parse(record.syncedLyrics ?? "")

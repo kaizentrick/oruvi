@@ -31,7 +31,8 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
     Sources/WidgetShared/WidgetSnapshot.swift scripts/verify-widget-recovery.swift -o "$WORK/verify-widget-recovery"
 "$WORK/verify-widget-recovery"
 xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 -parse-as-library \
-    Sources/CodexUsage.swift Sources/CodexUsageBridge.swift scripts/verify-codex-usage.swift -o "$WORK/verify-codex-usage"
+    Sources/CodexUsage.swift Sources/CodexUsageBridge.swift Sources/CursorUsage.swift \
+    scripts/verify-codex-usage.swift -o "$WORK/verify-codex-usage"
 "$WORK/verify-codex-usage" "$WORK"
 python3 - <<'PY'
 import pathlib
