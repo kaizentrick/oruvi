@@ -16,11 +16,17 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
     var message = "Los originales no se mueven ni se copian."
     private(set) var importing = false
     private(set) var sharing = false
-    @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var imports = 0
+    @ObservationIgnored private var pendingImports: [[URL]] = []
+    @ObservationIgnored private var importTask: Task<Void, Never>?
+    @ObservationIgnored private let inspect: @Sendable (URL) -> NotchShelfItem?
     @ObservationIgnored private var chooser: NSOpenPanel?
     @ObservationIgnored private var service: NSSharingService?
     @ObservationIgnored private weak var sharingOwner: NotchController?
+
+    init(inspect: @escaping @Sendable (URL) -> NotchShelfItem? = { NotchShelf.inspectFile($0) }) {
+        self.inspect = inspect
+        super.init()
+    }
 
     var sharingURLs: [URL] {
         items.filter { selected.isEmpty || selected.contains($0.url) }.map(\.url)
@@ -29,47 +35,60 @@ final class NotchShelf: NSObject, NSSharingServiceDelegate {
     func add(_ urls: [URL]) {
         // Bound work before touching the filesystem. Validation never opens file contents.
         guard !isFull else { message = "Límite de 20 archivos. Retira alguno para añadir más."; return }
-        let candidates = NotchFilePolicy.candidates(urls, existing: items.map(\.url), forInspection: true)
-        guard !candidates.isEmpty else {
-            message = NotchFilePolicy.candidates(urls, existing: []).isEmpty
-                ? "Arrastra archivos locales desde Finder." : "Estos archivos ya están en la bandeja."
-            return
-        }
-        let serial = generation
-        imports += 1; importing = true
-        Task { [weak self] in
-            let (available, skipped) = await Task.detached(priority: .utility) {
-                var available: [NotchShelfItem] = []
-                var skipped = false
-                for url in candidates {
-                    var directory: ObjCBool = false
-                    if NotchFilePolicy.isSafeFile(url),
-                       FileManager.default.fileExists(atPath: url.path, isDirectory: &directory),
-                       FileManager.default.isReadableFile(atPath: url.path) {
-                        available.append(NotchShelfItem(url: url, isDirectory: directory.boolValue))
-                        if available.count == NotchFilePolicy.limit { break }
-                    } else {
-                        skipped = true
+        let local = NotchFilePolicy.candidates(urls, existing: [], forInspection: true)
+        guard !local.isEmpty else { message = "Arrastra archivos locales desde Finder."; return }
+        pendingImports.append(local)
+        guard importTask == nil else { return }
+        importing = true
+        importTask = Task { [weak self, inspect] in
+            while !Task.isCancelled, let batch = self?.nextImport() {
+                if batch.urls.isEmpty { continue }
+                let validation = Task.detached(priority: .utility) {
+                    var available: [NotchShelfItem] = []
+                    var skipped = false
+                    for url in batch.urls {
+                        guard !Task.isCancelled else { break }
+                        if let item = inspect(url) {
+                            available.append(item)
+                            if available.count == batch.capacity { break }
+                        } else {
+                            skipped = true
+                        }
                     }
+                    return (available, skipped)
                 }
-                return (available, skipped)
-            }.value
-            guard let self, self.generation == serial else { return }
-            self.imports = max(0, self.imports - 1); self.importing = self.imports > 0
-            let accepted = Set(NotchFilePolicy.candidates(available.map(\.url), existing: self.items.map(\.url)))
-            self.items.append(contentsOf: available.filter { accepted.contains($0.url) })
-            if skipped {
-                self.message = "Algunos archivos ya no existen o no se pueden leer."
-            } else if accepted.isEmpty {
-                self.message = self.items.count >= NotchFilePolicy.limit ? "Límite de 20 archivos. Retira alguno para añadir más." : "Estos archivos ya están en la bandeja."
-            } else {
-                self.message = self.items.count == NotchFilePolicy.limit ? "20 archivos · bandeja completa." : "Solo referencias temporales · hasta 20 archivos."
+                let (available, skipped) = await withTaskCancellationHandler {
+                    await validation.value
+                } onCancel: { validation.cancel() }
+                guard !Task.isCancelled, let self else { return }
+                self.items.append(contentsOf: available)
+                if skipped {
+                    self.message = "Algunos archivos ya no existen o no se pueden leer."
+                } else {
+                    self.message = self.isFull ? "20 archivos · bandeja completa." : "Solo referencias temporales · hasta 20 archivos."
+                }
             }
+            guard !Task.isCancelled else { return }
+            self?.importTask = nil; self?.importing = false
         }
+    }
+    private func nextImport() -> (urls: [URL], capacity: Int)? {
+        if isFull { pendingImports.removeAll() }
+        guard !pendingImports.isEmpty else { return nil }
+        let urls = NotchFilePolicy.candidates(pendingImports.removeFirst(), existing: items.map(\.url), forInspection: true)
+        if urls.isEmpty { message = "Estos archivos ya están en la bandeja." }
+        return (urls, NotchFilePolicy.limit - items.count)
+    }
+    nonisolated private static func inspectFile(_ url: URL) -> NotchShelfItem? {
+        var directory: ObjCBool = false
+        guard NotchFilePolicy.isSafeFile(url),
+              FileManager.default.fileExists(atPath: url.path, isDirectory: &directory),
+              FileManager.default.isReadableFile(atPath: url.path) else { return nil }
+        return NotchShelfItem(url: url, isDirectory: directory.boolValue)
     }
     func remove(_ url: URL) { items.removeAll { $0.url == url }; selected.remove(url) }
     func clear() {
-        generation += 1; imports = 0; importing = false
+        importTask?.cancel(); importTask = nil; pendingImports.removeAll(); importing = false
         items.removeAll(); selected.removeAll(); message = "Los originales no se mueven ni se copian."
     }
     func toggle(_ url: URL) {

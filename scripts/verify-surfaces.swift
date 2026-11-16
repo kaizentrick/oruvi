@@ -632,6 +632,37 @@ struct VerifySurfaces {
         shelf.clear()
         expect(shelf.items.isEmpty && originals.allSatisfy { manager.fileExists(atPath: $0.path) },
                "clearing the file shelf leaves every original in place")
+        let lastOriginal = originals[19].standardizedFileURL
+        let overflow = shelfDirectory.appendingPathComponent("later.txt").standardizedFileURL
+        let inspectedShelfURLs = OSAllocatedUnfairLock(initialState: Set<URL>())
+        let unblockFirst = DispatchSemaphore(value: 0)
+        let orderedShelf = NotchShelf { url in
+            _ = inspectedShelfURLs.withLock { $0.insert(url) }
+            if url == lastOriginal { precondition(unblockFirst.wait(timeout: .now() + 4) == .success) }
+            return NotchShelfItem(url: url, isDirectory: false)
+        }
+        orderedShelf.add(Array(originals.prefix(19)))
+        await until { !orderedShelf.importing }
+        orderedShelf.add([lastOriginal])
+        await until { inspectedShelfURLs.withLock { $0.contains(lastOriginal) } }
+        orderedShelf.add([overflow])
+        unblockFirst.signal()
+        await until { !orderedShelf.importing }
+        expect(orderedShelf.items.last?.url == lastOriginal && orderedShelf.items.count == 20 &&
+               !inspectedShelfURLs.withLock { $0.contains(overflow) },
+               "the earlier batch keeps the final slot and queued overflow requires no filesystem inspection")
+        orderedShelf.clear()
+        _ = inspectedShelfURLs.withLock { $0.remove(lastOriginal) }
+        orderedShelf.add([lastOriginal])
+        await until { inspectedShelfURLs.withLock { $0.contains(lastOriginal) } }
+        orderedShelf.add([overflow])
+        orderedShelf.clear()
+        orderedShelf.add([originals[0]])
+        unblockFirst.signal()
+        await until { !orderedShelf.importing }
+        expect(orderedShelf.items.map(\.url) == [originals[0].standardizedFileURL] &&
+               !inspectedShelfURLs.withLock { $0.contains(overflow) },
+               "clearing cancels the pending batches and only the subsequent import survives")
         print("PASS: \(count) real-model native-widget and surface checks; no extra window or player launched.")
     }
 
