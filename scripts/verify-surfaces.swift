@@ -588,6 +588,46 @@ struct VerifySurfaces {
         await newPoll.value
         expect(cursor.currentSnapshot != nil && !cursor.refreshing,
                "closing Conexiones keeps its cached quota without continuing to poll")
+        cursor.refresh()
+        let failedPollID = cursor.refreshID
+        let failedPoll = Task { await cursor.poll(id: failedPollID) { throw CursorUsageError.timeout } }
+        await until { cursor.summary == CursorUsageError.timeout.message }
+        failedPoll.cancel()
+        await failedPoll.value
+        let reopenedAfterFailure = Task {
+            await cursor.poll(id: failedPollID) { preconditionFailure("reopening bypassed Cursor's retry interval") }
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        expect(cursor.summary == CursorUsageError.timeout.message && !cursor.refreshing,
+               "reopening Conexiones leaves a failed reading in backoff")
+        reopenedAfterFailure.cancel()
+        await reopenedAfterFailure.value
+
+        cursor.refresh()
+        let cancelledPollID = cursor.refreshID
+        let cancelledPoll = Task {
+            await cursor.poll(id: cancelledPollID) {
+                try await Task.sleep(for: .seconds(5))
+                return newReading
+            }
+        }
+        await until { cursor.refreshing }
+        cancelledPoll.cancel()
+        await cancelledPoll.value
+        let reopenedAfterCancellation = Task {
+            await cursor.poll(id: cancelledPollID) { preconditionFailure("reopening after cancellation immediately started another request") }
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        expect(cursor.currentSnapshot == nil && !cursor.refreshing && cursor.summary == "Cuota pendiente de actualizar",
+               "rapid reopening does not start another request or report a spinner during the wait")
+        reopenedAfterCancellation.cancel()
+        await reopenedAfterCancellation.value
+
+        cursor.refresh()
+        let retriedPoll = Task { await cursor.poll(id: cursor.refreshID) { newReading } }
+        await until { cursor.currentSnapshot != nil }
+        retriedPoll.cancel()
+        await retriedPoll.value
         cursor.setEnabled(false)
         expect(cursor.currentSnapshot == nil && cursor.summary == "Sin conectar", "disconnecting clears the displayed Cursor quota")
 

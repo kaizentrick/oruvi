@@ -35,7 +35,7 @@ struct NotchConnectionsView: View {
     private enum UsageDetail { case codex, cursor }
 
     var body: some View {
-        let cursorPollID = controller.expanded ? cursor.refreshID : nil
+        let cursorPollID = controller.expanded && !model.sessionSuspended ? cursor.refreshID : nil
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let detail {
@@ -144,6 +144,7 @@ final class CursorConnection {
     private(set) var refreshing = false
     private var error: CursorUsageError?
     @ObservationIgnored private var activeRequest: UUID?
+    @ObservationIgnored private var nextAttempt: ContinuousClock.Instant?
 
     var currentSnapshot: CursorUsageSnapshot? {
         guard enabled, snapshot?.isFresh(at: Date()) == true else { return nil }
@@ -153,7 +154,7 @@ final class CursorConnection {
         if !enabled { return "Sin conectar" }
         if let snapshot = currentSnapshot { return "≈\(snapshot.remainingPercent)% restante · Reinicio: \(snapshot.resetLabel)" }
         if let error { return error.message }
-        return "Consultando Grok…"
+        return refreshing ? "Consultando Grok…" : "Cuota pendiente de actualizar"
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -164,6 +165,7 @@ final class CursorConnection {
 
     func refresh() {
         activeRequest = nil
+        nextAttempt = nil
         refreshing = false
         snapshot = nil
         error = nil
@@ -174,16 +176,16 @@ final class CursorConnection {
         guard enabled else { return }
         let interval = CursorUsageSnapshot.maximumAge
         while !Task.isCancelled && id == refreshID {
-            if let snapshot = currentSnapshot {
-                let wait = snapshot.fetchedAt.addingTimeInterval(interval).timeIntervalSinceNow
-                if wait > 0 && wait <= interval {
-                    do { try await Task.sleep(for: .seconds(wait)) } catch { return }
-                }
+            if let nextAttempt, nextAttempt > .now {
+                do { try await Task.sleep(until: nextAttempt, clock: .continuous) } catch { return }
+                continue
             }
             guard !Task.isCancelled, id == refreshID, enabled else { return }
             snapshot = nil
             let requestID = UUID()
             activeRequest = requestID
+            // Keep rapid dismissal and reopening from starting repeated browser requests.
+            nextAttempt = .now + .seconds(15)
             refreshing = true
             let result: Result<CursorUsageSnapshot, Error>
             do { result = .success(try await read()) }
@@ -192,6 +194,7 @@ final class CursorConnection {
             activeRequest = nil
             refreshing = false
             guard !Task.isCancelled, enabled else { return }
+            nextAttempt = .now + .seconds(interval)
             switch result {
             case .success(let reading):
                 snapshot = reading
@@ -199,7 +202,6 @@ final class CursorConnection {
             case .failure(let failure):
                 snapshot = nil
                 error = failure as? CursorUsageError ?? .unavailable
-                do { try await Task.sleep(for: .seconds(interval)) } catch { return }
             }
         }
     }
