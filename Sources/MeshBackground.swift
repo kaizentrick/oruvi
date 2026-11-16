@@ -45,26 +45,36 @@ struct SmoothMesh: View, Animatable {
         let colors = vector.colors
         let stops = [colors[0], colors[1], colors[0], colors[3], colors[2], colors[1], colors[0], colors[3], colors[0]]
         Group {
-            if framesPerSecond > 0 {
+            if framesPerSecond > 0, let metal = AnimatedMesh.Resources.shared {
+                AnimatedMesh(resources: metal, palette: vector.values, framesPerSecond: Int(framesPerSecond))
+            } else if framesPerSecond > 0 {
                 TimelineView(.animation(minimumInterval: 1 / framesPerSecond)) { _ in
-                    let phase = ProcessInfo.processInfo.systemUptime * 0.085
-                    let points = Self.points(leftY: Float(0.51 + 0.12 * sin(phase * 0.67)),
-                                             center: [Float(0.5 + 0.16 * sin(phase * 0.81)), Float(0.52 + 0.15 * cos(phase * 0.59))],
-                                             rightY: Float(0.50 + 0.13 * sin(phase * 0.79)))
-                    MeshGradient(width: 3, height: 3, points: points, colors: stops)
+                    MeshGradient(width: 3, height: 3, points: MeshMotion().points, colors: stops)
                 }
             } else {
-                MeshGradient(width: 3, height: 3, points: Self.staticPoints, colors: stops)
+                MeshGradient(width: 3, height: 3, points: MeshMotion.still.points, colors: stops)
             }
         }
         .overlay(light ? Color.white.opacity(0.74) : Color.black.opacity(0.38))
         .overlay(LinearGradient(colors: [.clear, .black.opacity(light ? 0.015 : 0.25)], startPoint: .top, endPoint: .bottom))
         .ignoresSafeArea().accessibilityHidden(true).allowsHitTesting(false)
     }
+}
 
-    private static let staticPoints = points(leftY: 0.51, center: [0.5, 0.52], rightY: 0.50)
+struct MeshMotion {
+    static let still = MeshMotion(positions: [0.51, 0.5, 0.52, 0.50])
+    let positions: SIMD4<Float> // Left y, center x and y, right y.
 
-    private static func points(leftY: Float, center: SIMD2<Float>, rightY: Float) -> [SIMD2<Float>] {
-        [[0, 0], [0.5, 0], [1, 0], [0, leftY], center, [1, rightY], [0, 1], [0.5, 1], [1, 1]]
+    private init(positions: SIMD4<Float>) { self.positions = positions }
+    init(uptime: Double = ProcessInfo.processInfo.systemUptime) {
+        let phase = uptime * 0.085
+        positions = [Float(0.51 + 0.12 * sin(phase * 0.67)),
+                     Float(0.5 + 0.16 * sin(phase * 0.81)),
+                     Float(0.52 + 0.15 * cos(phase * 0.59)),
+                     Float(0.50 + 0.13 * sin(phase * 0.79))]
+    }
+    var points: [SIMD2<Float>] {
+        [[0, 0], [0.5, 0], [1, 0], [0, positions.x], [positions.y, positions.z],
+         [1, positions.w], [0, 1], [0.5, 1], [1, 1]]
     }
 }
