@@ -4,6 +4,7 @@ import Observation
 import ImageIO
 import IOKit.ps
 import IOKit.pwr_mgt
+import os
 
 struct RGB: Equatable {
     var r: Double, g: Double, b: Double
@@ -65,7 +66,7 @@ final class StandbyModel {
         guard playerSelections.preference(for: surface) != value else { return }
         playerSelections.set(value, for: surface, defaults: prefs)
         guard started, playbackSurface == surface else { return }
-        generation += 1; clearTrack()
+        invalidatePlaybackRequests(); clearTrack()
         activePlayer = value.source ?? lastSurfacePlayers[surface] ?? .music
         connectMusic()
     }
@@ -79,7 +80,7 @@ final class StandbyModel {
         guard !demoMode else { return false }
         let nextConnected = prefs.bool(forKey: next.enabledKey)
         if connected && nextConnected && previousPreference == effectivePlayerPreference { return false }
-        generation += 1
+        invalidatePlaybackRequests()
         clearTrack()
         activePlayer = effectivePlayerPreference.source ?? lastSurfacePlayers[next] ?? .music
         connected = nextConnected
@@ -248,7 +249,9 @@ final class StandbyModel {
     @ObservationIgnored private var artworkTask: Task<Void, Never>?
     @ObservationIgnored private var notificationTokens: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var powerSource: CFRunLoopSource?
-    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private let playbackGeneration = OSAllocatedUnfairLock(initialState: 0)
+    private var generation: Int { playbackGeneration.withLock { $0 } }
+    private func invalidatePlaybackRequests() { playbackGeneration.withLock { $0 += 1 } }
     @ObservationIgnored private var lastAppliedSnapshotSequence: UInt64 = 0
     @ObservationIgnored private var lastPlaybackDemand = false
     @ObservationIgnored private var reading = false
@@ -391,7 +394,7 @@ final class StandbyModel {
               connected, needsPlayback, !demoMode else { return }
         if let explicit = effectivePlayerPreference.source, explicit != source { return }
         // Discard any queued sample from before the process started or stopped.
-        generation += 1
+        invalidatePlaybackRequests()
         if reading { pendingMusicHint = true } else { readMusic() }
     }
     func refreshPower() {
@@ -439,7 +442,7 @@ final class StandbyModel {
     }
     private func suspendPlaybackSampling() {
         SystemMediaBridge.shared.setEnabled(false)
-        generation += 1
+        invalidatePlaybackRequests()
         pendingMusicHint = false
         pollTimer?.invalidate(); pollTimer = nil
     }
@@ -453,7 +456,7 @@ final class StandbyModel {
         guard connected, !demoMode, needsPlayback else { return }
         SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic,
                                             restarting: restartingSystem)
-        generation += 1
+        invalidatePlaybackRequests()
         lyricsRetryAt = 0; artworkRetryAt = 0
         recovery.invalidate(); isResynchronizing = true
         cueTimer?.invalidate(); cueTimer = nil
@@ -488,11 +491,12 @@ final class StandbyModel {
         guard !LumaEnvironment.isTesting, connected, needsPlayback, !reading, !demoMode else { return }
         reading = true; pollTimer?.invalidate(); pollTimer = nil
         let session = generation, preference = effectivePlayerPreference, preferred = activePlayer
-        musicQueue.async { [weak self, playerRouter] in
-            let snapshot = playerRouter.snapshot(preference: preference, preferred: preferred)
+        musicQueue.async { [weak self, playerRouter, playbackGeneration] in
+            let snapshot = playbackGeneration.withLock { $0 == session }
+                ? playerRouter.snapshot(preference: preference, preferred: preferred) : nil
             DispatchQueue.main.async {
                 guard let self else { return }; self.reading = false
-                guard session == self.generation, self.connected, self.needsPlayback else {
+                guard let snapshot, session == self.generation, self.connected, self.needsPlayback else {
                     if self.connected && self.needsPlayback && self.pendingMusicHint {
                         self.pendingMusicHint = false; self.readMusic()
                     } else { self.schedulePoll() }
@@ -630,8 +634,9 @@ final class StandbyModel {
         guard connected else { return }
         let session = generation, source = activePlayer, target = min(max(0, position), track.duration > 0 ? track.duration : max(0, position))
         let preference = effectivePlayerPreference, expectedTrackID = track.id
-        musicQueue.async { [weak self, playerRouter] in
-            let result = playerRouter.command(command, position: target, source: source, preference: preference, expectedTrackID: expectedTrackID)
+        musicQueue.async { [weak self, playerRouter, playbackGeneration] in
+            let result = playerRouter.command(command, position: target, source: source, preference: preference,
+                                              expectedTrackID: expectedTrackID) { playbackGeneration.withLock { $0 == session } }
             DispatchQueue.main.async {
                 guard let self, session == self.generation, self.connected else { return }
                 if result["status"] as? String != "ok" {
@@ -657,22 +662,26 @@ final class StandbyModel {
         }
         if command != "toggle" && !canSkip { return "Este contenido no permite saltar." }
         let session = generation, source = activePlayer, selection = effectivePlayerPreference, queue = musicQueue
-        let result: ([String: Any], [String: Any]) = await withCheckedContinuation { continuation in
-            queue.async { [playerRouter] in
+        let result: ([String: Any], [String: Any])? = await withCheckedContinuation { continuation in
+            queue.async { [playerRouter, playbackGeneration] in
                 let commandResult = playerRouter.command(command, position: 0, source: source,
-                    preference: selection, expectedTrackID: expectedTrackID, requireSameTrack: true)
+                    preference: selection, expectedTrackID: expectedTrackID, requireSameTrack: true) {
+                        playbackGeneration.withLock { $0 == session }
+                    }
                 if commandResult["status"] as? String == "ok" {
                     queue.asyncAfter(deadline: .now() + 0.15) {
+                        guard playbackGeneration.withLock({ $0 == session }) else { continuation.resume(returning: nil); return }
                         let value = playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true)
                         continuation.resume(returning: (commandResult, value))
                     }
                 } else {
+                    guard playbackGeneration.withLock({ $0 == session }) else { continuation.resume(returning: nil); return }
                     let value = playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true)
                     continuation.resume(returning: (commandResult, value))
                 }
             }
         }
-        guard session == generation, connected, !screenSleeping else { return "La sesión de Oruvi cambió." }
+        guard let result, session == generation, connected, !screenSleeping else { return "La sesión de Oruvi cambió." }
         apply(result.1)
         if result.0["status"] as? String != "ok" {
             return result.0["message"] as? String ?? "El reproductor no aceptó el control."
@@ -688,15 +697,14 @@ final class StandbyModel {
             connectMusic()
         }
         guard connected, !demoMode else { return "Conecta el reproductor en Oruvi." }
-        // Reject outstanding older callbacks without creating a second sampler.
-        generation += 1
         let session = generation, selection = effectivePlayerPreference, source = activePlayer
-        let snapshot: [String: Any] = await withCheckedContinuation { continuation in
-            musicQueue.async { [playerRouter] in
+        let snapshot: [String: Any]? = await withCheckedContinuation { continuation in
+            musicQueue.async { [playerRouter, playbackGeneration] in
+                guard playbackGeneration.withLock({ $0 == session }) else { continuation.resume(returning: nil); return }
                 continuation.resume(returning: playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true))
             }
         }
-        guard session == generation, connected, !screenSleeping else { return "La sesión cambió. Actualiza el widget." }
+        guard let snapshot, session == generation, connected, !screenSleeping else { return "La sesión cambió. Actualiza el widget." }
         apply(snapshot)
         schedulePoll()
         return snapshot["status"] as? String == "ok" ? "" : connectionStatus

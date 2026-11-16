@@ -154,7 +154,7 @@ final class SystemMediaBridge: @unchecked Sendable {
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return SystemMediaSnapshot(payload: payload, uptime: ProcessInfo.processInfo.systemUptime, epoch: Date().timeIntervalSince1970)
     }
-    func send(_ command: String, position: Double, target: PlaybackCommandTarget) -> [String: Any] {
+    func send(_ command: String, position: Double, target: PlaybackCommandTarget, isCurrent: () -> Bool) -> [String: Any] {
         guard let fresh = readNow(includeArtwork: false) else {
             return ["status": "transition", "message": "El sistema está actualizando el contenido. Vuelve a intentarlo."]
         }
@@ -174,6 +174,7 @@ final class SystemMediaBridge: @unchecked Sendable {
             arguments = ["seek", String(Int64(min(position, fresh.duration) * 1_000_000))]
         default: return ["status": "error", "message": "Control no disponible para este reproductor."]
         }
+        guard isCurrent() else { return ["status": "transition"] }
         guard Self.run(arguments) != nil else {
             return ["status": "error", "message": "El sistema no pudo entregar el control al reproductor."]
         }

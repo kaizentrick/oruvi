@@ -10,14 +10,18 @@ final class PlayerRouter: @unchecked Sendable {
     private var snapshotSequence: UInt64 = 0
     private let isRunning: (PlayerSource) -> Bool
     private let readNative: (PlayerSource) -> [String: Any]
+    private let dispatchNative: (PlayerSource, String, Double, Bool) -> [String: Any]
 
     init(isRunning: @escaping (PlayerSource) -> Bool = {
         NSRunningApplication.runningApplications(withBundleIdentifier: $0.rawValue).contains { !$0.isTerminated }
     }, readNative: @escaping (PlayerSource) -> [String: Any] = {
         $0 == .music ? LumaReadMusicSnapshot() : OruviReadSpotifySnapshot()
+    }, dispatchNative: @escaping (PlayerSource, String, Double, Bool) -> [String: Any] = { source, command, position, checkState in
+        source == .music ? LumaMusicCommand(command, position, checkState) : OruviSpotifyCommand(command, position, checkState)
     }) {
         self.isRunning = isRunning
         self.readNative = readNative
+        self.dispatchNative = dispatchNative
     }
     func reset() {
         denials.removeAll(); previouslyPlaying.removeAll(); lastAutomaticSource = nil
@@ -97,12 +101,14 @@ final class PlayerRouter: @unchecked Sendable {
         return ["status": "notRunning"]
     }
     func command(_ command: String, position: Double, source: PlayerSource,
-                 preference: PlayerPreference, expectedTrackID: String, requireSameTrack: Bool = false) -> [String: Any] {
+                 preference: PlayerPreference, expectedTrackID: String, requireSameTrack: Bool = false,
+                 isCurrent: () -> Bool = { true }) -> [String: Any] {
+        guard isCurrent() else { return ["status": "transition"] }
         let displayed = PlaybackCommandTarget(source: source, trackID: expectedTrackID)
         if source == .system, preference == .automatic {
             // Now Playing commands are global. Validate the displayed item immediately
             // before dispatch, even when another tab uses the same browser.
-            return SystemMediaBridge.shared.send(command, position: position, target: displayed)
+            return SystemMediaBridge.shared.send(command, position: position, target: displayed, isCurrent: isCurrent)
         }
         if displayed.canSendDirectly(command, preference: preference, requireSameTrack: requireSameTrack) {
             return sendNative(command, position: position, to: source, checkPlayerState: true)
@@ -115,14 +121,13 @@ final class PlayerRouter: @unchecked Sendable {
                                 requireSameTrack: command == "seek" || requireSameTrack) else {
             return ["status": "transition", "message": "El contenido cambió. Vuelve a pulsar el control."]
         }
+        guard isCurrent() else { return ["status": "transition"] }
         return sendNative(command, position: position, to: target)
     }
     private func sendNative(_ command: String, position: Double, to source: PlayerSource, checkPlayerState: Bool = false) -> [String: Any] {
         guard source != .system else { return ["status": "notRunning"] }
         if let denial = denials[source] { return denial }
-        var result = source == .music
-            ? LumaMusicCommand(command, position, checkPlayerState)
-            : OruviSpotifyCommand(command, position, checkPlayerState)
+        var result = dispatchNative(source, command, position, checkPlayerState)
         result["source"] = source.rawValue
         if result["status"] as? String == "denied" { denials[source] = result }
         return result

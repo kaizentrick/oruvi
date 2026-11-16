@@ -347,6 +347,29 @@ struct VerifySurfaces {
         covers.apply(router.snapshot(preference: .spotify, preferred: .spotify))
         covers.apply(latestTrack)
         expect(!covers.hasTrack, "a fresh no-player reply clears playback and rejects a late successful sample")
+        var commandSession = 1
+        var commandReads = 0
+        var deliveredCommands = 0
+        let commandRouter = PlayerRouter(isRunning: { _ in true }, readNative: { _ in
+            commandReads += 1
+            commandSession += 1
+            return ["status": "ok", "id": "track"]
+        }, dispatchNative: { _, _, _, _ in
+            deliveredCommands += 1
+            return ["status": "ok"]
+        })
+        let staleToggle = commandRouter.command("toggle", position: 0, source: .music,
+                                                preference: .music, expectedTrackID: "track") { commandSession == 0 }
+        expect(staleToggle["status"] as? String == "transition" && commandReads == 0 && deliveredCommands == 0,
+               "a queued control is skipped before any player interaction when its session has changed")
+        let staleSeek = commandRouter.command("seek", position: 30, source: .music,
+                                              preference: .music, expectedTrackID: "track") { commandSession == 1 }
+        expect(staleSeek["status"] as? String == "transition" && commandReads == 1 && deliveredCommands == 0,
+               "a control invalidated during its native track lookup is not delivered")
+        let currentToggle = commandRouter.command("toggle", position: 0, source: .music,
+                                                  preference: .music, expectedTrackID: "track") { commandSession == 2 }
+        expect(currentToggle["status"] as? String == "ok" && commandReads == 1 && deliveredCommands == 1,
+               "a current native control keeps the direct dispatch path")
         let lockFile = support.appendingPathComponent("verification.instance")
         do {
             let owner = try ApplicationInstanceLock.acquire(at: lockFile)
