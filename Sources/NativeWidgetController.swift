@@ -146,7 +146,7 @@ final class NativeWidgetController {
         refreshConfigurations(force: true)
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, !self.stopped, !self.model.screenSleeping else { return }
+                guard let self, !self.stopped, !self.model.sessionSuspended else { return }
                 self.model.setNativeWidgetPresence(self.presence.active(at: Date()))
                 self.refreshConfigurations()
                 self.requestPublication() // Refresh validity; unchanged data writes at most every 10 min.
@@ -162,7 +162,7 @@ final class NativeWidgetController {
         guard !stopped else { return }
         withObservationTracking {
             _ = model.track; _ = model.artwork; _ = model.playbackIsPlaying
-            _ = model.connected; _ = model.screenSleeping; _ = model.demoMode
+            _ = model.connected; _ = model.sessionSuspended; _ = model.demoMode
             _ = model.effectivePlayerPreference; _ = model.playbackSurface; _ = model.activePlayer
             _ = model.systemProhibitsSkip; _ = model.activeSystemBundleID; _ = model.palette
         } onChange: { [weak self] in
@@ -232,7 +232,7 @@ final class NativeWidgetController {
     func makeSnapshot(at now: Date = Date()) -> WidgetSnapshot {
         var value = WidgetSnapshot(); value.generatedAt = now; value.session = session
         value.preference = model.effectivePlayerPreference.rawValue
-        if model.screenSleeping {
+        if model.sessionSuspended {
             value.state = .sleeping; value.title = "Oruvi en reposo"; value.artist = "La reproducción se actualizará al volver."
         } else if !model.connected || model.demoMode {
             value.state = .disconnected; value.title = "Reproductor desconectado"; value.artist = "Conéctalo en los ajustes de Oruvi."
@@ -284,7 +284,8 @@ final class NativeWidgetController {
                 lastMusicCover = nil
             }
         }
-        guard !stopped, !Task.isCancelled, work == serial, policy.needsWrite(value, force: force) else { return }
+        guard !stopped, !Task.isCancelled, work == serial,
+              (value.state == .sleeping) == model.sessionSuspended, policy.needsWrite(value, force: force) else { return }
         let failure = await withCheckedContinuation { continuation in
             io.async { [storage, value] in
                 // Container lookup may ask for access. Do not block the UI, and
@@ -324,7 +325,7 @@ final class NativeWidgetController {
     func perform(command: String, session: String, trackID: String, sourceID: String, preference: String, reload: Bool = false) async {
         guard !LumaEnvironment.isTesting, ["refresh", "previous", "toggle", "next"].contains(command) else { return }
         for _ in 0..<40 where !started { try? await Task.sleep(nanoseconds: 50_000_000) }
-        guard started, !stopped, !model.screenSleeping, !performing else { return }
+        guard started, !stopped, !model.sessionSuspended, !performing else { return }
         performing = true
         publishing?.cancel(); publishing = nil; dirty = false; pendingForce = false; serial += 1
         presence.receivedRequest(at: Date()); model.setNativeWidgetPresence(true)

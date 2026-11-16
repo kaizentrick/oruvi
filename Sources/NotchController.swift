@@ -60,21 +60,16 @@ final class NotchController {
     @ObservationIgnored private var previousDragTab: NotchTab?
     @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var stopped = false
-    @ObservationIgnored private var systemSleeping = false
-    @ObservationIgnored private var displaySleeping = false
-    @ObservationIgnored private var sessionInactive = false
-    @ObservationIgnored private var screenLocked = false
     @ObservationIgnored private var presentationHandoff = false
     @ObservationIgnored private var reconcileQueued = false
     @ObservationIgnored private var trackingMenus: Set<ObjectIdentifier> = []
     @ObservationIgnored private var pendingMenuAction: (() -> Void)?
-    private var sessionBlocked: Bool { systemSleeping || displaySleeping || sessionInactive || screenLocked }
     private var allowsAnimation: Bool {
         !model.reduceMotion && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
     }
 
     var preventsAutomaticStandby: Bool { input.preventsAutomaticStandby }
-    var acceptsFileDrop: Bool { input.visible && isShown && !sessionBlocked }
+    var acceptsFileDrop: Bool { input.visible && isShown && !model.sessionSuspended }
     var approachFrame: CGRect? {
         guard input.visible, let geometry else { return nil }
         return NotchApproachGeometry.region(compact: geometry.frame(expanded: false), screen: geometry.screenFrame)
@@ -126,18 +121,10 @@ final class NotchController {
             }
             observers.append((NotificationCenter.default, token))
         }
-        observe(workspace, NSWorkspace.willSleepNotification) { [weak self] in self?.systemSleeping = true; self?.reconcile() }
-        observe(workspace, NSWorkspace.screensDidSleepNotification) { [weak self] in self?.displaySleeping = true; self?.reconcile() }
-        observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { [weak self] in self?.sessionInactive = true; self?.reconcile() }
-        observe(workspace, NSWorkspace.didWakeNotification) { [weak self] in self?.systemSleeping = false; self?.reconcileNextTurn() }
-        observe(workspace, NSWorkspace.screensDidWakeNotification) { [weak self] in self?.displaySleeping = false; self?.reconcileNextTurn() }
-        observe(workspace, NSWorkspace.sessionDidBecomeActiveNotification) { [weak self] in self?.sessionInactive = false; self?.reconcileNextTurn() }
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { [weak self] in self?.reconcileNextTurn() }
         observe(workspace, NSWorkspace.didActivateApplicationNotification) { [weak self] in self?.reconcileNextTurn() }
         observe(workspace, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) { [weak self] in self?.updateFrame(animated: false) }
         observe(NotificationCenter.default, Notification.Name.NSProcessInfoPowerStateDidChange) { [weak self] in self?.updateFrame(animated: false) }
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.screenLocked = true; self?.reconcile() }
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.screenLocked = false; self?.reconcileNextTurn() }
         observeActivity()
         reconcile()
     }
@@ -163,7 +150,7 @@ final class NotchController {
             }
         }
     }
-    private func reconcileNextTurn() {
+    func reconcileNextTurn() {
         guard !reconcileQueued, !stopped else { return }; reconcileQueued = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }; self.reconcileQueued = false; self.reconcile()
@@ -171,13 +158,13 @@ final class NotchController {
     }
     func reconcile() {
         guard let panel else { return }
-        let show = !stopped && !presentationHandoff && model.notchEnabled && !model.isVisible && !model.screenSleeping && !sessionBlocked && !(model.runtime?.isBlocked ?? false)
+        let show = !stopped && !presentationHandoff && model.notchEnabled && !model.isVisible && !model.sessionSuspended
         guard show else {
             cancelHover(); input.suspend(); surface.stop(); dismissNotice()
             previousDragTab = nil; trackingMenus.removeAll(); pendingMenuAction = nil
             panel.acceptsKeyboard = false; panel.ignoresMouseEvents = true
             agenda.setActive(false); dragMonitor?.stop(); pointerMonitor?.stop()
-            if sessionBlocked || stopped { shelf.cancelChooser() }
+            if model.sessionSuspended || stopped { shelf.cancelChooser() }
             panel.orderOut(nil); model.notchMusicVisible = false; model.setNotchVisible(false); return
         }
         countdown.finishIfDue()
@@ -218,7 +205,7 @@ final class NotchController {
         hover(NotchHoverGeometry.contains(point, in: region))
     }
     func containsSurface(_ point: CGPoint) -> Bool {
-        input.visible && !sessionBlocked && NotchSurfaceShape.contains(screenPoint: point, frame: frame, state: surface.state)
+        input.visible && !model.sessionSuspended && NotchSurfaceShape.contains(screenPoint: point, frame: frame, state: surface.state)
     }
     private func updateInputTransparency(at point: CGPoint = NSEvent.mouseLocation) {
         // Recomputed on pointer movement AND each animation sample, including a
@@ -268,7 +255,7 @@ final class NotchController {
         guard !input.menuTracking, let action = pendingMenuAction else { return }
         pendingMenuAction = nil
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.stopped, !self.sessionBlocked else { return }; action()
+            guard let self, !self.stopped, !self.model.sessionSuspended else { return }; action()
         }
     }
     func select(_ value: NotchTab) {
@@ -315,11 +302,11 @@ final class NotchController {
         model.runtime?.rescheduleIdle()
     }
     private func userHaptic() {
-        guard hapticGate.accept(enabled: hapticsEnabled && input.visible && !sessionBlocked, now: ProcessInfo.processInfo.systemUptime) else { return }
+        guard hapticGate.accept(enabled: hapticsEnabled && input.visible && !model.sessionSuspended, now: ProcessInfo.processInfo.systemUptime) else { return }
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
     private func presentNotice(_ value: NotchNotice) {
-        guard noticesEnabled, input.visible, isShown, !sessionBlocked, !presentationHandoff else { return }
+        guard noticesEnabled, input.visible, isShown, !model.sessionSuspended, !presentationHandoff else { return }
         if notice == .timerFinished, value != .timerFinished { return }
         noticeTask?.cancel(); notice = value
         updateFrame(animated: !draggingFiles)

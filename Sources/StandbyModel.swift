@@ -120,14 +120,14 @@ final class StandbyModel {
     var visibleLyrics: Bool { musicShowsLyrics && hasLyrics }
     private var standbyCanShowLyrics: Bool { isVisible && layout != .clock }
     private var notchCanShowLyrics: Bool { notchVisible && notchMusicVisible }
-    var lyricsLookupVisible: Bool { (standbyCanShowLyrics || notchCanShowLyrics) && !screenSleeping }
-    private var lyricsSurfaceVisible: Bool { ((standbyCanShowLyrics && visibleLyrics) || notchCanShowLyrics) && !screenSleeping }
+    var lyricsLookupVisible: Bool { (standbyCanShowLyrics || notchCanShowLyrics) && !sessionSuspended }
+    private var lyricsSurfaceVisible: Bool { ((standbyCanShowLyrics && visibleLyrics) || notchCanShowLyrics) && !sessionSuspended }
     var currentLyricText: String? {
         guard !isResynchronizing, let activeLine, lines.indices.contains(activeLine) else { return nil }
         let text = lines[activeLine].text
         return text.isEmpty ? nil : text
     }
-    var needsPlayback: Bool { (isVisible || notchVisible || nativeWidgetInUse) && !screenSleeping }
+    var needsPlayback: Bool { (isVisible || notchVisible || nativeWidgetInUse) && !sessionSuspended }
     var connectionStatus = "Conecta Música de este Mac"
     var connected = false
     var demoMode = false
@@ -137,10 +137,10 @@ final class StandbyModel {
     var hot = false
     var reduceMotion = false
     var reduceTransparency = false
-    enum SleepSource: Hashable { case system, display }
-    @ObservationIgnored private var sleepingSources: Set<SleepSource> = []
-    private(set) var screenSleeping = false {
-        didSet { if started && oldValue != screenSleeping { policyChanged() } }
+    enum SuspensionSource: Hashable { case system, display, inactive, locked }
+    @ObservationIgnored private var suspensionSources: Set<SuspensionSource> = []
+    private(set) var sessionSuspended = false {
+        didSet { if started && oldValue != sessionSuspended { policyChanged() } }
     }
     private(set) var playbackReadMilliseconds: Int?
     var settingsOpen = false
@@ -279,10 +279,10 @@ final class StandbyModel {
     @ObservationIgnored weak var notch: NotchController?
 
     var policy: RenderPolicy {
-        RenderPolicy(visible: isVisible && !screenSleeping, onBattery: onBattery, lowPower: lowPower, hot: hot, reduceMotion: reduceMotion, mode: energyMode)
+        RenderPolicy(visible: isVisible && !sessionSuspended, onBattery: onBattery, lowPower: lowPower, hot: hot, reduceMotion: reduceMotion, mode: energyMode)
     }
     var energyLabel: String {
-        if !isVisible || screenSleeping { return "En espera" }
+        if !isVisible || sessionSuspended { return "En espera" }
         if lowPower || hot || energyMode == .saver { return "Ahorro activo" }
         if onBattery && policy.framesPerSecond == 0 { return "Batería · fondo estático" }
         return onBattery ? "Batería · malla suave" : "Con corriente · malla fluida"
@@ -302,7 +302,7 @@ final class StandbyModel {
         control("seek", position: position)
     }
     var preferredScheme: ColorScheme? { appearance == "Sistema" ? nil : (appearance == "Claro" ? .light : .dark) }
-    var effectiveAwake: Bool { keepAwake && isVisible && !screenSleeping && !onBattery && !lowPower && !hot }
+    var effectiveAwake: Bool { keepAwake && isVisible && !sessionSuspended && !onBattery && !lowPower && !hot }
 
     init(artworkRepository: ArtworkRepository = ArtworkRepository()) {
         self.artworkRepository = artworkRepository
@@ -357,7 +357,7 @@ final class StandbyModel {
         refreshVisibility()
     }
     func refreshVisibility() {
-        let visible = (mainWindow?.isVisible ?? false) && (mainWindow?.occlusionState.contains(.visible) ?? false) && !(mainWindow?.isMiniaturized ?? false) && !NSApp.isHidden && !screenSleeping
+        let visible = (mainWindow?.isVisible ?? false) && (mainWindow?.occlusionState.contains(.visible) ?? false) && !(mainWindow?.isMiniaturized ?? false) && !NSApp.isHidden && !sessionSuspended
         guard visible != isVisible else { return }
         isVisible = visible
         if visible { notch?.hideForPresentation() } else { notch?.reconcile() }
@@ -378,12 +378,17 @@ final class StandbyModel {
             observe(standard, name) { [weak self] in self?.refreshVisibility() }
         }
         for (source, sleep, wake) in [
-            (SleepSource.system, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
-            (SleepSource.display, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification)
+            (SuspensionSource.system, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
+            (SuspensionSource.display, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification),
+            (SuspensionSource.inactive, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification)
         ] {
-            observe(workspace, sleep) { [weak self] in self?.setSleeping(true, source: source) }
-            observe(workspace, wake) { [weak self] in self?.setSleeping(false, source: source) }
+            observe(workspace, sleep) { [weak self] in self?.setSuspended(true, source: source) }
+            observe(workspace, wake) { [weak self] in self?.setSuspended(false, source: source) }
         }
+        // Best-effort lock hints, in addition to public workspace notifications.
+        let distributed = DistributedNotificationCenter.default()
+        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.setSuspended(true, source: .locked) }
+        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.setSuspended(false, source: .locked) }
         observe(workspace, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) { [weak self] in self?.refreshPower() }
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
@@ -413,18 +418,18 @@ final class StandbyModel {
             powerSource = source; CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
     }
-    func setSleeping(_ sleeping: Bool, source: SleepSource) {
-        if sleeping { sleepingSources.insert(source) } else { sleepingSources.remove(source) }
-        // System and display wake can arrive independently. Keep all playback surfaces
-        // suspended until neither source is asleep.
-        let blocked = !sleepingSources.isEmpty
-        guard blocked != screenSleeping else { return }
-        screenSleeping = blocked
+    func setSuspended(_ suspended: Bool, source: SuspensionSource) {
+        if suspended { suspensionSources.insert(source) } else { suspensionSources.remove(source) }
+        // Wake, unlock and session activation can arrive in any order.
+        let blocked = !suspensionSources.isEmpty
+        guard blocked != sessionSuspended else { return }
+        sessionSuspended = blocked
         if blocked {
-            runtime?.dismiss()
+            if let runtime { runtime.dismiss() } else { notch?.reconcile() }
         } else {
             refreshPower()
             runtime?.didWake()
+            notch?.reconcileNextTurn()
         }
         refreshVisibility()
     }
@@ -669,7 +674,7 @@ final class StandbyModel {
         timer.tolerance = 0.1; pollTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func control(_ command: String, position: Double = 0) {
-        guard hasTrack, position.isFinite else { return }
+        guard !sessionSuspended, hasTrack, position.isFinite else { return }
         if command == "seek" && !canSeek { return }
         if (command == "next" || command == "previous") && !canSkip { return }
         let duration = anchor.duration
@@ -705,7 +710,7 @@ final class StandbyModel {
     func controlFromNativeWidget(_ command: String, expectedTrackID: String,
                                  sourceID: String, preference: String) async -> String {
         guard ["previous", "toggle", "next"].contains(command), !LumaEnvironment.isTesting,
-              connected, !demoMode, !screenSleeping else { return "Conecta los controles en Oruvi." }
+              connected, !demoMode, !sessionSuspended else { return "Conecta los controles en Oruvi." }
         guard expectedTrackID == track.id, sourceID == activePlayer.rawValue,
               preference == effectivePlayerPreference.rawValue else {
             _ = await synchronizeNativeWidget(connectIfNeeded: false)
@@ -732,7 +737,7 @@ final class StandbyModel {
                 }
             }
         }
-        guard let result, session == generation, connected, !screenSleeping else { return "La sesión de Oruvi cambió." }
+        guard let result, session == generation, connected, !sessionSuspended else { return "La sesión de Oruvi cambió." }
         apply(result.1)
         if result.0["status"] as? String != "ok" {
             return result.0["message"] as? String ?? "El reproductor no aceptó el control."
@@ -742,7 +747,7 @@ final class StandbyModel {
     /// Explicit widget recovery awaits a fresh read before WidgetKit reloads.
     /// No transport command is sent here and neither source selector is edited.
     func synchronizeNativeWidget(connectIfNeeded: Bool) async -> String {
-        guard !LumaEnvironment.isTesting, !screenSleeping else { return "Oruvi está en reposo." }
+        guard !LumaEnvironment.isTesting, !sessionSuspended else { return "Oruvi está en reposo." }
         if !connected || demoMode {
             guard connectIfNeeded else { return "Conecta el reproductor en los ajustes de Oruvi." }
             connectMusic()
@@ -755,7 +760,7 @@ final class StandbyModel {
                 continuation.resume(returning: playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true))
             }
         }
-        guard let snapshot, session == generation, connected, !screenSleeping else { return "La sesión cambió. Actualiza el widget." }
+        guard let snapshot, session == generation, connected, !sessionSuspended else { return "La sesión cambió. Actualiza el widget." }
         apply(snapshot)
         schedulePoll()
         return snapshot["status"] as? String == "ok" ? "" : connectionStatus

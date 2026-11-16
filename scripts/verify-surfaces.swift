@@ -152,12 +152,12 @@ struct VerifySurfaces {
         model.setNativeWidgetPresence(true)
         expect(model.needsPlayback, "desktop widget keeps the single sampler eligible with notch hidden")
         expect(defaults.object(forKey: "nativeWidgetInUse") == nil, "placement belongs to macOS, not a saved app flag")
-        model.setSleeping(true, source: .display)
-        model.setSleeping(true, source: .system)
+        model.setSuspended(true, source: .display)
+        model.setSuspended(true, source: .system)
         expect(!model.needsPlayback, "sleep suspends desktop playback")
-        model.setSleeping(false, source: .system)
-        expect(model.screenSleeping && !model.needsPlayback, "a Mac wake does not resume playback while its display sleeps")
-        model.setSleeping(false, source: .display)
+        model.setSuspended(false, source: .system)
+        expect(model.sessionSuspended && !model.needsPlayback, "a Mac wake does not resume playback while its display sleeps")
+        model.setSuspended(false, source: .display)
         expect(model.needsPlayback, "desktop sampling resumes after both sources wake")
         model.setNativeWidgetPresence(false)
         expect(!model.needsPlayback, "no surface needs playback after desktop opt-out")
@@ -202,12 +202,12 @@ struct VerifySurfaces {
         model.systemProhibitsSkip = true
         expect(!model.canSkip && !model.canSeek && !widgets.makeSnapshot().canSkip,
                "notch, Standby and native widget share system restrictions")
-        model.setSleeping(true, source: .system)
+        model.setSuspended(true, source: .system)
         let asleep = widgets.makeSnapshot()
         expect(asleep.state == .sleeping && !asleep.canControl && asleep.artwork == nil, "sleep snapshot removes private media")
-        model.setSleeping(false, source: .display)
+        model.setSuspended(false, source: .display)
         expect(widgets.makeSnapshot().state == .sleeping, "a display wake cannot resume a still-sleeping Mac")
-        model.setSleeping(false, source: .system)
+        model.setSuspended(false, source: .system)
         model.connected = false
         expect(widgets.makeSnapshot().state == .disconnected, "disconnect cannot show playable media")
         model.connected = true; model.track = .empty
@@ -217,6 +217,11 @@ struct VerifySurfaces {
         expect(!model.nativeWidgetInUse, "removing widget releases its sampler demand")
         model.useDemo()
         expect(model.canSkip && model.canSeek, "demo clears restrictions inherited from the last video")
+        model.setSuspended(true, source: .locked)
+        let lockedAnchor = model.anchor
+        model.control("toggle")
+        expect(model.anchor == lockedAnchor, "playback controls already on screen cannot act after lock")
+        model.setSuspended(false, source: .locked)
         func space(repeatKey: Bool) -> NSEvent {
             NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
                              context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: repeatKey,

@@ -24,8 +24,6 @@ final class AmbientRuntime {
     private var phraseTimer: Timer?
     private var localEvents: Any?
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
-    private var sessionInactive = false
-    private var locked = false
     private var lastDismissed = -Double.greatestFiniteMagnitude
     private var lastWake = ProcessInfo.processInfo.systemUptime
     private var stopped = false
@@ -35,7 +33,6 @@ final class AmbientRuntime {
     private var mediaCheck = IdleMediaCheckState.idle
     private var wasMediaProtected = false
     private var lastMediaProtected = -Double.greatestFiniteMagnitude
-    var isBlocked: Bool { model.screenSleeping || sessionInactive || locked }
     init(model: StandbyModel, window: NSWindow) {
         self.model = model; self.window = window; model.runtime = self
         installObservers()
@@ -45,7 +42,7 @@ final class AmbientRuntime {
         }
     }
     func activate(automatic: Bool = false) {
-        guard !stopped, !isBlocked, !window.isVisible else { return }
+        guard !stopped, !model.sessionSuspended, !window.isVisible else { return }
         // Recheck after any asynchronous media query. Never cover a file chooser,
         // an AirDrop recipient picker or an agenda permission prompt automatically.
         if automatic && model.notch?.preventsAutomaticStandby == true { rescheduleIdle(); return }
@@ -68,7 +65,7 @@ final class AmbientRuntime {
         applySystemPresentation()
         model.refreshVisibility()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard let self, self.presentationSerial == serial, self.window.isVisible, !self.isBlocked else { return }
+            guard let self, self.presentationSerial == serial, self.window.isVisible, !self.model.sessionSuspended else { return }
             self.applySystemPresentation()
             self.model.refreshVisibility()
         }
@@ -81,7 +78,7 @@ final class AmbientRuntime {
         }
     }
     private func refreshPresentationDisplay() {
-        guard !stopped, window.isVisible, !isBlocked else { return }
+        guard !stopped, window.isVisible, !model.sessionSuspended else { return }
         let retained = presentationDisplayID.flatMap { id in
             NSScreen.screens.first { NotchDisplays.identifier($0) == id }
         }
@@ -89,7 +86,7 @@ final class AmbientRuntime {
         model.refreshVisibility()
     }
     private func applySystemPresentation() {
-        guard window.isVisible, !isBlocked else { return }
+        guard window.isVisible, !model.sessionSuspended else { return }
         NSApp.presentationOptions = [.hideDock, .hideMenuBar]
     }
     func applyAppearance() {
@@ -111,7 +108,7 @@ final class AmbientRuntime {
     func rescheduleIdle() {
         mediaCheck.invalidate()
         if !model.idleEnabled { model.automaticActivationStatus = "Activación automática desactivada" }
-        guard !stopped, !LumaEnvironment.isTesting, model.idleEnabled, !isBlocked else { cancelIdleTimer(); return }
+        guard !stopped, !LumaEnvironment.isTesting, model.idleEnabled, !model.sessionSuspended else { cancelIdleTimer(); return }
         if let pause = model.automaticActivationPause, let remaining = pause.remainingSeconds() {
             model.automaticActivationStatus = "Activación automática en pausa"
             if scheduledPauseDeadline != pause.deadline || idleTimer?.isValid != true {
@@ -133,7 +130,7 @@ final class AmbientRuntime {
         let now = ProcessInfo.processInfo.systemUptime
         let idle = Self.systemIdleSeconds()
         let delay = min(120, max(1, model.idleMinutes.isFinite ? model.idleMinutes : 5)) * 60
-        let policy = IdleActivationPolicy(enabled: true, delay: delay, visible: false, blocked: isBlocked, now: now, lastDismissed: lastDismissed, lastWake: lastWake)
+        let policy = IdleActivationPolicy(enabled: true, delay: delay, visible: false, blocked: model.sessionSuspended, now: now, lastDismissed: lastDismissed, lastWake: lastWake)
         if policy.shouldActivate(idle: idle) { checkMediaBeforeActivation(); return }
         let interval = policy.nextCheck(idle: idle)
         model.automaticActivationStatus = "En espera · después de \(Int(delay / 60)) min"
@@ -170,7 +167,7 @@ final class AmbientRuntime {
             case .checking: break
             case .invalidated, .idle: return
             }
-            guard !self.stopped, !self.isBlocked, !self.window.isVisible, self.model.idleEnabled else { return }
+            guard !self.stopped, !self.model.sessionSuspended, !self.window.isVisible, self.model.idleEnabled else { return }
             // Another app could become active while a system query is in flight.
             guard foregroundPID == NSWorkspace.shared.frontmostApplication?.processIdentifier else { self.rescheduleIdle(); return }
             if result.shouldProtect {
@@ -186,7 +183,7 @@ final class AmbientRuntime {
                 self.rescheduleIdle(); return
             }
             let delay = self.model.idleMinutes * 60
-            let policy = IdleActivationPolicy(enabled: true, delay: delay, visible: false, blocked: self.isBlocked, now: ProcessInfo.processInfo.systemUptime, lastDismissed: self.lastDismissed, lastWake: self.lastWake)
+            let policy = IdleActivationPolicy(enabled: true, delay: delay, visible: false, blocked: self.model.sessionSuspended, now: ProcessInfo.processInfo.systemUptime, lastDismissed: self.lastDismissed, lastWake: self.lastWake)
             if policy.shouldActivate(idle: Self.systemIdleSeconds()) { self.activate(automatic: true) }
             else { self.rescheduleIdle() }
         }
@@ -217,12 +214,6 @@ final class AmbientRuntime {
     }
     private func installObservers() {
         let workspace = NSWorkspace.shared.notificationCenter
-        observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { [weak self] in self?.sessionInactive = true; self?.dismiss() }
-        observe(workspace, NSWorkspace.sessionDidBecomeActiveNotification) { [weak self] in self?.sessionInactive = false; self?.didWake() }
-        // Additional best-effort lock notifications, not relied on as a public API contract.
-        // System window ordering and normal level are the independent safety boundary.
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.locked = true; self?.dismiss() }
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.locked = false; self?.didWake() }
         observe(NotificationCenter.default, NSApplication.didResignActiveNotification) { [weak self] in
             guard let self, !LumaEnvironment.isTesting, self.window.isVisible else { return }
             // A settings sheet must never leave a top-level overlay covering another application.
