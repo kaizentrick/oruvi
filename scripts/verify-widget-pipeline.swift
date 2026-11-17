@@ -250,6 +250,27 @@ import os
         try await settle()
         check(interruptedSnapshotStayedPrivate.withLock { $0 } && lockedStore.read()?.state == .sleeping,
               "A lock during App Group lookup discards the old media write before publishing sleep")
+        let wakeStore = WidgetSnapshotStore(directory: root.appendingPathComponent("wake-recovery"))
+        let wakeModel = StandbyModel()
+        defer { wakeModel.shutdown() }
+        wakeModel.connected = true
+        wakeModel.setSuspended(true, source: .locked)
+        let wakeLookups = OSAllocatedUnfairLock(initialState: 0)
+        let wakeController = NativeWidgetController(model: wakeModel, resolveStore: {
+            let attempt = wakeLookups.withLock { $0 += 1; return $0 }
+            return attempt == 1 ? WidgetSnapshotStore(directory: nil) : wakeStore
+        })
+        defer { wakeController.stop() }
+        wakeController.startForVerification {}
+        try await settle()
+        check(wakeController.storageError.contains("no puso a disposición"), "Locked startup can enter a storage retry delay")
+        wakeModel.setSuspended(false, source: .locked)
+        wakeModel.apply(["status": "ok", "source": "oruvi.system", "id": "after-wake",
+                         "title": "Fresh song", "duration": 100, "playing": true])
+        try await settle()
+        check(wakeLookups.withLock { $0 } == 2 && wakeStore.read()?.trackID == "after-wake" &&
+              wakeController.storageError.isEmpty,
+              "Unlock retries storage immediately and publishes the confirmed track")
         let widgetReads = OSAllocatedUnfairLock(initialState: 0)
         let musicAllowed = OSAllocatedUnfairLock(initialState: true)
         let widgetRouter = PlayerRouter(isRunning: { _ in true }, readNative: { source in

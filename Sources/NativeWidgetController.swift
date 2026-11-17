@@ -120,7 +120,7 @@ final class NativeWidgetController {
     @ObservationIgnored private var lastQuery = Date.distantPast
     @ObservationIgnored private var querying = false
     @ObservationIgnored private var retryWriteAt = Date.distantPast
-    @ObservationIgnored private var lastObservedSuspension = false
+    @ObservationIgnored private var lastObservedSuspensionGeneration = 0
     @ObservationIgnored private var lastDistributedDemand = Date.distantPast
     @ObservationIgnored private let io = DispatchQueue(label: "com.kaizentrick.Oruvi.widget-cache", qos: .utility)
     #if LUMA_QA
@@ -173,10 +173,10 @@ final class NativeWidgetController {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.trackChanges() }
         }
-        let suspended = model.sessionSuspended
-        let enteringSuspension = suspended && !lastObservedSuspension
-        lastObservedSuspension = suspended
-        requestPublication(force: enteringSuspension)
+        let generation = model.sessionSuspensionGeneration.withLock { $0 }
+        let suspensionChanged = generation != lastObservedSuspensionGeneration
+        lastObservedSuspensionGeneration = generation
+        requestPublication(force: suspensionChanged)
     }
     func receiveDemand(at date: Date = Date()) {
         guard started, !stopped else { return }
