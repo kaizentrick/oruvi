@@ -103,8 +103,12 @@ final class NotchController {
         dragMonitor = NotchDragMonitor(controller: self); pointerMonitor = NotchPointerMonitor(controller: self)
         let workspace = NSWorkspace.shared.notificationCenter
         observe(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { [weak self] in self?.reconcileNextTurn() }
-        let keyToken = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: p, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.input.keyboardPinned = false; self?.refreshPointer() }
+        let keyToken = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: p, queue: .main) { [weak self, weak p] _ in
+            MainActor.assumeIsolated {
+                p?.acceptsKeyboard = false
+                self?.input.keyboardPinned = false
+                self?.refreshPointer()
+            }
         }
         observers.append((NotificationCenter.default, keyToken))
         for name in [NSMenu.didBeginTrackingNotification, NSMenu.didEndTrackingNotification] {
@@ -159,23 +163,14 @@ final class NotchController {
     func reconcile() {
         guard let panel else { return }
         let show = !stopped && !presentationHandoff && model.notchEnabled && !model.isVisible && !model.sessionSuspended
-        guard show else {
-            cancelHover(); input.suspend(); surface.stop(); dismissNotice()
-            previousDragTab = nil; trackingMenus.removeAll(); pendingMenuAction = nil
-            panel.acceptsKeyboard = false; panel.ignoresMouseEvents = true
-            agenda.setActive(false); dragMonitor?.stop(); pointerMonitor?.stop()
-            if model.sessionSuspended || stopped { shelf.cancelChooser() }
-            panel.orderOut(nil); model.notchMusicVisible = false; model.setNotchVisible(false); return
-        }
+        guard show else { hidePanel(panel); return }
         countdown.finishIfDue()
         let screens = NSScreen.screens
         let options = NotchDisplays.options(screens)
         if options != displayChoices { displayChoices = options }
         let chosen = NotchDisplayPolicy.select(options: options, preference: selectedDisplayID, main: NSScreen.main.map { NotchDisplays.identifier($0) })
         guard let screen = screens.first(where: { NotchDisplays.identifier($0) == chosen }) else {
-            surface.stop(); panel.ignoresMouseEvents = true; panel.orderOut(nil)
-            input.suspend(); model.notchMusicVisible = false; model.setNotchVisible(false)
-            agenda.setActive(false); dragMonitor?.stop(); pointerMonitor?.stop(); dismissNotice(); return
+            hidePanel(panel); return
         }
         let wasVisible = input.visible
         geometry = NotchGeometry.resolve(screen)
@@ -185,6 +180,14 @@ final class NotchController {
         panel.orderFrontRegardless()
         model.setNotchVisible(true); dragMonitor?.start(); pointerMonitor?.start()
         refreshPointer()
+    }
+    private func hidePanel(_ panel: OruviNotchPanel) {
+        cancelHover(); input.suspend(); surface.stop(); dismissNotice()
+        previousDragTab = nil; trackingMenus.removeAll(); pendingMenuAction = nil
+        panel.acceptsKeyboard = false; panel.ignoresMouseEvents = true
+        agenda.setActive(false); dragMonitor?.stop(); pointerMonitor?.stop()
+        if model.sessionSuspended || stopped { shelf.cancelChooser() }
+        panel.orderOut(nil); model.notchMusicVisible = false; model.setNotchVisible(false)
     }
     func chooseDisplay(_ identifier: String) {
         guard identifier == "automatic" || displayChoices.contains(where: { $0.id == identifier }) else { return }
@@ -252,10 +255,12 @@ final class NotchController {
         pendingMenuAction = action; runMenuActionIfReady()
     }
     private func runMenuActionIfReady() {
-        guard !input.menuTracking, let action = pendingMenuAction else { return }
-        pendingMenuAction = nil
+        guard !input.menuTracking, pendingMenuAction != nil else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.stopped, !self.model.sessionSuspended else { return }; action()
+            guard let self, !self.stopped, self.input.visible, !self.model.sessionSuspended,
+                  !self.input.menuTracking, let action = self.pendingMenuAction else { return }
+            self.pendingMenuAction = nil
+            action()
         }
     }
     func select(_ value: NotchTab) {
