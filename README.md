@@ -34,17 +34,19 @@ La beta se instala manualmente. El canal estable usa Sparkle para verificar y de
 
 ### Si macOS bloquea el primer inicio
 
-La beta se distribuye sin Developer ID ni notarización. Si abriste Oruvi desde **Aplicaciones** y macOS dice que no pudo verificarla, puedes autorizar la copia que descargaste de este repositorio.
+La beta se distribuye sin Developer ID ni notarización. Si abriste Oruvi desde **Aplicaciones** y macOS dice que no pudo verificarla, puedes autorizar la copia que descargaste de este repositorio. Estas capturas muestran el proceso con el DMG publicado.
 
 **1. Cierra el aviso con Listo.** Deja Oruvi en **Aplicaciones**.
 
-![Ilustración del aviso No se abrió Oruvi con el botón Listo señalado](.github/media/oruvi-primer-aviso.png)
+<img src=".github/media/oruvi-primer-aviso.png" width="340" alt="Aviso real de macOS No se abrió Oruvi, con los botones Mover al basurero y Listo">
 
-**2. Abre Ajustes del Sistema → Privacidad y seguridad.** Baja hasta **Seguridad** y pulsa **Abrir igualmente** junto al aviso de Oruvi.
+**2. Abre Ajustes del Sistema → Privacidad y seguridad.** Baja hasta **Seguridad** y pulsa **Abrir de todos modos**. En algunas versiones o regiones el botón dice **Abrir igualmente**.
 
-![Ilustración de Privacidad y seguridad con el botón Abrir igualmente junto al aviso de Oruvi](.github/media/oruvi-abrir-igualmente.png)
+<img src=".github/media/oruvi-abrir-igualmente.png" width="680" alt="Panel Seguridad de macOS con el aviso de Oruvi y el botón Abrir de todos modos">
 
-**3. Confirma con Abrir.** Si macOS lo pide, autentícate. La autorización queda guardada para esa copia de Oruvi.
+**3. En el segundo aviso, confirma con Abrir de todos modos o Abrir.** Si macOS lo pide, autentícate. La autorización queda guardada para esa copia de Oruvi.
+
+<img src=".github/media/oruvi-confirmar-apertura.png" width="340" alt="Segundo aviso de macOS ¿Abrir Oruvi? con la opción Abrir de todos modos">
 
 Si el botón no aparece, intenta abrir Oruvi otra vez **desde Aplicaciones** y vuelve enseguida a **Privacidad y seguridad**. Si tu Mac está administrada, la política del equipo puede impedir la excepción. [Guía de Apple](https://support.apple.com/es-mx/102445)
 
