@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">Apple silicon (M1 o posterior) · macOS 26 o posterior · <a href="LICENSE">Licencia MIT</a></p>
+<p align="center"><a href="#si-macos-bloquea-el-primer-inicio">¿macOS bloqueó el primer inicio?</a></p>
 
 ## Widget de escritorio
 
@@ -31,12 +32,15 @@ Acerca el puntero al borde superior para abrir el notch. Para usar Standby, elig
 
 La beta se instala manualmente. El canal estable usa Sparkle para verificar y descargar las actualizaciones desde **Ajustes → Actualizaciones**.
 
-<details>
-<summary>Si macOS bloquea el primer inicio</summary>
+### Si macOS bloquea el primer inicio
 
-Esta beta aún carece de firma Developer ID y notarización. Si macOS la bloquea, verifica que descargaste el DMG desde este repositorio y selecciona **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. La autorización se aplica a esa copia. Puedes comprobar el archivo con **SHA256SUMS.txt** en las notas de la beta. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
+Esta beta todavía no está notarizada. Si al abrir Oruvi desde **Aplicaciones** aparece «No se abrió Oruvi» y descargaste el DMG de este repositorio:
 
-</details>
+1. Pulsa **Listo**.
+2. Abre **Ajustes del Sistema → Privacidad y seguridad**. Desplázate hasta **Seguridad** y pulsa **Abrir igualmente** junto al aviso de Oruvi.
+3. Confirma con **Abrir**. Si macOS te lo pide, autentícate con tu usuario.
+
+La autorización se guarda para esa copia de Oruvi. Puedes verificar la integridad del DMG con **SHA256SUMS.txt** en las notas de la beta. [Guía de Apple](https://support.apple.com/es-mx/102445)
 
 ## Explora Oruvi
 
