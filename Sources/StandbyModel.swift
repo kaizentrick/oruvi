@@ -606,22 +606,16 @@ final class StandbyModel {
             updateCue()
             return connectionStatus
         }
-        let duration = (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0
-        let sample = (snapshot["sampleUptime"] as? NSNumber)?.doubleValue ?? ProcessInfo.processInfo.systemUptime
-        let position = (snapshot["position"] as? NSNumber)?.doubleValue ?? 0
-        let playing = (snapshot["playing"] as? NSNumber)?.boolValue ?? false
-        guard let id = snapshot["id"] as? String, !id.isEmpty,
-              let source = PlayerSource(rawValue: snapshot["source"] as? String ?? ""),
-              duration.isFinite, (0..<86400).contains(duration),
-              sample.isFinite, position.isFinite, position >= 0 else {
+        guard let sample = PlaybackSample(snapshot),
+              let source = PlayerSource(rawValue: snapshot["source"] as? String ?? "") else {
             playbackReadMilliseconds = nil
             recovery.fail(); isResynchronizing = true
             connectionStatus = "Sincronizando canción…"
             return connectionStatus
         }
-        let next = TrackIdentity(id: id, title: snapshot["title"] as? String ?? "Sin título",
+        let next = TrackIdentity(id: sample.id, title: snapshot["title"] as? String ?? "Sin título",
                                  artist: snapshot["artist"] as? String ?? "", album: snapshot["album"] as? String ?? "",
-                                 duration: duration, sourceID: source.rawValue)
+                                 duration: sample.duration, sourceID: source.rawValue)
         let changed = activePlayer != source || !PlaybackRecovery.sameRecording(track, next)
         // Never clear a valid song for a corrupt/incomplete playback sample.
         activePlayer = source; lastSurfacePlayers[playbackSurface] = source
@@ -663,17 +657,18 @@ final class StandbyModel {
         if let shuffle = snapshot["shuffle"] as? NSNumber, let repeated = snapshot["repeatMode"] as? NSNumber {
             shuffleEnabled = shuffle.boolValue; repeatMode = min(2, max(0, repeated.intValue)); playbackOptionsAvailable = true
         }
-        let adjusted = changed ? position : PlaybackRecovery.reconciledPosition(position, sampleUptime: sample, previous: anchor, playing: playing)
+        let adjusted = changed ? sample.position : PlaybackRecovery.reconciledPosition(sample.position, sampleUptime: sample.uptime,
+                                                                                        previous: anchor, playing: sample.playing)
         let reportedRate = (snapshot["playbackRate"] as? NSNumber)?.doubleValue ?? 1
         let rate = SafePreference.number(reportedRate, range: 0...16, fallback: 1)
         // Keep TrackIdentity stable for lyrics and artwork, but use the newest duration for transport.
-        anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing, rate: rate)
-        recovery.succeed(at: sample)
+        anchor = PlaybackAnchor(position: adjusted, uptime: sample.uptime, duration: next.duration, playing: sample.playing, rate: rate)
+        recovery.succeed(at: sample.uptime)
         if isResynchronizing { isResynchronizing = false }
         let readDuration = (snapshot["playbackReadDuration"] as? NSNumber)?.doubleValue
         let milliseconds = readDuration.flatMap { $0 >= 0 ? Int(exactly: ($0 * 1000).rounded()) : nil }
         if playbackReadMilliseconds != milliseconds { playbackReadMilliseconds = milliseconds }
-        connectionStatus = activePlayer.name + (playing ? " · reproduciendo" : " · en pausa")
+        connectionStatus = activePlayer.name + (sample.playing ? " · reproduciendo" : " · en pausa")
         // Missing resources recover without having to close and reopen the app. Cooldowns
         // prevent a failed or unavailable lyric from being requested on every playback tick.
         let now = ProcessInfo.processInfo.systemUptime

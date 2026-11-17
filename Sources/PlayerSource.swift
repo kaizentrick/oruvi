@@ -34,6 +34,9 @@ final class PlayerRouter: @unchecked Sendable {
         }
         if let denial = denials[source] { return denial }
         var value = readNative(source)
+        if value["status"] as? String == "ok", PlaybackSample(value) == nil {
+            return ["status": "transition", "source": source.rawValue, "message": "Sincronizando canción…"]
+        }
         value["source"] = source.rawValue
         if value["status"] as? String == "denied" { denials[source] = value }
         return value

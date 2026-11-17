@@ -552,6 +552,13 @@ struct VerifySurfaces {
         lastMusicStatus = "error"
         expect(automaticSnapshot()["source"] as? String == PlayerSource.system.rawValue,
                "a temporary native failure still permits a valid Now Playing session")
+        lastMusicStatus = "ok" // Simulate a provider that marks a reply without an identity as successful.
+        expect(automaticSnapshot()["id"] as? String == closedMusic.id,
+               "missing native identity falls back to the live Now Playing session")
+        expect(router.resolve(preference: .automatic, preferred: .music, system: nil)["source"] as? String == PlayerSource.spotify.rawValue,
+               "malformed Music data does not mask valid Spotify playback without a system session")
+        expect(router.resolve(preference: .music, preferred: .music, system: closedMusic)["status"] as? String == "transition",
+               "explicit Music selection waits for valid Music metadata")
         lastMusicStatus = "denied"
         expect(automaticSnapshot()["source"] as? String == PlayerSource.system.rawValue,
                "Now Playing remains available when a running app denies Apple Events")

@@ -1,5 +1,27 @@
 import Foundation
 
+struct PlaybackSample {
+    let id: String
+    let duration: Double
+    let uptime: Double
+    let position: Double
+    let playing: Bool
+
+    init?(_ snapshot: [String: Any]) {
+        let duration = (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0
+        let uptime = (snapshot["sampleUptime"] as? NSNumber)?.doubleValue ?? ProcessInfo.processInfo.systemUptime
+        let position = (snapshot["position"] as? NSNumber)?.doubleValue ?? 0
+        guard let id = snapshot["id"] as? String, !id.isEmpty,
+              duration.isFinite, (0..<86400).contains(duration),
+              uptime.isFinite, position.isFinite, position >= 0 else { return nil }
+        self.id = id
+        self.duration = duration
+        self.uptime = uptime
+        self.position = position
+        playing = (snapshot["playing"] as? NSNumber)?.boolValue ?? false
+    }
+}
+
 /// Recovery is independent of play/pause: a timeout is not a pause command.
 struct PlaybackRecovery {
     private(set) var waiting = true
