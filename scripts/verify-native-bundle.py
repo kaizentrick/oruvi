@@ -29,7 +29,12 @@ for bundle, executable in [(app,'Oruvi'),(extension,'OruviWidgets')]:
     subprocess.run(['codesign','--verify','--strict',str(bundle)],check=True)
     raw = subprocess.check_output(['codesign','-d','--entitlements',':-',str(bundle)],stderr=subprocess.DEVNULL)
     ent = plistlib.loads(raw)
-    assert 'group.com.kaizentrick.Oruvi' in ent['com.apple.security.application-groups']
+    group = host['OruviWidgetAppGroup']
+    assert ent['com.apple.security.application-groups'] == [group]
+    signing = subprocess.run(['codesign','-dv','--verbose=4',str(bundle)],capture_output=True,text=True,check=True)
+    team = next(line.partition('=')[2] for line in signing.stderr.splitlines() if line.startswith('TeamIdentifier='))
+    expected = 'group.com.kaizentrick.Oruvi' if team == 'not set' else f'{team}.com.kaizentrick.Oruvi'
+    assert group == expected, 'Widget App Group must match the signing team'
     if bundle == extension:
         assert ent['com.apple.security.app-sandbox'] is True
         for disallowed in ['com.apple.security.network.client','com.apple.security.network.server','com.apple.security.automation.apple-events','com.apple.security.device.camera','com.apple.security.device.audio-input']:

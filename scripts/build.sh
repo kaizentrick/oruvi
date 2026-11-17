@@ -53,7 +53,17 @@ PUBLIC_KEY="$(tr -d '\r\n' < Resources/UpdatePublicKey.pub)"
 DEPS="$BUILD/deps"; bash scripts/dependencies.sh "$DEPS"
 bash scripts/system-media.sh "$DEPS"
 SIGN_OPTIONS=(--timestamp=none)
-if [[ "${SIGN_IDENTITY:--}" != - ]]; then SIGN_OPTIONS=(--options runtime --timestamp); fi
+APP_GROUP="group.com.kaizentrick.Oruvi"
+if [[ "${SIGN_IDENTITY:--}" != - ]]; then
+    codesign --force --timestamp=none --sign "$SIGN_IDENTITY" "$BUILD/verify-icon"
+    SIGN_DETAILS="$(codesign -dv --verbose=4 "$BUILD/verify-icon" 2>&1)"
+    SIGN_TEAM="$(sed -n 's/^TeamIdentifier=//p' <<<"$SIGN_DETAILS")"
+    [[ "$SIGN_TEAM" =~ ^[A-Z0-9]{10}$ ]] || { echo 'No se pudo comprobar el equipo de Apple de la firma.'; exit 1; }
+    APP_GROUP="$SIGN_TEAM.com.kaizentrick.Oruvi"
+    if grep -q '^Authority=Developer ID Application:' <<<"$SIGN_DETAILS"; then
+        SIGN_OPTIONS=(--options runtime --timestamp)
+    fi
+fi
 # Ad-hoc builds are not hardened. No system security setting is changed.
 FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework ScriptingBridge -framework IOKit -framework ImageIO -framework CoreText -framework CoreAudio -framework EventKit -framework Sparkle -framework WidgetKit -framework AppIntents)
 BASE=(-j 1 -disable-bridging-pch -warnings-as-errors -swift-version 5 -parse-as-library -sdk "$SDK" -target arm64-apple-macos26.0 -import-objc-header Sources/MusicBridge.h -F "$DEPS" -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
@@ -111,21 +121,35 @@ printf '\n[3/5] Aplicación optimizada\n'
 bash scripts/build-native-targets.sh "$BUILD" "$DEPS" "$VERSION" "$ORUVI_BUILD_NUMBER"
 APP="$BUILD/stage/Oruvi.app"; prepare_app "$APP"
 EXTENSION="$APP/Contents/PlugIns/OruviWidgets.appex"
-codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Widgets/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$EXTENSION"
+python3 - "$BUILD" "$APP" "$EXTENSION" "$APP_GROUP" <<'PLIST'
+import pathlib, plistlib, sys
+build, app, widget = map(pathlib.Path, sys.argv[1:4])
+group = sys.argv[4]
+for bundle, resource, target in [(app, "Resources/Entitlements.plist", "HostEntitlements.plist"),
+                                 (widget, "Resources/Widgets/Entitlements.plist", "WidgetEntitlements.plist")]:
+    info = bundle / "Contents/Info.plist"
+    plist = plistlib.loads(info.read_bytes())
+    plist["OruviWidgetAppGroup"] = group
+    info.write_bytes(plistlib.dumps(plist, sort_keys=False))
+    entitlements = plistlib.loads(pathlib.Path(resource).read_bytes())
+    entitlements["com.apple.security.application-groups"] = [group]
+    (build / target).write_bytes(plistlib.dumps(entitlements))
+PLIST
+codesign --force "${SIGN_OPTIONS[@]}" --entitlements "$BUILD/WidgetEntitlements.plist" --sign "${SIGN_IDENTITY:--}" "$EXTENSION"
 [[ -s "$APP/Contents/MacOS/Oruvi" ]]
 plutil -lint "$APP/Contents/Info.plist"
 python3 scripts/verify-icon.py --app "$APP" >&3
-codesign --force "${SIGN_OPTIONS[@]}" --entitlements Resources/Entitlements.plist --sign "${SIGN_IDENTITY:--}" "$APP"
+codesign --force "${SIGN_OPTIONS[@]}" --entitlements "$BUILD/HostEntitlements.plist" --sign "${SIGN_IDENTITY:--}" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 python3 scripts/verify-native-bundle.py "$APP" >&3
 if [[ "${GITHUB_ACTIONS:-false}" == true ]]; then bash scripts/verify-widget-registration.sh "$APP" >&3; fi
 printf '\n[4/5] DMG\n'
-ln -sfn /Applications "$BUILD/stage/Applications"; cp Resources/LEEME.txt "$BUILD/stage/LEEME.txt"
-cp LICENSE "$BUILD/stage/LICENSE.txt"
+ln -s /Applications "$BUILD/stage/Applications"
+cp Resources/Installer.dsstore "$BUILD/stage/.DS_Store"
 NAME="Oruvi-$VERSION-arm64.dmg"
 DMG_VERIFIED=0
 for attempt in 1 2 3; do
-    if hdiutil create -volname "Oruvi $VERSION" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"; then
+    if hdiutil create -volname "Arrastra Oruvi a Aplicaciones" -srcfolder "$BUILD/stage" -fs HFS+ -format UDZO -ov "$BUILD/$NAME"; then
         sync
         if hdiutil verify "$BUILD/$NAME"; then DMG_VERIFIED=1; break; fi
     fi
@@ -147,7 +171,9 @@ codesign --verify --deep --strict "$BUILD/mount/Oruvi.app"
 python3 scripts/verify-native-bundle.py "$BUILD/mount/Oruvi.app" >&3
 cmp -s "$APP/Contents/MacOS/Oruvi" "$BUILD/mount/Oruvi.app/Contents/MacOS/Oruvi"
 cmp -s LICENSE "$BUILD/mount/Oruvi.app/Contents/Resources/LICENSE.txt"
-cmp -s LICENSE "$BUILD/mount/LICENSE.txt"
+cmp -s Resources/Installer.dsstore "$BUILD/mount/.DS_Store"
+[[ "$(readlink "$BUILD/mount/Applications")" == /Applications ]]
+[[ -z "$(find "$BUILD/mount" -mindepth 1 -maxdepth 1 ! -name '.*' ! -name Oruvi.app ! -name Applications -print)" ]]
 cmp -s "$DEPS/mediaremote-adapter.pl" "$BUILD/mount/Oruvi.app/Contents/Resources/mediaremote-adapter.pl"
 [[ -s "$BUILD/mount/Oruvi.app/Contents/Resources/MediaRemoteAdapter-LICENSE.txt" ]]
 codesign --verify --strict "$BUILD/mount/Oruvi.app/Contents/Frameworks/MediaRemoteAdapter.framework"
