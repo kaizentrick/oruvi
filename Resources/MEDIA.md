@@ -42,9 +42,9 @@ La extensión no tiene red, Apple Events, cámara ni micrófono. No se envían t
 
 ## Firma y autorización del grupo
 
-La distribución continúa firmada ad-hoc, sin Developer ID ni notarización configurados. Ed25519 firma la actualización Sparkle; no autoriza el App Group ni convierte el binario en notarizado. macOS puede solicitar consentimiento para datos compartidos o rechazar el acceso conforme a las políticas del equipo. Ese problema no se puede resolver fingiendo datos ni desactivando seguridad.
+La versión 0.14.1 y las compilaciones de prueba de GitHub usan firma ad hoc. El flujo de publicación requiere Developer ID y notarización de Apple. Al firmar con una identidad de Apple, el empaquetador asigna a Oruvi y a su extensión el mismo App Group, `<Team ID>.com.kaizentrick.Oruvi`, a partir del equipo de la firma.
 
-La firma ad-hoc no concede autorización permanente al App Group. Para la distribución identificada mediante Developer ID se debe configurar una identidad real del titular y perfiles que autoricen `group.com.kaizentrick.Oruvi` en ambos targets, o utilizar un grupo autorizado por el Team ID real. No se incluyen claves privadas, equipos ficticios ni perfiles fabricados. No se añade acceso completo al disco, servidor localhost, otro contenedor compartido ni cambios a Gatekeeper, SIP o TCC.
+Sparkle usa Ed25519 para verificar el feed y el instalador. macOS controla por separado el acceso al App Group y puede pedir consentimiento para compartir datos según las políticas del equipo.
 
 ## Verificación en GitHub
 

@@ -16,14 +16,20 @@
 
 ## Instalar Oruvi
 
-1. [Descarga **Oruvi.dmg**](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg). En la página de **Releases**, también lo encuentras en **Assets**. La descarga pública funciona sin cuenta de GitHub.
-2. Abre el DMG y arrastra **Oruvi.app** a **Aplicaciones**.
-3. Expulsa el disco y abre **Oruvi** desde **Aplicaciones**. Para probar el notch, acerca el puntero al borde superior de la pantalla. Para abrir Standby, usa el icono de Oruvi en la barra de menús y elige **Activar pantalla completa**.
-4. Elige **Automático**, **Apple Music** o **Spotify**. Si macOS solicita Automatización para el reproductor elegido, concede el permiso para habilitar sus controles.
+1. [Descarga **Oruvi.dmg**](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg). No necesitas una cuenta de GitHub.
+2. Abre el DMG y arrastra **Oruvi** al icono de **Aplicaciones** (puede aparecer como **Applications**). Si Finder detecta una copia existente, elige **Reemplazar**.
+3. Expulsa el DMG y abre **Oruvi** desde **Aplicaciones**.
 
-La 0.14.1 usa firma ad hoc. Si macOS bloquea su primer inicio, confirma que descargaste el DMG desde este repositorio y usa **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. Algunas Mac administradas restringen esta opción. Las versiones nuevas se publican con firma Developer ID y notarización de Apple. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
+Acerca el puntero al borde superior para abrir el notch. Para usar Standby, elige **Activar pantalla completa** en el menú de Oruvi. Si macOS solicita permiso de Automatización, concédelo para habilitar los controles de Apple Music o Spotify.
 
-Las próximas versiones se descargan desde GitHub con **Ajustes → Actualizaciones → Buscar versiones nuevas automáticamente** y **Descargar e instalar al salir cuando sea posible**. Sparkle verifica la firma Ed25519 antes de instalar.
+En **Ajustes → Actualizaciones**, puedes activar **Buscar versiones nuevas automáticamente** y **Descargar e instalar al salir cuando sea posible**. Sparkle verifica la firma de la descarga antes de instalar.
+
+<details>
+<summary>Si macOS bloquea la apertura de Oruvi 0.14.1</summary>
+
+La 0.14.1 se publicó con firma ad hoc. Si confirmaste que el DMG procede de este repositorio, consulta cómo abrirlo en **Ajustes del Sistema → Privacidad y seguridad**. Las publicaciones nuevas requieren firma Developer ID y notarización de Apple. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
+
+</details>
 
 ## Explora Oruvi
 
@@ -113,9 +119,7 @@ Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la
 
 Oruvi incorpora una extensión **WidgetKit** real, `OruviWidgets.appex`, dentro de la app. Se elimina la tarjeta flotante de 0.9.1: no hay otra ventana, chincheta ni temporizador gráfico de escritorio como sustituto del widget.
 
-Instala la versión 0.10.0 o posterior en Aplicaciones y abre Oruvi al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → busca Oruvi → Música y Standby**. Puedes elegir tamaño pequeño o mediano y colocarlo como cualquier widget del sistema. macOS administra posición, tamaño, apariencia y eliminación.
-
-Incluye portada, título, artista, anterior/reproducir-pausar/siguiente y un icono para abrir Standby. Los controles utilizan App Intents en el proceso de Oruvi y no abren otra pantalla. El icono de Standby usa un enlace específico. El widget refleja el reproductor activo de Oruvi; las selecciones Notch y Standby siguen siendo independientes, con Automático, Apple Music y Spotify.
+Los controles utilizan App Intents en el proceso de Oruvi. El widget refleja el reproductor activo de Oruvi y las selecciones de Notch y Standby se guardan por separado.
 
 El widget no está ejecutándose continuamente: WidgetKit representa instantáneas y decide sus refrescos. Oruvi solicita actualización al cambiar el contenido, agrupa ráfagas y no escribe por cada segundo de progreso. No se garantiza portada instantánea en cada cambio; los controles validan sesión, pista y selección antes de actuar sobre un estado atrasado.
 

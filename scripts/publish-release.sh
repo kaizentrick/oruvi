@@ -50,19 +50,18 @@ CHANGES="$(awk -v version="$VERSION" '$1 == "##" { if (found) exit; found = ($2 
   printf '**[Descargar Oruvi.dmg](https://github.com/%s/releases/download/%s/Oruvi.dmg)**\n\n' "$REPO" "$TAG"
   printf '[Guía de instalación y capturas](https://github.com/%s/blob/%s/README.md#instalar-oruvi) · [Cómo contribuir](https://github.com/%s/blob/%s/.github/CONTRIBUTING.md)\n\n' "$REPO" "$TAG" "$REPO" "$TAG"
   printf 'Apple Silicon (M1 o posterior) y macOS 26 o posterior. No necesitas Git, Xcode ni una cuenta de GitHub para descargarla.\n\n'
-  printf '1. Abre Oruvi.dmg y arrastra Oruvi.app a Applications.\n'
+  printf '1. Abre Oruvi.dmg y arrastra **Oruvi** a **Aplicaciones** (**Applications**). Si Finder detecta una copia existente, elige **Reemplazar**.\n'
   printf '2. Expulsa el DMG y abre Oruvi desde Aplicaciones.\n'
-  printf '3. Autoriza Automatización para el reproductor que utilices en este Mac.\n'
-  printf '4. En Ajustes → Actualizaciones, deja activada la búsqueda automática. Las nuevas releases se verifican e instalan desde la propia app.\n\n'
+  printf '3. Si macOS solicita Automatización, concede el permiso para habilitar los controles de Apple Music o Spotify.\n\n'
+  printf 'En **Ajustes → Actualizaciones** puedes activar las actualizaciones automáticas. Sparkle verifica la firma antes de instalar.\n\n'
   printf 'Incluye notch, Standby, Automático con Ahora suena, Apple Music y Spotify.\n\n'
   if [[ -n "$CHANGES" ]]; then
     printf '### Novedades en %s\n%s\n\n' "$VERSION" "$CHANGES"
   fi
   printf '### Widget nativo de macOS\n\n'
   printf 'Abre Oruvi desde Aplicaciones al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → Oruvi → Música y Standby**. Elige pequeño o mediano. Incluye portada, controles interactivos y enlace a Standby.\n\n'
-  printf 'La tarjeta flotante anterior se ha retirado. WidgetKit gestiona colocación y refrescos; no se simula un widget con otra ventana. Si tenías la build de prueba sin feed, reemplázala por este DMG público.\n\n'
+  printf 'Si el widget sigue vacío, abre **Ajustes → Widgets → Conectar y actualizar widgets**.\n\n'
   printf 'Distribución firmada con Developer ID y notarizada.\n\n'
-  printf 'Ed25519 verifica las actualizaciones; no sustituye la notarización. Para instalar utiliza Oruvi.dmg, no los archivos Source code.\n\n'
   printf 'Versión %s · compilación %s.\n' "$VERSION" "$BUILD"
 } > "$WORK/NOTES.md"
 
