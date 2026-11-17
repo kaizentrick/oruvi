@@ -5,29 +5,36 @@
 <p align="center">Controla tu música desde el notch y convierte tu Mac en un reloj con música y letras a pantalla completa.</p>
 
 <p align="center">
-  <a href="https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg"><strong>Descargar Oruvi.dmg</strong></a>
-  · <a href="https://github.com/kaizentrick/oruvi/releases/latest">Última versión</a>
+  <a href="https://github.com/kaizentrick/oruvi/releases/download/v0.15.0-beta.1/Oruvi.dmg"><strong>Descargar Oruvi 0.15.0 beta</strong></a>
+  · <a href="https://github.com/kaizentrick/oruvi/releases">Versiones</a>
   · <a href=".github/CONTRIBUTING.md">Contribuir</a>
 </p>
 
 <p align="center">Apple silicon (M1 o posterior) · macOS 26 o posterior · <a href="LICENSE">Licencia MIT</a></p>
 
+## Widget de escritorio
+
+<p align="center">
+  <img src=".github/media/widgets.jpg" width="280" alt="Widget pequeño de Oruvi con la portada de Hybrid Theory y los controles de Apple Music">
+</p>
+<p align="center"><em>In the End</em> de LINKIN PARK, en Apple Music. <a href="#widgets-de-macos">Añadir el widget a tu escritorio</a></p>
+
 ![Standby de Oruvi con la portada de Hybrid Theory, controles y letras sincronizadas de In the End](.github/media/standby.jpg)
 
 ## Instalar Oruvi
 
-1. [Descarga **Oruvi.dmg**](https://github.com/kaizentrick/oruvi/releases/latest/download/Oruvi.dmg). No necesitas una cuenta de GitHub.
+1. [Descarga **Oruvi.dmg**](https://github.com/kaizentrick/oruvi/releases/download/v0.15.0-beta.1/Oruvi.dmg). No necesitas una cuenta de GitHub.
 2. Abre el DMG y arrastra **Oruvi** al icono de **Aplicaciones** (puede aparecer como **Applications**). Si Finder detecta una copia existente, elige **Reemplazar**.
 3. Expulsa el DMG y abre **Oruvi** desde **Aplicaciones**.
 
 Acerca el puntero al borde superior para abrir el notch. Para usar Standby, elige **Activar pantalla completa** en el menú de Oruvi. Si macOS solicita permiso de Automatización, concédelo para habilitar los controles de Apple Music o Spotify.
 
-En **Ajustes → Actualizaciones**, puedes activar **Buscar versiones nuevas automáticamente** y **Descargar e instalar al salir cuando sea posible**. Sparkle verifica la firma de la descarga antes de instalar.
+La beta se instala manualmente. El canal estable usa Sparkle para verificar y descargar las actualizaciones desde **Ajustes → Actualizaciones**.
 
 <details>
-<summary>Si macOS bloquea la apertura de Oruvi 0.14.1</summary>
+<summary>Si macOS bloquea el primer inicio</summary>
 
-La 0.14.1 se publicó con firma ad hoc. Si confirmaste que el DMG procede de este repositorio, consulta cómo abrirlo en **Ajustes del Sistema → Privacidad y seguridad**. Las publicaciones nuevas requieren firma Developer ID y notarización de Apple. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
+Esta beta aún carece de firma Developer ID y notarización. Si macOS la bloquea, verifica que descargaste el DMG desde este repositorio y selecciona **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. La autorización se aplica a esa copia. Puedes comprobar el archivo con **SHA256SUMS.txt** en las notas de la beta. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
 
 </details>
 
@@ -45,10 +52,6 @@ Standby se capturó mientras Apple Music reproducía **In the End**, de **LINKIN
 ## Widgets de macOS
 
 **Música y Standby** es el widget de Oruvi para el escritorio. Muestra portada, pista y artista, y permite ir a la pista anterior, reproducir o pausar y saltar a la siguiente cuando el reproductor lo admite. El icono de pantalla abre Standby y pulsar la tarjeta abre el reproductor.
-
-![Widget pequeño de Oruvi en el escritorio de macOS con la portada de Hybrid Theory, la pista In the End y los controles de Apple Music](.github/media/widgets.jpg)
-
-Captura del widget pequeño en el escritorio, con **In the End** en pausa. También está disponible en tamaño mediano.
 
 1. Abre **Oruvi** desde **Aplicaciones** al menos una vez.
 2. Haz clic secundario en el escritorio y elige **Editar widgets**.
