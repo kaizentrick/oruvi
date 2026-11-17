@@ -3,6 +3,7 @@ name: Validate Oruvi
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'Sources/**'
       - 'Resources/**'
@@ -35,7 +36,7 @@ jobs:
           ORUVI_REPOSITORY: ''
         run: bash scripts/build.sh
       - name: Describe the isolated test installer
-        if: ${{ success() && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ success() && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -55,7 +56,7 @@ jobs:
           printf '\nPR: %s\nCommit de la rama: %s\nCommit compilado: %s\n' "$PR_NUMBER" "$HEAD_SHA" "$(git rev-parse HEAD)" >> dist/PR-LEEME.txt
           (cd dist && shasum -a 256 ./*.dmg > SHA256SUMS.txt)
       - name: Upload verified test installer (not a public release)
-        if: ${{ success() && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ success() && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Oruvi-PR-${{ github.event.pull_request.number }}
