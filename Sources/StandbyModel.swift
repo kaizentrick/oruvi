@@ -636,8 +636,12 @@ final class StandbyModel {
         let newArtworkURL = source == .spotify && playerArtworkURL != nextArtworkURL
             && ArtworkURLPolicy.spotify(nextArtworkURL) != nil
         if newArtworkURL { playerArtworkURL = nextArtworkURL }
-        if (newSystemArtwork && nextSystemArtwork != appliedSystemArtwork) || (newArtworkURL && needsSpotifyCover) {
+        if newSystemArtwork || (newArtworkURL && needsSpotifyCover) {
             artworkTask?.cancel(); artworkTask = nil; artworkRetryAt = 0
+            if let nextSystemArtwork, nextSystemArtwork == retainedArtwork?.systemData,
+               let artwork, artwork === retainedArtwork?.image {
+                artworkStatus = "Portada del reproductor"
+            }
         }
         if changed || nextSystemArtwork != nil { systemArtworkData = nextSystemArtwork }
         if let shuffle = snapshot["shuffle"] as? NSNumber, let repeated = snapshot["repeatMode"] as? NSNumber {

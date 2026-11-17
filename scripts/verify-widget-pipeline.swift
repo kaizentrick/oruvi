@@ -81,6 +81,21 @@ import os
         check(corrected?.title == "Video A" && corrected?.artwork != nil && corrected?.artwork != imageData,
               "A later verified cover replaces the provisional image for the same recording")
         check(corrected?.artworkPalette != Array(repeating: 0x666666, count: 4), "Replacement cover updates the widget palette")
+        let verifiedCover = model.artwork
+        bitmap.setFillColor(CGColor(red: 0.1, green: 0.6, blue: 0.8, alpha: 1))
+        bitmap.fill(CGRect(x: 0, y: 0, width: 384, height: 384))
+        let supersededCover = NSBitmapImageRep(cgImage: bitmap.makeImage()!).representation(using: .png, properties: [:])!
+        let playback: [String: Any] = ["status": "ok", "source": "oruvi.system", "id": "browser-A",
+                                       "title": "Video A", "artist": "Channel A", "duration": 100,
+                                       "position": 12, "playing": true]
+        model.apply(playback.merging(["systemArtwork": supersededCover]) { _, new in new })
+        model.apply(playback.merging(["systemArtwork": correctedCover]) { _, new in new })
+        let artworkChange = DispatchSemaphore(value: 0)
+        withObservationTracking { _ = model.artwork } onChange: { artworkChange.signal() }
+        try await settle()
+        check(artworkChange.wait(timeout: .now()) == .timedOut && model.artwork === verifiedCover &&
+              store.read()?.artwork == corrected?.artwork && model.artworkStatus == "Portada del reproductor",
+              "Reverting to the already displayed cover cancels a superseded decode without publishing it")
         model.apply(["status":"ok", "source":"oruvi.system", "id":"browser-B", "title":"Video B", "artist":"Channel B", "album":"", "duration":100, "position":0, "playing":false])
         try await settle()
         check(store.read()?.title == "Video B" && store.read()?.playing == false, "Track and pause propagate together")
