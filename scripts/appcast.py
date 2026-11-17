@@ -7,6 +7,21 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
+if sys.argv[1:2] == ["--check-release-order"]:
+    current, candidate = sys.argv[2:]
+    def release_numbers(tag):
+        match = re.fullmatch(r"v([0-9]+)\.([0-9]+)\.([0-9]+)-b([0-9]{1,10})", tag)
+        if not match:
+            sys.exit(f"Unknown Oruvi release tag: {tag}")
+        return tuple(map(int, match.groups()))
+
+    current_version = release_numbers(current)
+    candidate_version = release_numbers(candidate)
+    if current != candidate and (candidate_version[:3] < current_version[:3]
+                                 or candidate_version[3] <= current_version[3]):
+        sys.exit(f"Refusing to replace Latest {current} with {candidate}: version or build would go backwards.")
+    sys.exit(0)
+
 archive, version, build, repo, signature, destination = sys.argv[1:]
 assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version)
 assert re.fullmatch(r"[0-9]{1,10}", build) and int(build) > 0

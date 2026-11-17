@@ -31,6 +31,16 @@ PY
 mkdir -p "$ROOT/.tmp/codex"
 WORK="$(mktemp -d "$ROOT/.tmp/codex/publish.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
+check_release_order() {
+  local latest
+  if latest="$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2> "$WORK/latest.err")"; then
+    python3 scripts/appcast.py --check-release-order "$latest" "$TAG"
+  elif ! grep -Fq 'HTTP 404' "$WORK/latest.err"; then
+    cat "$WORK/latest.err" >&2
+    return 1
+  fi
+}
+check_release_order
 cp "$DMG" "$WORK/Oruvi.dmg"; cmp -s "$DMG" "$WORK/Oruvi.dmg"
 DIGEST="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 printf '%s  %s\n%s  Oruvi.dmg\n' "$DIGEST" "$NAME" "$DIGEST" > "$WORK/SHA256SUMS.txt"
@@ -101,6 +111,7 @@ for attempt in 1 2 3 4 5; do
 done
 [[ "$ASSETS_OK" == 1 ]] || { echo 'Assets did not validate. Draft remains unpublished; previous Latest is untouched.'; exit 1; }
 if [[ "$WAS_DRAFT" == true ]]; then
+  check_release_order
   gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false -F prerelease=false -f make_latest=true > "$WORK/published.json"
   jq -e '.draft == false and .prerelease == false' "$WORK/published.json" >/dev/null
 else

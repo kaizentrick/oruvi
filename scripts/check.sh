@@ -37,6 +37,7 @@ xcrun swiftc -O -whole-module-optimization -warnings-as-errors -swift-version 5 
 python3 - <<'PY'
 import pathlib
 import plistlib
+import subprocess
 info = plistlib.loads(pathlib.Path('Resources/Info.plist').read_bytes())
 entitlements = plistlib.loads(pathlib.Path('Resources/Entitlements.plist').read_bytes())
 if not info.get('NSCalendarsFullAccessUsageDescription', '').strip():
@@ -47,6 +48,19 @@ license_text = pathlib.Path('LICENSE').read_text()
 if not license_text.startswith('MIT License\n') or 'Copyright (c) 2026 KaizenTrick' not in license_text:
     raise SystemExit('MIT license or attribution missing.')
 print('Calendar privacy and MIT attribution checks passed.')
+latest = 'v0.15.0-b1794898038'
+for candidate, allowed in [
+    (latest, True),
+    ('v0.15.0-b1794898039', True),
+    ('v0.16.0-b1794898039', True),
+    ('v0.14.1-b1794898039', False),
+    ('v0.16.0-b1794898038', False),
+    ('v0.16.0-b1794898037', False),
+]:
+    result = subprocess.run(['python3', 'scripts/appcast.py', '--check-release-order', latest, candidate],
+                            capture_output=True)
+    assert (result.returncode == 0) == allowed, (candidate, result.stderr)
+print('Release ordering checks passed.')
 PY
 for script in scripts/*.sh; do bash -n "$script"; done
 python3 scripts/audit-source.py
