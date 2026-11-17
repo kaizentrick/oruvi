@@ -46,7 +46,7 @@ struct NotchView: View {
     private var compactMode: NotchCompactMode {
         NotchCompactPolicy.resolve(
             tab: controller.tab,
-            musicActive: NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.anchor.playing),
+            musicActive: NotchCompactPolicy.showsMusicIndicator(hasTrack: model.hasTrack, playing: model.playbackIsPlaying),
             timerActive: controller.countdown.state.running,
             codexActive: usage.enabled && usage.pinned
         )
@@ -246,7 +246,7 @@ struct NotchView: View {
                 Spacer(minLength: 8)
                 if model.hasTrack {
                     control("backward.fill", command: "previous", label: "Anterior").disabled(!model.canSkip)
-                    control(model.anchor.playing ? "pause.fill" : "play.fill", command: "toggle", label: model.anchor.playing ? "Pausar" : "Reproducir")
+                    control(model.playbackIsPlaying ? "pause.fill" : "play.fill", command: "toggle", label: model.playbackIsPlaying ? "Pausar" : "Reproducir")
                     control("forward.fill", command: "next", label: "Siguiente").disabled(!model.canSkip)
                 } else if !model.connected {
                     Button("Conectar") { model.connectMusic() }.font(.system(size: 11, weight: .medium)).buttonStyle(.plain)
@@ -269,7 +269,7 @@ private struct NotchTrackProgress: View {
     @State private var scrub = PlaybackScrub.idle
     var body: some View {
         Group {
-            if model.anchor.playing && active && !model.isResynchronizing {
+            if model.playbackIsPlaying && active && !model.isResynchronizing {
                 let interval = model.anchor.duration > 0 && !model.onBattery ? 0.5 : 1.0
                 TimelineView(.periodic(from: .now, by: interval)) { _ in bar }
             } else { bar }

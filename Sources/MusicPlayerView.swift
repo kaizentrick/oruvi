@@ -94,7 +94,7 @@ struct MusicPlayerView: View {
             Spacer(minLength: 18)
             playbackButton("backward.fill", label: "Anterior", command: "previous", size: compact ? 25 : 29).disabled(!model.canSkip)
             Spacer(minLength: 18)
-            playbackButton(model.anchor.playing ? "pause.fill" : "play.fill", label: model.anchor.playing ? "Pausar" : "Reproducir", command: "toggle", size: compact ? 32 : 38)
+            playbackButton(model.playbackIsPlaying ? "pause.fill" : "play.fill", label: model.playbackIsPlaying ? "Pausar" : "Reproducir", command: "toggle", size: compact ? 32 : 38)
             Spacer(minLength: 18)
             playbackButton("forward.fill", label: "Siguiente", command: "next", size: compact ? 25 : 29).disabled(!model.canSkip)
             Spacer(minLength: 18)

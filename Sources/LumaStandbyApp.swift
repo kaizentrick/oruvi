@@ -311,7 +311,7 @@ private struct TransportBar: View {
     private var buttons: some View {
         HStack(spacing: 22) {
             control("backward.end.fill", name: "Anterior", command: "previous", size: 16).disabled(!model.canSkip)
-            control(model.anchor.playing ? "pause.fill" : "play.fill", name: model.anchor.playing ? "Pausar" : "Reproducir", command: "toggle", size: 22)
+            control(model.playbackIsPlaying ? "pause.fill" : "play.fill", name: model.playbackIsPlaying ? "Pausar" : "Reproducir", command: "toggle", size: 22)
             control("forward.end.fill", name: "Siguiente", command: "next", size: 16).disabled(!model.canSkip)
         }
     }
@@ -328,7 +328,7 @@ struct TrackProgress: View {
     @State private var scrub = PlaybackScrub.idle
     var body: some View {
         Group {
-            if model.anchor.playing && model.policy.visible && !model.isResynchronizing {
+            if model.playbackIsPlaying && model.policy.visible && !model.isResynchronizing {
                 let interval = model.anchor.duration <= 0 ? 1 : (model.onBattery ? 0.5 : 0.25)
                 TimelineView(.periodic(from: .now, by: interval)) { _ in progress }
             } else { progress }
