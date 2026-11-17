@@ -17,6 +17,7 @@ struct AnimatedMesh: NSViewRepresentable {
         view.colorPixelFormat = .bgra8Unorm
         view.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         view.framebufferOnly = true
+        view.autoResizeDrawable = false
         view.isPaused = true
         context.coordinator.setPalette(palette)
         view.delegate = context.coordinator
@@ -46,7 +47,21 @@ struct AnimatedMesh: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            refreshDrawableSize()
             updateDrawingTimer()
+        }
+
+        override func layout() {
+            super.layout()
+            refreshDrawableSize()
+        }
+
+        private func refreshDrawableSize() {
+            // The moving background is a smooth gradient. Render it at one
+            // pixel per point; the independent SwiftUI foreground stays Retina.
+            let size = CGSize(width: bounds.width.rounded(.up), height: bounds.height.rounded(.up))
+            guard size.width > 0, size.height > 0, size != drawableSize else { return }
+            drawableSize = size
         }
 
         private func updateDrawingTimer() {
