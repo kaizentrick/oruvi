@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 25
     permissions:
@@ -32,20 +33,62 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Require the update-signing secret
+      - name: Check release credentials
         env:
-          UPDATE_KEY: ${{ secrets.ORUVI_SPARKLE_PRIVATE_KEY }}
+          ORUVI_SPARKLE_PRIVATE_KEY: ${{ secrets.ORUVI_SPARKLE_PRIVATE_KEY }}
+          ORUVI_DEVELOPER_ID_P12: ${{ secrets.ORUVI_DEVELOPER_ID_P12 }}
+          ORUVI_DEVELOPER_ID_PASSWORD: ${{ secrets.ORUVI_DEVELOPER_ID_PASSWORD }}
+          ORUVI_NOTARY_APPLE_ID: ${{ secrets.ORUVI_NOTARY_APPLE_ID }}
+          ORUVI_NOTARY_PASSWORD: ${{ secrets.ORUVI_NOTARY_PASSWORD }}
         run: |
-          test -n "$UPDATE_KEY" || { echo 'Configure ORUVI_SPARKLE_PRIVATE_KEY before publishing releases.'; exit 1; }
+          for name in ORUVI_SPARKLE_PRIVATE_KEY ORUVI_DEVELOPER_ID_P12 ORUVI_DEVELOPER_ID_PASSWORD ORUVI_NOTARY_APPLE_ID ORUVI_NOTARY_PASSWORD; do
+            [[ -n "${!name}" ]] || { echo "::error::Missing release secret $name"; exit 1; }
+          done
           printf 'ORUVI_BUILD_NUMBER=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
       - name: Audit the public source and validate behavior
         run: |
           python3 scripts/audit-source.py
           bash scripts/check.sh
-      - name: Build, verify and sign the update
+      - name: Sign, notarize and verify the installer
         env:
           ORUVI_SPARKLE_PRIVATE_KEY: ${{ secrets.ORUVI_SPARKLE_PRIVATE_KEY }}
-        run: bash scripts/build.sh
+          ORUVI_DEVELOPER_ID_P12: ${{ secrets.ORUVI_DEVELOPER_ID_P12 }}
+          ORUVI_DEVELOPER_ID_PASSWORD: ${{ secrets.ORUVI_DEVELOPER_ID_PASSWORD }}
+          ORUVI_NOTARY_APPLE_ID: ${{ secrets.ORUVI_NOTARY_APPLE_ID }}
+          ORUVI_NOTARY_PASSWORD: ${{ secrets.ORUVI_NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          original_umask="$(umask)"
+          umask 077
+          mkdir -p "$PWD/.tmp/codex"
+          signing="$(mktemp -d "$PWD/.tmp/codex/signing.XXXXXX")"
+          keychain="$signing/release.keychain-db"
+          cleanup() {
+            security delete-keychain "$keychain" 2>/dev/null || true
+            [ ! -e "$signing/certificate.p12" ] || rm "$signing/certificate.p12"
+            rmdir "$signing"
+          }
+          trap cleanup EXIT
+          password="$(openssl rand -hex 32)"
+          printf '::add-mask::%s\n' "$password"
+          printf '%s' "$ORUVI_DEVELOPER_ID_P12" | base64 -D > "$signing/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 1800 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$signing/certificate.p12" -k "$keychain" -P "$ORUVI_DEVELOPER_ID_PASSWORD" -T /usr/bin/codesign
+          rm "$signing/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk '/"Developer ID Application:/ { print $2; count++ } END { if (count != 1) exit 1 }')" || {
+            echo "::error::Import exactly one valid Developer ID Application certificate with its private key"; exit 1;
+          }
+          team="$(security find-certificate -c "Developer ID Application:" -p "$keychain" | openssl x509 -noout -subject -nameopt multiline | awk '/organizationalUnitName/ {print $NF; exit}')"
+          [[ "$team" =~ ^[A-Z0-9]{10}$ ]] || { echo "::error::Could not determine the Apple signing team"; exit 1; }
+          xcrun notarytool store-credentials oruvi-release --keychain "$keychain" \
+            --apple-id "$ORUVI_NOTARY_APPLE_ID" --team-id "$team" --password "$ORUVI_NOTARY_PASSWORD"
+          unset ORUVI_DEVELOPER_ID_P12 ORUVI_DEVELOPER_ID_PASSWORD ORUVI_NOTARY_APPLE_ID ORUVI_NOTARY_PASSWORD
+          umask "$original_umask"
+          SIGN_IDENTITY="$identity" NOTARY_PROFILE=oruvi-release NOTARY_KEYCHAIN="$keychain" bash scripts/build.sh
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}

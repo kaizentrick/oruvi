@@ -161,8 +161,10 @@ for attempt in 1 2 3; do
  done
 [[ "$DMG_VERIFIED" == 1 ]] || { echo 'DMG verification failed. No artifact will be published.'; exit 1; }
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
-    [[ "${SIGN_IDENTITY:--}" != - ]] || { echo 'Notarización requiere Developer ID.'; exit 1; }
-    xcrun notarytool submit "$BUILD/$NAME" --keychain-profile "$NOTARY_PROFILE" --wait
+    [[ "${SIGN_DETAILS:-}" == *'Authority=Developer ID Application:'* ]] || { echo 'Notarización requiere Developer ID.'; exit 1; }
+    NOTARY_OPTIONS=(--keychain-profile "$NOTARY_PROFILE")
+    if [[ -n "${NOTARY_KEYCHAIN:-}" ]]; then NOTARY_OPTIONS+=(--keychain "$NOTARY_KEYCHAIN"); fi
+    xcrun notarytool submit "$BUILD/$NAME" "${NOTARY_OPTIONS[@]}" --wait
     xcrun stapler staple "$BUILD/$NAME"; xcrun stapler validate "$BUILD/$NAME"
 fi
 mkdir -p "$BUILD/mount"

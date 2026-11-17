@@ -14,9 +14,10 @@ esac
 [[ "$(git branch --show-current)" == main ]] || { echo 'Cambia a main antes de publicar.'; exit 1; }
 [[ -z "$(git status --porcelain)" ]] || { echo 'Hay cambios sin commit. Revísalos y crea un commit antes de publicar.'; exit 1; }
 [[ "$(gh repo view "$REPO" --json isPrivate --jq .isPrivate)" == false ]] || { echo 'El repositorio no es público; no se cambiará su visibilidad automáticamente.'; exit 1; }
-gh secret list --repo "$REPO" --json name --jq '.[].name' | grep -qx ORUVI_SPARKLE_PRIVATE_KEY || {
-  echo 'Falta ORUVI_SPARKLE_PRIVATE_KEY. Configura el secreto de firma sin publicarlo en el repositorio.'; exit 1;
-}
+SECRETS="$(gh secret list --repo "$REPO" --json name --jq '.[].name')"
+for name in ORUVI_SPARKLE_PRIVATE_KEY ORUVI_DEVELOPER_ID_P12 ORUVI_DEVELOPER_ID_PASSWORD ORUVI_NOTARY_APPLE_ID ORUVI_NOTARY_PASSWORD; do
+  grep -qx "$name" <<<"$SECRETS" || { echo "Falta el secreto $name para publicar en GitHub Actions."; exit 1; }
+done
 python3 scripts/audit-source.py
 # Configure the repository landing area, not global gh settings or another repository.
 gh repo edit "$REPO" \

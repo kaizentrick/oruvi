@@ -9,6 +9,7 @@ VERSION="$(python3 -c 'import plistlib; print(plistlib.load(open("Resources/Info
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid version.'; exit 1; }
 TAG="v$VERSION-b$BUILD"; NAME="Oruvi-$VERSION-arm64.dmg"; DMG="$ROOT/dist/$NAME"
 [[ -s "$DMG" && -s dist/appcast.xml ]] || { echo 'Faltan el DMG o el feed firmado.'; exit 1; }
+xcrun stapler validate "$DMG"
 # Never edit the signed XML or point Sparkle to a mutable download alias.
 python3 - "$REPO" "$TAG" "$BUILD" "$VERSION" "$DMG" <<'PY'
 import base64, pathlib, sys, xml.etree.ElementTree as E
@@ -50,11 +51,7 @@ CHANGES="$(awk -v version="$VERSION" '$1 == "##" { if (found) exit; found = ($2 
   printf '### Widget nativo de macOS\n\n'
   printf 'Abre Oruvi desde Aplicaciones al menos una vez. Después: **clic secundario en el escritorio → Editar widgets → Oruvi → Música y Standby**. Elige pequeño o mediano. Incluye portada, controles interactivos y enlace a Standby.\n\n'
   printf 'La tarjeta flotante anterior se ha retirado. WidgetKit gestiona colocación y refrescos; no se simula un widget con otra ventana. Si tenías la build de prueba sin feed, reemplázala por este DMG público.\n\n'
-  if [[ "${ORUVI_NOTARIZED:-0}" == 1 ]]; then
-    printf 'Distribución firmada con Developer ID y notarizada.\n\n'
-  else
-    printf '**Sin notarización de Apple:** macOS puede bloquear el primer inicio. Revisa el origen y utiliza Privacidad y seguridad → Abrir igualmente solo si confías en esta app. No desactives Gatekeeper ni SIP.\n\n'
-  fi
+  printf 'Distribución firmada con Developer ID y notarizada.\n\n'
   printf 'Ed25519 verifica las actualizaciones; no sustituye la notarización. Para instalar utiliza Oruvi.dmg, no los archivos Source code.\n\n'
   printf 'Versión %s · compilación %s.\n' "$VERSION" "$BUILD"
 } > "$WORK/NOTES.md"

@@ -21,7 +21,7 @@
 3. Expulsa el disco y abre **Oruvi** desde **Aplicaciones**. Para probar el notch, acerca el puntero al borde superior de la pantalla. Para abrir Standby, usa el icono de Oruvi en la barra de menús y elige **Activar pantalla completa**.
 4. Elige **Automático**, **Apple Music** o **Spotify**. Si macOS solicita Automatización para el reproductor elegido, concede el permiso para habilitar sus controles.
 
-La versión pública usa firma ad-hoc y carece de notarización de Apple. Si macOS bloquea el primer inicio, confirma que descargaste el DMG desde este repositorio. Si confías en la copia, ve a **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. Algunas Mac administradas restringen esta opción. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
+La 0.14.1 usa firma ad hoc. Si macOS bloquea su primer inicio, confirma que descargaste el DMG desde este repositorio y usa **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. Algunas Mac administradas restringen esta opción. Las versiones nuevas se publican con firma Developer ID y notarización de Apple. [Guía de Apple para abrir una app](https://support.apple.com/es-mx/102445)
 
 Las próximas versiones se descargan desde GitHub con **Ajustes → Actualizaciones → Buscar versiones nuevas automáticamente** y **Descargar e instalar al salir cuando sea posible**. Sparkle verifica la firma Ed25519 antes de instalar.
 
@@ -121,7 +121,7 @@ El widget no está ejecutándose continuamente: WidgetKit representa instantáne
 
 Para compartir datos entre procesos se conserva una instantánea local en la caché del App Group. Incluye el estado, los metadatos actuales, una miniatura JPEG de hasta 192 píxeles y su paleta. Si se detiene Apple Music o Spotify, el widget conserva la última portada disponible con el mensaje «Nada en reproducción». El archivo se sobrescribe de forma atómica, caduca y se elimina al cerrar Oruvi. WidgetKit también administra sus propias representaciones. La extensión no tiene permisos de red, Apple Events, cámara o micrófono.
 
-En **Ajustes → Widgets** se muestran instrucciones y detección de widgets añadidos. La distribución actual sigue siendo ad-hoc, no notarizada: macOS puede solicitar acceso a datos compartidos o bloquear componentes según sus políticas. La validación del runner no reemplaza comprobar la galería en una instalación normal. No desactives SIP o Gatekeeper. Detalles de firma y diagnóstico en [Resources/MEDIA.md](Resources/MEDIA.md).
+En **Ajustes → Widgets** se muestran instrucciones y se detectan los widgets añadidos. La 0.14.1 puede pedir acceso a datos compartidos por su firma ad hoc. Las versiones nuevas firman la app y su extensión con el mismo equipo de Apple para que compartan el contenedor de reproducción. Detalles en [Resources/MEDIA.md](Resources/MEDIA.md).
 
 ## Widgets del notch
 
@@ -169,7 +169,7 @@ Para compilar una copia de desarrollo, sigue la [guía para contribuir](.github/
 
 `bash scripts/configure-downloads.sh` permite publicar desde el Terminal del mantenedor usando su sesión normal de GitHub CLI. No evade restricciones de acceso ni cambia otros repositorios.
 
-**Conserva una copia cifrada de `.private/sparkle.key`.** Nunca se sube a Git; la app solo contiene la clave pública y CI utiliza `ORUVI_SPARKLE_PRIVATE_KEY`. Developer ID y las credenciales de notarización son independientes: la compilación local admite `SIGN_IDENTITY` y `NOTARY_PROFILE`. No marques una release como notarizada sin verificarlo.
+**Conserva una copia cifrada de `.private/sparkle.key`.** La app contiene la clave pública y GitHub Actions usa `ORUVI_SPARKLE_PRIVATE_KEY` para firmar el instalador y su catálogo. Para firmar y notarizar con Apple, el flujo usa `ORUVI_DEVELOPER_ID_P12` (PKCS#12 en base64), `ORUVI_DEVELOPER_ID_PASSWORD`, `ORUVI_NOTARY_APPLE_ID` y `ORUVI_NOTARY_PASSWORD` (contraseña específica de la app).
 
 ## Verificación
 
