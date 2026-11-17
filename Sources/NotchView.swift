@@ -270,26 +270,29 @@ private struct NotchTrackProgress: View {
     var body: some View {
         Group {
             if model.anchor.playing && active && !model.isResynchronizing {
-                TimelineView(.periodic(from: .now, by: model.onBattery ? 1.0 : 0.5)) { _ in bar }
+                let interval = model.anchor.duration > 0 && !model.onBattery ? 0.5 : 1.0
+                TimelineView(.periodic(from: .now, by: interval)) { _ in bar }
             } else { bar }
         }
     }
     private var bar: some View {
         let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
         let duration = model.anchor.duration
+        let hasDuration = duration > 0
         let shown = model.canSeek ? (dragProgress.map { $0 * duration } ?? position) : position
         return HStack(spacing: 8) {
-            Text(PlaybackTime.format(shown))
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.5))
-                .frame(width: 28, alignment: .leading)
-            PlaybackScrubber(model: model, position: position, thickness: 3,
-                             trackColor: .white.opacity(0.16), fillColor: .white.opacity(0.82), dragProgress: $dragProgress)
-                .frame(height: 12)
-            Text("−" + PlaybackTime.format(duration - shown))
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.5))
-                .frame(width: 34, alignment: .trailing)
-        }
+            Text(PlaybackTime.format(shown)).fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 28, alignment: .leading)
+            if hasDuration {
+                PlaybackScrubber(model: model, position: position, thickness: 3,
+                                 trackColor: .white.opacity(0.16), fillColor: .white.opacity(0.82), dragProgress: $dragProgress)
+                    .frame(height: 12)
+                Text("−" + PlaybackTime.format(duration - shown)).fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 34, alignment: .trailing)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }.font(.system(size: 9, weight: .medium, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.5))
     }
 }
