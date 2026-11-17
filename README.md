@@ -12,7 +12,7 @@
 
 <p align="center">Apple silicon (M1 o posterior) · macOS 26 o posterior · <a href="LICENSE">Licencia MIT</a></p>
 
-![Standby de Oruvi con portada, controles y letra sincronizada en el modo de demostración](.github/media/standby.jpg)
+![Standby de Oruvi con la portada de Hybrid Theory, controles y letras sincronizadas de In the End](.github/media/standby.jpg)
 
 ## Instalar Oruvi
 
@@ -34,7 +34,7 @@ Las próximas versiones se descargan desde GitHub con **Ajustes → Actualizacio
 
 ![Ajustes de tipografía con muestras de fuentes y vista previa del tamaño de las letras](.github/media/tipografia.jpg)
 
-Las capturas muestran el modo de demostración con texto y portada de ejemplo.
+Standby se capturó mientras Apple Music reproducía **In the End**, de **LINKIN PARK**. La imagen de Tipografía muestra la vista previa de Oruvi.
 
 ## Widgets de macOS
 
@@ -42,7 +42,7 @@ Las capturas muestran el modo de demostración con texto y portada de ejemplo.
 
 ![Widgets de Oruvi en tamaño pequeño y mediano. Ambos muestran portada, pista, artista, controles de reproducción y acceso a Standby](.github/media/widgets.jpg)
 
-La imagen usa las vistas reales del widget y datos de reproducción de demostración.
+La imagen renderiza las vistas del widget con la misma pista y la portada de **Hybrid Theory**.
 
 1. Abre **Oruvi** desde **Aplicaciones** al menos una vez.
 2. Haz clic secundario en el escritorio y elige **Editar widgets**.
