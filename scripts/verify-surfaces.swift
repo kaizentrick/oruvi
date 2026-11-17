@@ -345,6 +345,19 @@ struct VerifySurfaces {
         applySpotify("late", id: "spotify:track:next")
         await until { covers.artworkStatus == "Portada de Spotify" }
         expect(covers.artwork != nil, "a URL arriving after the song did should be used immediately")
+        ArtworkFixture.holdNext("/transition-cover")
+        applySpotify("transition-cover", id: "spotify:track:next")
+        await until { ArtworkFixture.isHolding("/transition-cover") }
+        let coverBeforeTransition = covers.artwork
+        covers.apply(["status": "transition"])
+        await until { !ArtworkFixture.isHolding("/transition-cover") }
+        expect(covers.artwork === coverBeforeTransition && covers.artworkStatus != "Recuperando portada…",
+               "an uncertain playback sample cancels the cover request but keeps the verified image")
+        ArtworkFixture.release("/transition-cover")
+        applySpotify("transition-cover", id: "spotify:track:next")
+        await until { covers.artworkStatus == "Portada de Spotify" }
+        expect(covers.artwork !== coverBeforeTransition && ArtworkFixture.requestCount("/transition-cover") == 2,
+               "the confirmed track immediately retries the interrupted cover request")
 
         let support = LumaEnvironment.supportDirectory
         let client = BoundedHTTPClient(session: session)
@@ -797,7 +810,7 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
             Self.pending.withLock { $0 = true }
             return
         }
-        if ["/api/get", "/600x600bb.png", "/search"].contains(url.path), !Self.released.withLock({ $0.contains(url.path) }) {
+        if ["/api/get", "/600x600bb.png", "/search", "/transition-cover"].contains(url.path), !Self.released.withLock({ $0.contains(url.path) }) {
             Self.held.withLock { $0[url.path] = self }
             return
         }
@@ -836,5 +849,8 @@ private final class ArtworkFixture: URLProtocol, @unchecked Sendable {
         if status == 200 { client?.urlProtocol(self, didLoad: data) }
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() {}
+    override func stopLoading() {
+        guard let path = request.url?.path else { return }
+        Self.held.withLock { if $0[path] === self { $0.removeValue(forKey: path) } }
+    }
 }

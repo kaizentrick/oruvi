@@ -145,7 +145,9 @@ final class StandbyModel {
     private(set) var playbackReadMilliseconds: Int?
     var settingsOpen = false
     var settingsSection: SettingsSection = .typography
-    var isResynchronizing = true
+    var isResynchronizing = true {
+        didSet { if isResynchronizing { cancelPendingArtwork() } }
+    }
     var automaticActivationStatus = "En espera"
     var automaticActivationPause: IdleActivationPause?
     var isAutomaticActivationPaused: Bool { automaticActivationPause?.remainingSeconds() != nil }
@@ -481,9 +483,7 @@ final class StandbyModel {
             if demoMode { updateCue() }
         }
         if !lyricsLookupVisible { stopLyricsUpdates() }
-        if !demand {
-            artworkTask?.cancel(); artworkTask = nil
-        }
+        if !demand { cancelPendingArtwork() }
     }
     private func suspendPlaybackSampling() {
         SystemMediaBridge.shared.setEnabled(false)
@@ -902,6 +902,13 @@ final class StandbyModel {
             }
             self.artworkTask = nil
         }
+    }
+    private func cancelPendingArtwork() {
+        guard let artworkTask else { return }
+        artworkTask.cancel()
+        self.artworkTask = nil
+        artworkRetryAt = 0
+        if artworkStatus == "Recuperando portada…" { artworkStatus = "" }
     }
     private func readLocalMusicArtwork(for identity: TrackIdentity) async -> (NSImage, [RGB])? {
         guard !LumaEnvironment.isTesting else { return nil }
