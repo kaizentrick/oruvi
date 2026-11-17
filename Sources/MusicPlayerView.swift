@@ -79,7 +79,7 @@ struct MusicPlayerView: View {
                     Menu("Reproductor de Standby") {
                         PlayerSourceMenuItems(selection: $model.playerPreference, surface: .standby, activePlayer: model.activePlayer)
                     }
-                    Button("Actualizar sincronización") { model.refreshPlayback() }.disabled(!model.connected)
+                    Button("Actualizar sincronización") { model.refreshPlayback(retryingAutomation: true) }.disabled(!model.connected)
                     if !model.lyricSource.isEmpty { Text(model.lyricSource) }
                 } label: { Image(systemName: "ellipsis").font(.system(size: 16, weight: .medium)).frame(width: 32, height: 34) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Opciones de reproducción")

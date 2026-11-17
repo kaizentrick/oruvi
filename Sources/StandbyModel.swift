@@ -506,8 +506,9 @@ final class StandbyModel {
         } else if !effectiveAwake && hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }
     }
     /// A new session, wake or explicit reconnect requests fresh metadata and position.
-    func refreshPlayback() {
+    func refreshPlayback(retryingAutomation: Bool = false) {
         guard preparePlaybackRefresh() else { return }
+        if retryingAutomation { musicQueue.async { [playerRouter] in playerRouter.retryAutomation() } }
         if reading { pendingMusicHint = true } else { readMusic() }
     }
     private func preparePlaybackRefresh(restartingSystem: Bool = false) -> Bool {
@@ -776,6 +777,7 @@ final class StandbyModel {
     /// No transport command is sent here and neither source selector is edited.
     func synchronizeNativeWidget(connectIfNeeded: Bool) async -> String {
         guard allowsPlaybackReads, !sessionSuspended else { return "Oruvi está en reposo." }
+        let retryAutomation = connectIfNeeded && connected && !demoMode
         if !connected || demoMode {
             guard connectIfNeeded else { return "Conecta el reproductor en los ajustes de Oruvi." }
             // The widget requests a fresh read below and awaits its result.
@@ -786,6 +788,7 @@ final class StandbyModel {
         let snapshot: [String: Any]? = await withCheckedContinuation { continuation in
             musicQueue.async { [playerRouter, playbackGeneration] in
                 guard playbackGeneration.withLock({ $0 == session }) else { continuation.resume(returning: nil); return }
+                if retryAutomation { playerRouter.retryAutomation() }
                 continuation.resume(returning: playerRouter.snapshot(preference: selection, preferred: source, refreshSystem: true))
             }
         }

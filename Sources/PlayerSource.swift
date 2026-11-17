@@ -24,8 +24,12 @@ final class PlayerRouter: @unchecked Sendable {
         self.dispatchNative = dispatchNative
     }
     func reset() {
-        denials.removeAll(); previouslyPlaying.removeAll(); lastAutomaticSource = nil
+        retryAutomation()
+        previouslyPlaying.removeAll(); lastAutomaticSource = nil
         LumaResetMusicBridge(); OruviResetSpotifyBridge()
+    }
+    func retryAutomation() {
+        denials.removeAll()
     }
     private func native(_ source: PlayerSource) -> [String: Any] {
         guard source != .system else { return ["status": "notRunning"] }

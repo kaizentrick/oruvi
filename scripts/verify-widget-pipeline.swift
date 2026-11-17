@@ -219,8 +219,13 @@ import os
               recovery.connectionSummary == "Revisar sincronización",
               "An earlier successful publication cannot make a current synchronization failure look healthy")
         let widgetReads = OSAllocatedUnfairLock(initialState: 0)
-        let widgetRouter = PlayerRouter(isRunning: { $0 == .music }, readNative: { _ in
+        let musicAllowed = OSAllocatedUnfairLock(initialState: true)
+        let widgetRouter = PlayerRouter(isRunning: { _ in true }, readNative: { source in
+            if source == .spotify {
+                return ["status": "ok", "id": "spotify-fallback", "title": "Paused song", "playing": false]
+            }
             widgetReads.withLock { $0 += 1 }
+            guard musicAllowed.withLock({ $0 }) else { return ["status": "denied"] }
             return ["status": "ok", "id": "first-widget-read", "title": "Current song",
                     "duration": 100, "position": 12, "playing": true]
         }, dispatchNative: { _, _, _, _ in
@@ -234,6 +239,19 @@ import os
         check(message.isEmpty && widgetModel.track.id == "first-widget-read" && widgetModel.connected,
               "Explicit widget recovery connects and awaits real playback through the selected provider")
         check(widgetReads.withLock { $0 } == 1, "Connecting a disconnected widget performs one playback read")
+        widgetModel.notchPlayerPreference = .automatic
+        musicAllowed.withLock { $0 = false }
+        _ = await widgetModel.synchronizeNativeWidget(connectIfNeeded: false)
+        check(widgetModel.connected && widgetModel.activePlayer == .spotify && widgetReads.withLock { $0 } == 2,
+              "Automatic playback stays connected when Music denies access")
+        musicAllowed.withLock { $0 = true }
+        _ = await widgetModel.synchronizeNativeWidget(connectIfNeeded: false)
+        check(widgetModel.activePlayer == .spotify && widgetReads.withLock { $0 } == 2,
+              "Passive widget recovery does not retry a cached Automation denial")
+        let restored = await widgetModel.synchronizeNativeWidget(connectIfNeeded: true)
+        check(restored.isEmpty && widgetModel.activePlayer == .music && widgetReads.withLock { $0 } == 3 &&
+              widgetModel.notchPlayerPreference == .automatic,
+              "Explicit widget recovery retries Automation without switching the saved selector")
         print("PASS: \(count) actual async widget pipeline checks, including bootstrap, enumeration races, cover, pause, sleep and shutdown.")
     }
 }
