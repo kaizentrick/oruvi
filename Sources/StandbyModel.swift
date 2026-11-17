@@ -137,8 +137,7 @@ final class StandbyModel {
     var hot = false
     var reduceMotion = false
     var reduceTransparency = false
-    enum SuspensionSource: Hashable { case system, display, inactive, locked }
-    @ObservationIgnored private var suspensionSources: Set<SuspensionSource> = []
+    @ObservationIgnored private var suspensionSources: Set<SessionSuspension> = []
     private(set) var sessionSuspended = false {
         didSet { if started && oldValue != sessionSuspended { policyChanged() } }
     }
@@ -353,8 +352,11 @@ final class StandbyModel {
         layout = LayoutMode(rawValue: defaults.string(forKey: "layout") ?? "") ?? .editorial
         appearance = defaults.string(forKey: "appearance") ?? "Oscuro"
     }
-    func start() {
-        guard !started else { return }; started = true
+    func start(initialSuspensions: Set<SessionSuspension>) {
+        guard !started else { return }
+        suspensionSources = initialSuspensions
+        sessionSuspended = !initialSuspensions.isEmpty
+        started = true
         installObservers(); refreshPower()
         if ProcessInfo.processInfo.arguments.contains("--demo") || LumaEnvironment.isTesting { useDemo() }
         else if prefs.bool(forKey: playbackSurface.enabledKey) { connectMusic() }
@@ -389,9 +391,9 @@ final class StandbyModel {
             observe(standard, name) { [weak self] in self?.refreshVisibility() }
         }
         for (source, sleep, wake) in [
-            (SuspensionSource.system, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
-            (SuspensionSource.display, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification),
-            (SuspensionSource.inactive, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification)
+            (SessionSuspension.system, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
+            (SessionSuspension.display, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification),
+            (SessionSuspension.inactive, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification)
         ] {
             observe(workspace, sleep) { [weak self] in self?.setSuspended(true, source: source) }
             observe(workspace, wake) { [weak self] in self?.setSuspended(false, source: source) }
@@ -429,7 +431,7 @@ final class StandbyModel {
             powerSource = source; CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
     }
-    func setSuspended(_ suspended: Bool, source: SuspensionSource) {
+    func setSuspended(_ suspended: Bool, source: SessionSuspension) {
         if suspended { suspensionSources.insert(source) } else { suspensionSources.remove(source) }
         // Wake, unlock and session activation can arrive in any order.
         let blocked = !suspensionSources.isEmpty

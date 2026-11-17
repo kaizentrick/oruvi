@@ -706,10 +706,14 @@ struct VerifySurfaces {
         var codexAttempts = 0
         let codex = CodexUsageController(locateExecutable: { codexAttempts += 1; return nil })
         codex.connect()
-        codex.start()
+        codex.start(initialSuspensions: [.display, .inactive])
         defer { codex.disconnect(); codex.stop() }
-        expect(codexAttempts == 1 && codex.error == .missingCLI, "Codex tries promptly when first connected")
         let workspaceNotifications = NSWorkspace.shared.notificationCenter
+        expect(codexAttempts == 0 && codex.status.contains("En pausa"), "Codex skips its first read in a suspended session")
+        workspaceNotifications.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        expect(codexAttempts == 0, "A display wake alone cannot resume a still-inactive session")
+        workspaceNotifications.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        expect(codexAttempts == 1 && codex.error == .missingCLI, "Codex tries promptly once the session becomes active")
         workspaceNotifications.post(name: NSWorkspace.willSleepNotification, object: nil)
         workspaceNotifications.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
         workspaceNotifications.post(name: NSWorkspace.didWakeNotification, object: nil)

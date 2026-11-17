@@ -1,4 +1,21 @@
 import Foundation
+import CoreGraphics
+
+enum SessionSuspension: Hashable {
+    case system, display, inactive, locked
+
+    static func current() -> Set<Self> {
+        var result: Set<Self> = []
+        if let session = CGSessionCopyCurrentDictionary() as? [String: Any] {
+            if session["kCGSSessionOnConsoleKey"] as? Bool == false { result.insert(.inactive) }
+            // Best-effort lock hint, matching the distributed lock notifications.
+            if session["CGSSessionScreenIsLocked"] as? Bool == true { result.insert(.locked) }
+        }
+        let display = CGMainDisplayID()
+        if display != 0 && CGDisplayIsAsleep(display) != 0 { result.insert(.display) }
+        return result
+    }
+}
 
 /// Pure rules: background checks never capture keys, clicks, audio or screen contents.
 struct IdleActivationPolicy {

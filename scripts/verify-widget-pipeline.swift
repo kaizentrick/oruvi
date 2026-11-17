@@ -252,6 +252,13 @@ import os
         check(restored.isEmpty && widgetModel.activePlayer == .music && widgetReads.withLock { $0 } == 3 &&
               widgetModel.notchPlayerPreference == .automatic,
               "Explicit widget recovery retries Automation without switching the saved selector")
+        let lockedModel = StandbyModel()
+        defer { lockedModel.shutdown() }
+        lockedModel.setNativeWidgetPresence(true)
+        lockedModel.start(initialSuspensions: [.locked])
+        let lockedSnapshot = NativeWidgetController(model: lockedModel).makeSnapshot()
+        check(!lockedModel.needsPlayback && lockedSnapshot.state == .sleeping && !lockedSnapshot.canControl,
+              "A widget launched into a locked session starts suspended before receiving notifications")
         print("PASS: \(count) actual async widget pipeline checks, including bootstrap, enumeration races, cover, pause, sleep and shutdown.")
     }
 }

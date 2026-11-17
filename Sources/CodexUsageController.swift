@@ -22,7 +22,7 @@ final class CodexUsageController {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var displayTimer: Timer?
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var blocks = Set<String>()
+    @ObservationIgnored private var blocks = Set<SessionSuspension>()
     @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var lastAttemptUptime = -Double.infinity
     @ObservationIgnored private var failures = 0
@@ -59,19 +59,20 @@ final class CodexUsageController {
     }
     var compactHelp: String { "\(selectedBucket?.title ?? "Codex") · \(status). Abrir conexiones." }
 
-    func start() {
+    func start(initialSuspensions: Set<SessionSuspension>) {
         guard !started else { return }; started = true
+        blocks = initialSuspensions
         let workspace = NSWorkspace.shared.notificationCenter
         for (block, sleep, wake) in [
-            ("system", NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
-            ("display", NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification),
-            ("session", NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification)
+            (SessionSuspension.system, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
+            (SessionSuspension.display, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification),
+            (SessionSuspension.inactive, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification)
         ] {
             observe(workspace, sleep) { [weak self] in self?.block(block, active: true) }
             observe(workspace, wake) { [weak self] in self?.block(block, active: false) }
         }
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.block("lock", active: true) }
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.block("lock", active: false) }
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.block(.locked, active: true) }
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.block(.locked, active: false) }
         observe(.default, .NSSystemClockDidChange) { [weak self] in self?.updateDisplayClock() }
         reschedule()
     }
@@ -88,7 +89,7 @@ final class CodexUsageController {
         cancel(); timer?.invalidate(); timer = nil; snapshot = nil; error = nil
         updateDisplayClock()
     }
-    private func block(_ key: String, active: Bool) {
+    private func block(_ key: SessionSuspension, active: Bool) {
         let changed = active ? blocks.insert(key).inserted : blocks.remove(key) != nil
         guard changed else { return }
         cancel(); reschedule()
