@@ -96,13 +96,15 @@ import os
         check(artworkChange.wait(timeout: .now()) == .timedOut && model.artwork === verifiedCover &&
               store.read()?.artwork == corrected?.artwork && model.artworkStatus == "Portada del reproductor",
               "Reverting to the already displayed cover cancels a superseded decode without publishing it")
-        model.apply(["status": "transition"])
-        model.apply(["status": "error"])
+        let missingTrack = model.apply(["status": "ok", "source": "oruvi.system"])
+        let invalidPosition = model.apply(playback.merging(["position": Double.nan]) { _, new in new })
+        check(missingTrack == "Sincronizando canción…" && invalidPosition == missingTrack,
+              "A nominally successful provider reply reports pending synchronization if its metadata is invalid")
         try await settle()
         let synchronizing = store.read()
         check(synchronizing?.title == "Video A" && synchronizing?.artwork == corrected?.artwork &&
               synchronizing?.message == "Sincronizando canción…" && synchronizing?.canControl == false,
-              "Transition publishes a synchronization message and withdraws controls without discarding the cover")
+              "An invalid sample withdraws controls without discarding the title or cover")
         model.apply(playback)
         try await settle()
         check(store.read()?.trackID == "browser-A" && store.read()?.canControl == true && store.read()?.message.isEmpty == true,

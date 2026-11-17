@@ -561,9 +561,11 @@ final class StandbyModel {
             }
         }
     }
-    func apply(_ snapshot: [String: Any]) {
+    @discardableResult func apply(_ snapshot: [String: Any]) -> String {
         if let sequence = snapshot["playbackSequence"] as? UInt64 {
-            guard sequence > lastAppliedSnapshotSequence else { return }
+            guard sequence > lastAppliedSnapshotSequence else {
+                return isResynchronizing ? "Sincronizando canción…" : ""
+            }
             lastAppliedSnapshotSequence = sequence
         }
         let status = snapshot["status"] as? String ?? "error"
@@ -574,20 +576,25 @@ final class StandbyModel {
             connected = false
             suspendPlaybackSampling()
             clearTrack(); isResynchronizing = false
-            connectionStatus = snapshot["message"] as? String ?? "Permiso de Automatización requerido."; return
+            connectionStatus = snapshot["message"] as? String ?? "Permiso de Automatización requerido."
+            return connectionStatus
         }
         if status == "notRunning" {
             clearTrack(); recovery.succeed(at: ProcessInfo.processInfo.systemUptime); isResynchronizing = false
             connectionStatus = effectivePlayerPreference.source.map { "Abre " + $0.name + " en este Mac" }
                 ?? "Reproduce contenido compatible con Ahora suena en este Mac"
-            return
+            return connectionStatus
         }
         if status == "stopped" {
             if recovery.observeStopped() {
                 clearTrack(); recovery.succeed(at: ProcessInfo.processInfo.systemUptime); isResynchronizing = false
                 connectionStatus = "Elige una canción en tu reproductor"
-            } else { isResynchronizing = true; updateCue() }
-            return
+            } else {
+                isResynchronizing = true
+                connectionStatus = "Sincronizando canción…"
+                updateCue()
+            }
+            return connectionStatus
         }
         guard status == "ok" else {
             // A brief timeout can keep a recently confirmed cue visible. Only a
@@ -596,23 +603,26 @@ final class StandbyModel {
             let age = ProcessInfo.processInfo.systemUptime - (recovery.lastSuccess ?? -.greatestFiniteMagnitude)
             if status == "transition" || age > 3 || !hasTrack { isResynchronizing = true }
             connectionStatus = snapshot["message"] as? String ?? "Actualizando canción…"
-            updateCue(); return
+            updateCue()
+            return connectionStatus
         }
-        var next = TrackIdentity(id: snapshot["id"] as? String ?? "", title: snapshot["title"] as? String ?? "Sin título", artist: snapshot["artist"] as? String ?? "", album: snapshot["album"] as? String ?? "", duration: (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0)
-        guard next.duration.isFinite, next.duration >= 0, next.duration < 86400 else {
-            playbackReadMilliseconds = nil
-            recovery.fail(); isResynchronizing = true; updateCue(); return
-        }
-        let source = PlayerSource(rawValue: snapshot["source"] as? String ?? "") ?? .music
-        next.sourceID = source.rawValue
-        let changed = activePlayer != source || !PlaybackRecovery.sameRecording(track, next)
+        let duration = (snapshot["duration"] as? NSNumber)?.doubleValue ?? 0
         let sample = (snapshot["sampleUptime"] as? NSNumber)?.doubleValue ?? ProcessInfo.processInfo.systemUptime
         let position = (snapshot["position"] as? NSNumber)?.doubleValue ?? 0
         let playing = (snapshot["playing"] as? NSNumber)?.boolValue ?? false
-        guard sample.isFinite, position.isFinite, position >= 0 else {
+        guard let id = snapshot["id"] as? String, !id.isEmpty,
+              let source = PlayerSource(rawValue: snapshot["source"] as? String ?? ""),
+              duration.isFinite, (0..<86400).contains(duration),
+              sample.isFinite, position.isFinite, position >= 0 else {
             playbackReadMilliseconds = nil
-            recovery.fail(); isResynchronizing = true; updateCue(); return
+            recovery.fail(); isResynchronizing = true
+            connectionStatus = "Sincronizando canción…"
+            return connectionStatus
         }
+        let next = TrackIdentity(id: id, title: snapshot["title"] as? String ?? "Sin título",
+                                 artist: snapshot["artist"] as? String ?? "", album: snapshot["album"] as? String ?? "",
+                                 duration: duration, sourceID: source.rawValue)
+        let changed = activePlayer != source || !PlaybackRecovery.sameRecording(track, next)
         // Never clear a valid song for a corrupt/incomplete playback sample.
         activePlayer = source; lastSurfacePlayers[playbackSurface] = source
         if changed {
@@ -660,8 +670,8 @@ final class StandbyModel {
         anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing, rate: rate)
         recovery.succeed(at: sample)
         if isResynchronizing { isResynchronizing = false }
-        let duration = (snapshot["playbackReadDuration"] as? NSNumber)?.doubleValue
-        let milliseconds = duration.flatMap { $0 >= 0 ? Int(exactly: ($0 * 1000).rounded()) : nil }
+        let readDuration = (snapshot["playbackReadDuration"] as? NSNumber)?.doubleValue
+        let milliseconds = readDuration.flatMap { $0 >= 0 ? Int(exactly: ($0 * 1000).rounded()) : nil }
         if playbackReadMilliseconds != milliseconds { playbackReadMilliseconds = milliseconds }
         connectionStatus = activePlayer.name + (playing ? " · reproduciendo" : " · en pausa")
         // Missing resources recover without having to close and reopen the app. Cooldowns
@@ -671,6 +681,7 @@ final class StandbyModel {
         let needsSystemCover = systemArtworkData.map { $0 != appliedSystemArtwork } ?? false
         if artworkTask == nil && now >= artworkRetryAt && (artwork == nil || needsSystemCover || needsSpotifyCover) { fetchArtwork() }
         updateCue()
+        return ""
     }
     private var playbackPollInterval: TimeInterval {
         let normalInterval = policy.visible ? (policy.pollingInterval(playing: anchor.playing) ?? 5) : (anchor.playing ? (onBattery ? 5.0 : 3.0) : 8.0)
@@ -749,11 +760,11 @@ final class StandbyModel {
             }
         }
         guard let result, session == generation, connected, !sessionSuspended else { return "La sesión de Oruvi cambió." }
-        apply(result.1)
+        let refreshMessage = apply(result.1)
         if result.0["status"] as? String != "ok" {
             return result.0["message"] as? String ?? "El reproductor no aceptó el control."
         }
-        return ""
+        return refreshMessage
     }
     /// Explicit widget recovery awaits a fresh read before WidgetKit reloads.
     /// No transport command is sent here and neither source selector is edited.
@@ -772,9 +783,9 @@ final class StandbyModel {
             }
         }
         guard let snapshot, session == generation, connected, !sessionSuspended else { return "La sesión cambió. Actualiza el widget." }
-        apply(snapshot)
+        let message = apply(snapshot)
         schedulePoll()
-        return snapshot["status"] as? String == "ok" ? "" : connectionStatus
+        return message
     }
     func fetchLyrics() {
         lyricsTask?.cancel(); lyricsTask = nil
