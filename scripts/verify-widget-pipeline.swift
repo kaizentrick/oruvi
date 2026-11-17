@@ -218,6 +218,22 @@ import os
         check(!recovery.sharingVerified && recovery.lastPublishedAt != nil &&
               recovery.connectionSummary == "Revisar sincronización",
               "An earlier successful publication cannot make a current synchronization failure look healthy")
+        let widgetReads = OSAllocatedUnfairLock(initialState: 0)
+        let widgetRouter = PlayerRouter(isRunning: { $0 == .music }, readNative: { _ in
+            widgetReads.withLock { $0 += 1 }
+            return ["status": "ok", "id": "first-widget-read", "title": "Current song",
+                    "duration": 100, "position": 12, "playing": true]
+        }, dispatchNative: { _, _, _, _ in
+            preconditionFailure("Connecting a widget must never send a transport command")
+        })
+        let widgetModel = StandbyModel(playerRouter: widgetRouter)
+        defer { widgetModel.shutdown() }
+        widgetModel.notchPlayerPreference = .music
+        widgetModel.setNativeWidgetPresence(true)
+        let message = await widgetModel.synchronizeNativeWidget(connectIfNeeded: true)
+        check(message.isEmpty && widgetModel.track.id == "first-widget-read" && widgetModel.connected,
+              "Explicit widget recovery connects and awaits real playback through the selected provider")
+        check(widgetReads.withLock { $0 } == 1, "Connecting a disconnected widget performs one playback read")
         print("PASS: \(count) actual async widget pipeline checks, including bootstrap, enumeration races, cover, pause, sleep and shutdown.")
     }
 }

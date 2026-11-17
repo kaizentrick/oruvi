@@ -251,7 +251,8 @@ final class StandbyModel {
     @ObservationIgnored private let prefs = LumaEnvironment.preferences
     @ObservationIgnored private let musicQueue = DispatchQueue(label: "com.kaizentrick.luma.music", qos: .userInitiated)
     @ObservationIgnored private let repository = LyricsRepository()
-    @ObservationIgnored private let playerRouter = PlayerRouter()
+    @ObservationIgnored private let playerRouter: PlayerRouter
+    @ObservationIgnored private let allowsPlaybackReads: Bool
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private let artworkQueue = DispatchQueue(label: "com.kaizentrick.luma.artwork", qos: .utility)
     @ObservationIgnored private var recovery = PlaybackRecovery()
@@ -312,8 +313,10 @@ final class StandbyModel {
     var preferredScheme: ColorScheme? { appearance == "Sistema" ? nil : (appearance == "Claro" ? .light : .dark) }
     var effectiveAwake: Bool { keepAwake && isVisible && !sessionSuspended && !onBattery && !lowPower && !hot }
 
-    init(artworkRepository: ArtworkRepository = ArtworkRepository()) {
+    init(artworkRepository: ArtworkRepository = ArtworkRepository(), playerRouter: PlayerRouter? = nil) {
         self.artworkRepository = artworkRepository
+        self.playerRouter = playerRouter ?? PlayerRouter()
+        allowsPlaybackReads = !LumaEnvironment.isTesting || playerRouter != nil
         let defaults = LumaEnvironment.preferences
         defaults.register(defaults: ["twentyFourHour": true, "energyMode": "Automático", "appearance": "Oscuro", "automaticArtwork": true,
                                      "meshFollowsMusic": true, "idleEnabled": true, "idleMinutes": 5.0, "showPhrases": true, "phraseInterval": 60.0, "avoidMedia": true, "protectBrowsers": true, "notchEnabled": true])
@@ -503,8 +506,12 @@ final class StandbyModel {
         } else if !effectiveAwake && hasAssertion { IOPMAssertionRelease(assertion); hasAssertion = false }
     }
     /// A new session, wake or explicit reconnect requests fresh metadata and position.
-    func refreshPlayback(restartingSystem: Bool = false) {
-        guard connected, !demoMode, needsPlayback else { return }
+    func refreshPlayback() {
+        guard preparePlaybackRefresh() else { return }
+        if reading { pendingMusicHint = true } else { readMusic() }
+    }
+    private func preparePlaybackRefresh(restartingSystem: Bool = false) -> Bool {
+        guard connected, !demoMode, needsPlayback else { return false }
         SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic,
                                             restarting: restartingSystem)
         invalidatePlaybackRequests()
@@ -512,14 +519,18 @@ final class StandbyModel {
         playbackReadMilliseconds = nil
         recovery.invalidate(); isResynchronizing = true
         cancelCueTimer()
-        if reading { pendingMusicHint = true } else { readMusic() }
+        return true
     }
     func connectMusic() {
+        connectMusic(readImmediately: true)
+    }
+    private func connectMusic(readImmediately: Bool) {
         demoMode = false; connected = true
         prefs.set(true, forKey: playbackSurface.enabledKey)
         connectionStatus = "Conectando reproductor…"
         musicQueue.async { [playerRouter] in playerRouter.reset() }
-        refreshPlayback(restartingSystem: true)
+        guard preparePlaybackRefresh(restartingSystem: true), readImmediately else { return }
+        if reading { pendingMusicHint = true } else { readMusic() }
     }
     func disconnectMusic() {
         suspendPlaybackSampling()
@@ -541,7 +552,7 @@ final class StandbyModel {
         cancelCueTimer()
     }
     private func readMusic() {
-        guard !LumaEnvironment.isTesting, connected, needsPlayback, !reading, !demoMode else { return }
+        guard allowsPlaybackReads, connected, needsPlayback, !reading, !demoMode else { return }
         lastPlaybackReadStartedAt = ProcessInfo.processInfo.systemUptime
         reading = true; pollTimer?.invalidate(); pollTimer = nil
         let session = generation, preference = effectivePlayerPreference, preferred = activePlayer
@@ -764,10 +775,11 @@ final class StandbyModel {
     /// Explicit widget recovery awaits a fresh read before WidgetKit reloads.
     /// No transport command is sent here and neither source selector is edited.
     func synchronizeNativeWidget(connectIfNeeded: Bool) async -> String {
-        guard !LumaEnvironment.isTesting, !sessionSuspended else { return "Oruvi está en reposo." }
+        guard allowsPlaybackReads, !sessionSuspended else { return "Oruvi está en reposo." }
         if !connected || demoMode {
             guard connectIfNeeded else { return "Conecta el reproductor en los ajustes de Oruvi." }
-            connectMusic()
+            // The widget requests a fresh read below and awaits its result.
+            connectMusic(readImmediately: false)
         }
         guard connected, !demoMode else { return "Conecta el reproductor en Oruvi." }
         let session = generation, selection = effectivePlayerPreference, source = activePlayer
