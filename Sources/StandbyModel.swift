@@ -272,6 +272,7 @@ final class StandbyModel {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var lyricsRetryAt = 0.0
     @ObservationIgnored private var artworkRetryAt = 0.0
+    @ObservationIgnored private var appleArtworkRetryAt = 0.0
     @ObservationIgnored private var assertion: IOPMAssertionID = 0
     @ObservationIgnored private var hasAssertion = false
     @ObservationIgnored weak var mainWindow: NSWindow?
@@ -502,7 +503,7 @@ final class StandbyModel {
         SystemMediaBridge.shared.setEnabled(!LumaEnvironment.isTesting && effectivePlayerPreference == .automatic,
                                             restarting: restartingSystem)
         invalidatePlaybackRequests()
-        lyricsRetryAt = 0; artworkRetryAt = 0
+        lyricsRetryAt = 0; artworkRetryAt = 0; appleArtworkRetryAt = 0
         playbackReadMilliseconds = nil
         recovery.invalidate(); isResynchronizing = true
         cancelCueTimer()
@@ -529,7 +530,7 @@ final class StandbyModel {
         playerArtworkURL = ""; activeSystemBundleID = ""; systemArtworkData = nil; systemProhibitsSkip = false
         appliedSystemArtwork = nil
         lyricsAvailability = .idle; toastMessage = nil
-        lyricsRetryAt = 0; artworkRetryAt = 0
+        lyricsRetryAt = 0; artworkRetryAt = 0; appleArtworkRetryAt = 0
         lines = []; activeLine = nil; lyricSource = ""; artworkStatus = ""
         playbackOptionsAvailable = false; shuffleEnabled = false; repeatMode = 0
         cancelCueTimer()
@@ -611,7 +612,7 @@ final class StandbyModel {
         activePlayer = source; lastSurfacePlayers[playbackSurface] = source
         if changed {
             lyricsTask?.cancel(); lyricsTask = nil; artworkTask?.cancel(); artworkTask = nil
-            lyricsRetryAt = 0; artworkRetryAt = 0
+            lyricsRetryAt = 0; artworkRetryAt = 0; appleArtworkRetryAt = 0
             track = next; artwork = nil; artworkLink = nil
             appliedSystemArtwork = nil
             lyricsAvailability = .idle
@@ -827,7 +828,9 @@ final class StandbyModel {
         let identity = track, source = activePlayer, artworkURL = playerArtworkURL, allowNetwork = automaticArtwork
         let embedded = systemArtworkData == appliedSystemArtwork ? nil : systemArtworkData
         artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60
-        artworkStatus = "Recuperando portada…"
+        artworkStatus = source == .music && allowNetwork && ProcessInfo.processInfo.systemUptime < appleArtworkRetryAt
+            ? "El catálogo de Apple limitó temporalmente las descargas de portadas."
+            : "Recuperando portada…"
         artworkTask = Task { [weak self, artworkRepository] in
             guard !Task.isCancelled else { return }
             if let embedded {
@@ -871,7 +874,7 @@ final class StandbyModel {
                 if let local {
                     self.setArtwork(local); self.artworkStatus = "Portada de Música"; self.artworkTask = nil; return
                 }
-                if attempt >= 1 && allowNetwork {
+                if attempt >= 1 && allowNetwork && ProcessInfo.processInfo.systemUptime >= self.appleArtworkRetryAt {
                     do {
                         if let remote = try await artworkRepository.load(for: identity) {
                             let decoded = await Task.detached(priority: .utility) { Self.decodeArtwork(remote.data) }.value
@@ -881,15 +884,27 @@ final class StandbyModel {
                                 self.artworkStatus = "Portada · catálogo Apple"; self.artworkTask = nil; return
                             }
                         }
+                    } catch RemoteError.rateLimited(let deadline) {
+                        guard !Task.isCancelled, self.track == identity, self.needsPlayback, self.automaticArtwork else { return }
+                        // Keep checking Music for an embedded image while the catalog is unavailable.
+                        self.appleArtworkRetryAt = deadline
+                        self.artworkStatus = "El catálogo de Apple limitó temporalmente las descargas de portadas."
                     } catch { if Task.isCancelled { return } }
                 }
             }
             guard !Task.isCancelled, let self, self.track == identity else { return }
-            self.artworkStatus = "Portada pendiente; se reintentará automáticamente"
-            self.artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60; self.artworkTask = nil
+            let now = ProcessInfo.processInfo.systemUptime
+            if source == .music && allowNetwork && now < self.appleArtworkRetryAt {
+                self.artworkRetryAt = min(now + 60, self.appleArtworkRetryAt)
+            } else {
+                self.artworkStatus = "Portada pendiente; se reintentará automáticamente"
+                self.artworkRetryAt = now + 60
+            }
+            self.artworkTask = nil
         }
     }
     private func readLocalMusicArtwork(for identity: TrackIdentity) async -> (NSImage, [RGB])? {
+        guard !LumaEnvironment.isTesting else { return nil }
         // A Swift task does not carry its cancellation state into a dispatch queue.
         let cancelled = OSAllocatedUnfairLock(initialState: false)
         let queue = artworkQueue

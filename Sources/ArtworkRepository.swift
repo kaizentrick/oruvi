@@ -81,8 +81,8 @@ actor ArtworkRepository {
             in: sourceURL, range: NSRange(sourceURL.startIndex..<sourceURL.endIndex, in: sourceURL), withTemplate: "/600x600bb.")
         let imageURL = RecordingMatcher.appleArtworkURL(larger) ?? original
         var image = try? await client.get(imageURL, maxBytes: 4_000_000)
-        try Task.checkCancellation()
         try checkAppleLimit(image)
+        try Task.checkCancellation()
         if (image?.status != 200 || !Self.isImage(image?.data ?? Data())), imageURL != original {
             image = try await client.get(original, maxBytes: 4_000_000)
             try checkAppleLimit(image)

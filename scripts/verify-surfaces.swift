@@ -491,6 +491,20 @@ struct VerifySurfaces {
         await until { covers.artworkStatus.contains("limitó temporalmente") }
         applySpotify("spotify-limited", id: "spotify:track:rate")
         expect(covers.artworkStatus.contains("limitó temporalmente"), "the model keeps the rate-limit state on the next playback sample")
+        covers.automaticArtwork = true
+        let musicBeforeLimit = ArtworkFixture.requestCount("/search")
+        let limitedMusic: [String: Any] = ["status": "ok", "source": PlayerSource.music.rawValue,
+                                           "id": rateTrack.id, "title": rateTrack.title, "artist": rateTrack.artist,
+                                           "album": rateTrack.album, "duration": rateTrack.duration]
+        covers.apply(limitedMusic)
+        await until { covers.artworkStatus.contains("catálogo de Apple limitó") }
+        covers.apply(limitedMusic)
+        expect(covers.artworkStatus.contains("catálogo de Apple limitó") &&
+               ArtworkFixture.requestCount("/search") == musicBeforeLimit + 1,
+               "the Apple Music model reports the real cooldown on subsequent playback samples")
+        covers.automaticArtwork = false
+        expect(!covers.artworkStatus.contains("catálogo de Apple limitó"),
+               "disabling the catalog removes its cooldown message without disabling local cover lookup")
         let closedMusic = SystemMediaSnapshot(payload: ["bundleIdentifier": PlayerSource.music.rawValue,
                                                         "title": "Previous song", "playing": true], uptime: 100, epoch: 100)!
         var running: Set<PlayerSource> = [.spotify]
