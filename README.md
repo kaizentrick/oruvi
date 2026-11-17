@@ -36,6 +36,21 @@ Las próximas versiones se descargan desde GitHub con **Ajustes → Actualizacio
 
 Las capturas muestran el modo de demostración con texto y portada de ejemplo.
 
+## Widgets de macOS
+
+**Música y Standby** es el widget de Oruvi para el escritorio. Muestra portada, pista y artista, y permite ir a la pista anterior, reproducir o pausar y saltar a la siguiente cuando el reproductor lo admite. El icono de pantalla abre Standby y pulsar la tarjeta abre el reproductor.
+
+![Widgets de Oruvi en tamaño pequeño y mediano. Ambos muestran portada, pista, artista, controles de reproducción y acceso a Standby](.github/media/widgets.jpg)
+
+La imagen usa las vistas reales del widget y datos de reproducción de demostración.
+
+1. Abre **Oruvi** desde **Aplicaciones** al menos una vez.
+2. Haz clic secundario en el escritorio y elige **Editar widgets**.
+3. Busca **Oruvi**, selecciona **Música y Standby** y añade el tamaño pequeño o mediano.
+4. En el notch, abre **Música**, conecta tu reproductor y empieza a reproducir. El widget toma la pista activa de Oruvi.
+
+Si aparece un aviso de datos compartidos, concede acceso a Oruvi para que el widget pueda leer el estado del reproductor. Si la tarjeta sigue vacía, abre **Ajustes → Widgets → Conectar y actualizar widgets**. macOS gestiona la colocación y el ritmo de refresco.
+
 ## Participa
 
 El código está disponible bajo [MIT](LICENSE). Puedes leerlo, modificarlo y compartirlo conservando el aviso de copyright y el texto de la licencia. Para proponer un cambio, crea un fork y abre un pull request. También puedes [reportar un problema o sugerir una mejora](https://github.com/kaizentrick/oruvi/issues/new). Consulta la [guía para contribuir](.github/CONTRIBUTING.md) y los [avisos de terceros](THIRD_PARTY_NOTICES.md).
@@ -94,7 +109,7 @@ El selector permanece visible incluso sin canción. Detecta aplicaciones mediant
 
 Solo existe un muestreador de reproducción: al entrar o salir de Standby usa la preferencia de la superficie visible, cancela contenido pendiente y descarta respuestas antiguas. No se añaden dos bucles permanentes de consulta. El permiso o la desconexión de una superficie no modifica la selección guardada de la otra.
 
-## Widgets nativos de macOS
+## Cómo se sincroniza el widget
 
 Oruvi incorpora una extensión **WidgetKit** real, `OruviWidgets.appex`, dentro de la app. Se elimina la tarjeta flotante de 0.9.1: no hay otra ventana, chincheta ni temporizador gráfico de escritorio como sustituto del widget.
 

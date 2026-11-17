@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0 — Estabilidad del reproductor, Standby y widgets
+
+- **Reproducción y letras.** El arrastre de la barra queda ligado a la pista en la que empezó. Las letras y portadas descartadas dejan de ocupar la cola de consultas al cambiar de pista o de vista.
+- **Notch y Standby.** Reabrir Standby conserva la pantalla y la presentación. El notch libera el teclado al perder el foco y cancela acciones de menú pendientes al ocultarse.
+- **Widgets de macOS.** El widget, el notch y Standby suspenden las consultas al bloquear la sesión. El widget retira los controles y los datos de reproducción de su estado compartido hasta que la sesión vuelve a estar activa.
+- **Conexiones y Agenda.** Cursor conserva la espera entre consultas al reabrir el panel. Agenda vuelve a comprobar su permiso al regresar de Ajustes del Sistema y empieza a leer eventos solo después de conectarla en Oruvi.
+
 ## 0.14.1 — Estado de actualización y guía de la comunidad
 
 - Ajustes muestra **Oruvi está al día** cuando Sparkle confirma que tienes la última versión. Los errores de conexión y firma conservan su aviso.
