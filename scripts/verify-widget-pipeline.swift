@@ -96,6 +96,22 @@ import os
         check(artworkChange.wait(timeout: .now()) == .timedOut && model.artwork === verifiedCover &&
               store.read()?.artwork == corrected?.artwork && model.artworkStatus == "Portada del reproductor",
               "Reverting to the already displayed cover cancels a superseded decode without publishing it")
+        model.apply(["status": "transition"])
+        model.apply(["status": "error"])
+        try await settle()
+        let synchronizing = store.read()
+        check(synchronizing?.title == "Video A" && synchronizing?.artwork == corrected?.artwork &&
+              synchronizing?.message == "Sincronizando canción…" && synchronizing?.canControl == false,
+              "Transition publishes a synchronization message and withdraws controls without discarding the cover")
+        model.apply(playback)
+        try await settle()
+        check(store.read()?.trackID == "browser-A" && store.read()?.canControl == true && store.read()?.message.isEmpty == true,
+              "Confirming the same track restores widget controls without requiring a metadata change")
+        let synchronizationChange = DispatchSemaphore(value: 0)
+        withObservationTracking { _ = model.isResynchronizing } onChange: { synchronizationChange.signal() }
+        model.apply(playback)
+        check(synchronizationChange.wait(timeout: .now()) == .timedOut,
+              "Unchanged playback samples do not wake the widget through synchronization state")
         model.apply(["status":"ok", "source":"oruvi.system", "id":"browser-B", "title":"Video B", "artist":"Channel B", "album":"", "duration":100, "position":0, "playing":false])
         try await settle()
         check(store.read()?.title == "Video B" && store.read()?.playing == false, "Track and pause propagate together")
@@ -110,7 +126,8 @@ import os
         check(store.read()?.state == .sleeping, "Partial wake keeps the published widget asleep")
         model.setSuspended(false, source: .system)
         try await settle()
-        check(store.read()?.title == "Video B", "Wake restores current state")
+        check(store.read()?.title == "Video B" && store.read()?.canControl == false,
+              "Wake keeps the last known presentation while awaiting a fresh sample")
         model.setSuspended(true, source: .locked)
         try await settle()
         check(store.read()?.state == .sleeping && store.read()?.trackID.isEmpty == true &&
@@ -124,9 +141,8 @@ import os
         try await settle()
         check(store.read()?.title == "Video B" && model.needsPlayback, "Active session restores widget playback demand")
         for source in ["com.apple.Music", "com.spotify.client"] {
-            model.track = TrackIdentity(id: source, title: "Song", artist: "Artist", album: "Album", duration: 100, sourceID: source)
-            model.activePlayer = PlayerSource(rawValue: source)!
-            model.anchor.playing = true
+            model.apply(["status": "ok", "source": source, "id": source, "title": "Song",
+                         "artist": "Artist", "album": "Album", "duration": 100, "playing": true])
             model.artwork = NSImage(cgImage: bitmap.makeImage()!, size: NSSize(width:384,height:384))
             model.palette = Array(repeating: RGB(r: 0.4, g: 0.4, b: 0.4), count: 4)
             try await settle()

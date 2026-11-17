@@ -658,7 +658,8 @@ final class StandbyModel {
         let rate = SafePreference.number(reportedRate, range: 0...16, fallback: 1)
         // Keep TrackIdentity stable for lyrics and artwork, but use the newest duration for transport.
         anchor = PlaybackAnchor(position: adjusted, uptime: sample, duration: next.duration, playing: playing, rate: rate)
-        recovery.succeed(at: sample); isResynchronizing = false
+        recovery.succeed(at: sample)
+        if isResynchronizing { isResynchronizing = false }
         let duration = (snapshot["playbackReadDuration"] as? NSNumber)?.doubleValue
         let milliseconds = duration.flatMap { $0 >= 0 ? Int(exactly: ($0 * 1000).rounded()) : nil }
         if playbackReadMilliseconds != milliseconds { playbackReadMilliseconds = milliseconds }
@@ -721,7 +722,7 @@ final class StandbyModel {
                                  sourceID: String, preference: String) async -> String {
         guard ["previous", "toggle", "next"].contains(command), !LumaEnvironment.isTesting,
               connected, !demoMode, !sessionSuspended else { return "Conecta los controles en Oruvi." }
-        guard expectedTrackID == track.id, sourceID == activePlayer.rawValue,
+        guard !isResynchronizing, expectedTrackID == track.id, sourceID == activePlayer.rawValue,
               preference == effectivePlayerPreference.rawValue else {
             _ = await synchronizeNativeWidget(connectIfNeeded: false)
             return "El contenido cambió. Vuelve a pulsar el control."

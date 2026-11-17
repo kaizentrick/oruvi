@@ -163,6 +163,7 @@ final class NativeWidgetController {
         withObservationTracking {
             _ = model.track; _ = model.artwork; _ = model.playbackIsPlaying
             _ = model.connected; _ = model.sessionSuspended; _ = model.demoMode
+            _ = model.isResynchronizing
             _ = model.effectivePlayerPreference; _ = model.playbackSurface; _ = model.activePlayer
             _ = model.systemProhibitsSkip; _ = model.activeSystemBundleID; _ = model.palette
         } onChange: { [weak self] in
@@ -239,20 +240,29 @@ final class NativeWidgetController {
         } else if !model.hasTrack {
             value.state = .idle; value.title = "Nada en reproducción"; value.artist = "Elige una canción en tu reproductor."
         } else {
-            value.state = .ready; value.trackID = model.track.id; value.sourceID = model.activePlayer.rawValue
+            value.state = .ready; value.sourceID = model.activePlayer.rawValue
             let source = model.activePlayer
             let systemApp = source == .system ? NSRunningApplication.runningApplications(withBundleIdentifier: model.activeSystemBundleID).first : nil
             value.sourceName = String((systemApp?.localizedName ?? source.name).prefix(512))
             value.title = String(model.track.title.prefix(512))
             value.artist = String((model.track.artist.isEmpty ? model.activePlayer.name : model.track.artist).prefix(512))
-            value.playing = model.playbackIsPlaying; value.canSkip = model.canSkip
+            value.playing = model.playbackIsPlaying
+            if model.isResynchronizing {
+                // An empty command identity disables transport in older widgets too.
+                value.message = "Sincronizando canción…"
+                value.canSkip = false
+            } else {
+                value.trackID = model.track.id
+                value.canSkip = model.canSkip
+            }
         }
         return value
     }
     private func publishNow(force: Bool = false, reload: Bool = true, message: String = "") async {
         guard started, !stopped, force || Date() >= retryWriteAt else { return }
         serial += 1; let work = serial
-        var value = makeSnapshot(); value.message = message
+        var value = makeSnapshot()
+        if !message.isEmpty { value.message = message }
         if value.state == .ready, let image = model.artwork {
             let palette = model.palette
             let artworkSource = model.activePlayer == .system ? model.activeSystemBundleID : value.sourceID
