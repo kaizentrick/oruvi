@@ -40,9 +40,9 @@ Standby se capturó mientras Apple Music reproducía **In the End**, de **LINKIN
 
 **Música y Standby** es el widget de Oruvi para el escritorio. Muestra portada, pista y artista, y permite ir a la pista anterior, reproducir o pausar y saltar a la siguiente cuando el reproductor lo admite. El icono de pantalla abre Standby y pulsar la tarjeta abre el reproductor.
 
-![Widgets de Oruvi en tamaño pequeño y mediano. Ambos muestran portada, pista, artista, controles de reproducción y acceso a Standby](.github/media/widgets.jpg)
+![Widget pequeño de Oruvi en el escritorio de macOS con la portada de Hybrid Theory, la pista In the End y los controles de Apple Music](.github/media/widgets.jpg)
 
-La imagen renderiza las vistas del widget con la misma pista y la portada de **Hybrid Theory**.
+Captura del widget pequeño en el escritorio, con **In the End** en pausa. También está disponible en tamaño mediano.
 
 1. Abre **Oruvi** desde **Aplicaciones** al menos una vez.
 2. Haz clic secundario en el escritorio y elige **Editar widgets**.
