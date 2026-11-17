@@ -34,13 +34,21 @@ La beta se instala manualmente. El canal estable usa Sparkle para verificar y de
 
 ### Si macOS bloquea el primer inicio
 
-Esta beta todavía no está notarizada. Si al abrir Oruvi desde **Aplicaciones** aparece «No se abrió Oruvi» y descargaste el DMG de este repositorio:
+La beta se distribuye sin Developer ID ni notarización. Si abriste Oruvi desde **Aplicaciones** y macOS dice que no pudo verificarla, puedes autorizar la copia que descargaste de este repositorio.
 
-1. Pulsa **Listo**.
-2. Abre **Ajustes del Sistema → Privacidad y seguridad**. Desplázate hasta **Seguridad** y pulsa **Abrir igualmente** junto al aviso de Oruvi.
-3. Confirma con **Abrir**. Si macOS te lo pide, autentícate con tu usuario.
+**1. Cierra el aviso con Listo.** Deja Oruvi en **Aplicaciones**.
 
-La autorización se guarda para esa copia de Oruvi. Puedes verificar la integridad del DMG con **SHA256SUMS.txt** en las notas de la beta. [Guía de Apple](https://support.apple.com/es-mx/102445)
+![Ilustración del aviso No se abrió Oruvi con el botón Listo señalado](.github/media/oruvi-primer-aviso.png)
+
+**2. Abre Ajustes del Sistema → Privacidad y seguridad.** Baja hasta **Seguridad** y pulsa **Abrir igualmente** junto al aviso de Oruvi.
+
+![Ilustración de Privacidad y seguridad con el botón Abrir igualmente junto al aviso de Oruvi](.github/media/oruvi-abrir-igualmente.png)
+
+**3. Confirma con Abrir.** Si macOS lo pide, autentícate. La autorización queda guardada para esa copia de Oruvi.
+
+Si el botón no aparece, intenta abrir Oruvi otra vez **desde Aplicaciones** y vuelve enseguida a **Privacidad y seguridad**. Si tu Mac está administrada, la política del equipo puede impedir la excepción. [Guía de Apple](https://support.apple.com/es-mx/102445)
+
+Puedes comprobar la integridad del DMG con **SHA256SUMS.txt** en las [notas de la beta](https://github.com/kaizentrick/oruvi/releases/tag/v0.15.0-beta.1).
 
 ## Explora Oruvi
 
