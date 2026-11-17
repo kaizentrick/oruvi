@@ -138,8 +138,13 @@ final class StandbyModel {
     var reduceMotion = false
     var reduceTransparency = false
     @ObservationIgnored private var suspensionSources: Set<SessionSuspension> = []
+    @ObservationIgnored let sessionSuspensionGeneration = OSAllocatedUnfairLock(initialState: 0)
     private(set) var sessionSuspended = false {
-        didSet { if started && oldValue != sessionSuspended { policyChanged() } }
+        didSet {
+            guard oldValue != sessionSuspended else { return }
+            sessionSuspensionGeneration.withLock { $0 += 1 }
+            if started { policyChanged() }
+        }
     }
     private(set) var playbackReadMilliseconds: Int?
     var settingsOpen = false

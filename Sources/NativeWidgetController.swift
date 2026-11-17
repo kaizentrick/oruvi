@@ -33,12 +33,14 @@ private final class WidgetPublicationStorage: @unchecked Sendable {
 
     init(resolve: @escaping @Sendable () -> WidgetSnapshotStore) { self.resolve = resolve }
 
-    func writeVerified(_ snapshot: WidgetSnapshot) -> WidgetPublicationError? {
+    func writeVerified(_ snapshot: WidgetSnapshot, isCurrent: () -> Bool) -> WidgetPublicationError? {
         let (closed, cached) = lock.withLock { (self.closed, needsResolution ? nil : store) }
         guard !closed else { return .storageFailure }
+        guard isCurrent() else { return nil }
         let target = cached ?? resolve()
         return lock.withLock {
             guard !self.closed else { return .storageFailure }
+            guard isCurrent() else { return nil }
             guard target.directory != nil else {
                 needsResolution = true
                 return .containerUnavailable
@@ -47,6 +49,7 @@ private final class WidgetPublicationStorage: @unchecked Sendable {
             store = target
             do {
                 try target.write(snapshot)
+                guard isCurrent() else { target.clear(); return nil }
                 guard target.read() == snapshot else {
                     needsResolution = true
                     return .storageFailure
@@ -117,6 +120,7 @@ final class NativeWidgetController {
     @ObservationIgnored private var lastQuery = Date.distantPast
     @ObservationIgnored private var querying = false
     @ObservationIgnored private var retryWriteAt = Date.distantPast
+    @ObservationIgnored private var lastObservedSuspension = false
     @ObservationIgnored private var lastDistributedDemand = Date.distantPast
     @ObservationIgnored private let io = DispatchQueue(label: "com.kaizentrick.Oruvi.widget-cache", qos: .utility)
     #if LUMA_QA
@@ -169,7 +173,10 @@ final class NativeWidgetController {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.trackChanges() }
         }
-        requestPublication()
+        let suspended = model.sessionSuspended
+        let enteringSuspension = suspended && !lastObservedSuspension
+        lastObservedSuspension = suspended
+        requestPublication(force: enteringSuspension)
     }
     func receiveDemand(at date: Date = Date()) {
         guard started, !stopped else { return }
@@ -261,6 +268,8 @@ final class NativeWidgetController {
     private func publishNow(force: Bool = false, reload: Bool = true, message: String = "") async {
         guard started, !stopped, force || Date() >= retryWriteAt else { return }
         serial += 1; let work = serial
+        let suspension = model.sessionSuspensionGeneration
+        let generation = suspension.withLock { $0 }
         var value = makeSnapshot()
         if !message.isEmpty { value.message = message }
         if value.state == .ready, let image = model.artwork {
@@ -295,15 +304,15 @@ final class NativeWidgetController {
             }
         }
         guard !stopped, !Task.isCancelled, work == serial,
-              (value.state == .sleeping) == model.sessionSuspended, policy.needsWrite(value, force: force) else { return }
+              suspension.withLock({ $0 == generation }), policy.needsWrite(value, force: force) else { return }
         let failure = await withCheckedContinuation { continuation in
             io.async { [storage, value] in
                 // Container lookup may ask for access. Do not block the UI, and
                 // never keep a failed nil-container result forever after consent.
-                continuation.resume(returning: storage.writeVerified(value))
+                continuation.resume(returning: storage.writeVerified(value) { suspension.withLock { $0 == generation } })
             }
         }
-        guard !stopped, work == serial else { return }
+        guard !stopped, work == serial, suspension.withLock({ $0 == generation }) else { return }
         if let failure {
             retryWriteAt = Date().addingTimeInterval(60)
             storageError = failure.message

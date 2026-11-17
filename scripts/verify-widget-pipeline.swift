@@ -218,6 +218,38 @@ import os
         check(!recovery.sharingVerified && recovery.lastPublishedAt != nil &&
               recovery.connectionSummary == "Revisar sincronización",
               "An earlier successful publication cannot make a current synchronization failure look healthy")
+        model.setSuspended(true, source: .locked)
+        try await settle()
+        check(store.read()?.state == .sleeping && store.read()?.trackID.isEmpty == true && recovery.storageError.isEmpty,
+              "Lock publishes a clean snapshot even during the ordinary write retry delay")
+        recovery.stop()
+        let lockedStore = WidgetSnapshotStore(directory: root.appendingPathComponent("lock-overlap"))
+        let lockModel = StandbyModel()
+        defer { lockModel.shutdown() }
+        lockModel.connected = true
+        lockModel.apply(["status": "ok", "source": "oruvi.system", "id": "interrupted-track",
+                         "title": "Current media", "duration": 120, "playing": true])
+        let lockStarted = DispatchSemaphore(value: 0)
+        let lockLookups = OSAllocatedUnfairLock(initialState: 0)
+        let interruptedSnapshotStayedPrivate = OSAllocatedUnfairLock(initialState: false)
+        let lockController = NativeWidgetController(model: lockModel, resolveStore: {
+            let attempt = lockLookups.withLock { $0 += 1; return $0 }
+            if attempt == 1 {
+                DispatchQueue.main.async {
+                    lockModel.setSuspended(true, source: .locked)
+                    lockStarted.signal()
+                }
+                precondition(lockStarted.wait(timeout: .now() + 3) == .success)
+            } else if attempt == 2 {
+                interruptedSnapshotStayedPrivate.withLock { $0 = lockedStore.read() == nil }
+            }
+            return lockedStore
+        })
+        defer { lockController.stop() }
+        lockController.startForVerification {}
+        try await settle()
+        check(interruptedSnapshotStayedPrivate.withLock { $0 } && lockedStore.read()?.state == .sleeping,
+              "A lock during App Group lookup discards the old media write before publishing sleep")
         let widgetReads = OSAllocatedUnfairLock(initialState: 0)
         let musicAllowed = OSAllocatedUnfairLock(initialState: true)
         let widgetRouter = PlayerRouter(isRunning: { _ in true }, readNative: { source in
