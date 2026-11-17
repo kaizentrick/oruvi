@@ -4,7 +4,8 @@ NS_ASSUME_NONNULL_BEGIN
 NSDictionary<NSString *, id> *LumaReadMusicSnapshot(void);
 NSDictionary<NSString *, id> *LumaMusicCommand(NSString *command, double position, BOOL checkPlayerState);
 /// Call only on a separate serial artwork queue. A stalled cover never blocks playback reads.
-NSData * _Nullable LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle, NSString *expectedAlbum);
+NSData * _Nullable LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle, NSString *expectedAlbum,
+                                      BOOL (^isCancelled)(void));
 void LumaResetMusicBridge(void);
 BOOL LumaValidateMusicBindings(void);
 NSDictionary<NSString *, id> *OruviReadSpotifySnapshot(void);

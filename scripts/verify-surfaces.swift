@@ -19,6 +19,13 @@ struct VerifySurfaces {
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             count += 1; precondition(condition(), message)
         }
+        var checkedArtworkCancellation = false
+        let cancelledArtwork = LumaReadMusicArtwork("unused", "unused", "") {
+            checkedArtworkCancellation = true
+            return true
+        }
+        expect(cancelledArtwork == nil && checkedArtworkCancellation,
+               "A cancelled cover lookup stops at entry to the Apple Music bridge")
         defaults.set(false, forKey: "notchAgendaEnabled")
         var calendarPermission = EKAuthorizationStatus.denied
         let permissionAgenda = NotchAgenda(authorizationStatus: { calendarPermission })

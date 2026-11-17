@@ -866,12 +866,7 @@ final class StandbyModel {
                     } catch { if Task.isCancelled { return } }
                     continue
                 }
-                let local: (NSImage, [RGB])? = await withCheckedContinuation { continuation in
-                    self.artworkQueue.async {
-                        let result = LumaReadMusicArtwork(identity.id, identity.title, identity.album).flatMap(Self.decodeArtwork)
-                        continuation.resume(returning: result)
-                    }
-                }
+                let local = await self.readLocalMusicArtwork(for: identity)
                 guard !Task.isCancelled, self.track == identity, self.needsPlayback else { return }
                 if let local {
                     self.setArtwork(local); self.artworkStatus = "Portada de Música"; self.artworkTask = nil; return
@@ -892,6 +887,24 @@ final class StandbyModel {
             guard !Task.isCancelled, let self, self.track == identity else { return }
             self.artworkStatus = "Portada pendiente; se reintentará automáticamente"
             self.artworkRetryAt = ProcessInfo.processInfo.systemUptime + 60; self.artworkTask = nil
+        }
+    }
+    private func readLocalMusicArtwork(for identity: TrackIdentity) async -> (NSImage, [RGB])? {
+        // A Swift task does not carry its cancellation state into a dispatch queue.
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        let queue = artworkQueue
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                queue.async {
+                    let bytes = LumaReadMusicArtwork(identity.id, identity.title, identity.album) {
+                        cancelled.withLock { $0 }
+                    }
+                    let artwork = cancelled.withLock({ $0 }) ? nil : bytes.flatMap(Self.decodeArtwork)
+                    continuation.resume(returning: artwork)
+                }
+            }
+        } onCancel: {
+            cancelled.withLock { $0 = true }
         }
     }
     private func setArtwork(_ decoded: (NSImage, [RGB]), link: URL? = nil, systemData: Data? = nil, spotifyURL: String? = nil) {

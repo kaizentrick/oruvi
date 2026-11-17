@@ -157,30 +157,32 @@ static NSData *ArtworkBytes(id raw) {
     else if ([raw isKindOfClass:NSImage.class]) data = [(NSImage *)raw TIFFRepresentation];
     return data.length > 0 && data.length <= 8 * 1024 * 1024 ? data : nil;
 }
-NSData *LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle, NSString *expectedAlbum) {
+NSData *LumaReadMusicArtwork(NSString *expectedID, NSString *expectedTitle, NSString *expectedAlbum,
+                             BOOL (^isCancelled)(void)) {
     @autoreleasepool {
+        if (isCancelled()) return nil;
         LumaBridgeState *bridge = ArtworkBridge(); bridge.error = nil;
         if (![bridge.app isRunning]) return nil;
         @try {
             LumaMusicTrack *track = [bridge.app.currentTrack get];
-            if (bridge.error || !track) return nil;
+            if (bridge.error || !track || isCancelled()) return nil;
             NSString *title = Text(track.name);
             if (bridge.error || ![title isEqualToString:expectedTitle]) return nil;
             NSString *identifier = Identity(Text(track.persistentID), title);
             if (bridge.error || ![identifier isEqualToString:expectedID]) return nil;
-            if (![Text(track.album) isEqualToString:expectedAlbum] || bridge.error) return nil;
+            if (![Text(track.album) isEqualToString:expectedAlbum] || bridge.error || isCancelled()) return nil;
             SBElementArray *artworks = [track artworks];
-            if (bridge.error || artworks.count == 0) return nil;
+            if (bridge.error || artworks.count == 0 || isCancelled()) return nil;
             LumaMusicArtwork *artwork = [artworks objectAtIndex:0];
             NSData *data = ArtworkBytes(artwork.rawData);
-            if (bridge.error.code == -1743) return nil;
+            if (bridge.error.code == -1743 || isCancelled()) return nil;
             bridge.error = nil;
             if (!data) data = ArtworkBytes(artwork.data);
-            if (!data || bridge.error) return nil;
+            if (!data || bridge.error || isCancelled()) return nil;
             LumaMusicTrack *current = [bridge.app.currentTrack get];
             NSString *currentTitle = Text(current.name);
             NSString *currentID = Identity(Text(current.persistentID), currentTitle);
-            return !bridge.error && [currentID isEqualToString:expectedID] &&
+            return !bridge.error && !isCancelled() && [currentID isEqualToString:expectedID] &&
                 [currentTitle isEqualToString:expectedTitle] ? data : nil;
         } @catch (NSException *exception) { return nil; }
     }
