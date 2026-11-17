@@ -117,6 +117,31 @@ struct TrackIdentity: Equatable, Codable, Sendable {
     static let empty = TrackIdentity(id: "", title: "Tu música, en calma.", artist: "Conecta la app Música de este Mac", album: "", duration: 0)
 }
 
+enum PlaybackScrub {
+    case idle, dragging(TrackIdentity, Double), invalidated
+
+    func preview(on track: TrackIdentity) -> Double? {
+        guard case .dragging(let original, let fraction) = self, original == track else { return nil }
+        return fraction
+    }
+
+    mutating func update(fraction: Double, on track: TrackIdentity) {
+        if case .idle = self { self = .dragging(track, fraction) }
+        else if preview(on: track) != nil { self = .dragging(track, fraction) }
+        else { self = .invalidated }
+    }
+
+    mutating func invalidate() {
+        if case .dragging = self { self = .invalidated }
+    }
+
+    mutating func finish(fraction: Double, on track: TrackIdentity, duration: Double) -> Double? {
+        defer { self = .idle }
+        guard preview(on: track) != nil else { return nil }
+        return fraction * duration
+    }
+}
+
 enum EnergyMode: String, CaseIterable, Identifiable {
     case adaptive = "Automático", saver = "Ahorro", fluid = "Fluido"
     var id: String { rawValue }

@@ -289,7 +289,7 @@ final class StandbyModel {
     }
     var hasTrack: Bool { !track.id.isEmpty }
     var canSkip: Bool { hasTrack && !systemProhibitsSkip }
-    var canSeek: Bool { canSkip && anchor.duration > 0 && !isResynchronizing }
+    var canSeek: Bool { canSkip && anchor.duration > 0 && !isResynchronizing && !sessionSuspended }
 
     func lyricSeekPosition(at index: Int) -> TimeInterval? {
         guard canSeek, lines.indices.contains(index) else { return nil }

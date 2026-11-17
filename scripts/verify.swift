@@ -92,6 +92,25 @@ struct ReleaseVerification {
         check(paused.value(at: 25) == 10 && paused.delay(until: 12, at: 25) == nil, "Pause freezes the lyric clock")
         check(PlaybackTime.format(121.9) == "2:01" && PlaybackTime.format(-2) == "0:00", "Playback time rounds down and clamps negative remaining time")
         check(PlaybackTime.format(.greatestFiniteMagnitude) == "—" && PlaybackTime.format(.nan) == "—", "Unknown or out-of-range media time never traps")
+        let firstTrack = TrackIdentity(id: "first", title: "First", artist: "", album: "", duration: 100)
+        var nextTrack = firstTrack
+        nextTrack.id = "next"
+        var scrub = PlaybackScrub.idle
+        scrub.update(fraction: 0.25, on: firstTrack)
+        check(scrub.preview(on: firstTrack) == 0.25 && scrub.preview(on: nextTrack) == nil,
+              "A preview stays tied to the track that began the drag")
+        scrub.update(fraction: 0.5, on: nextTrack)
+        scrub.update(fraction: 0.75, on: firstTrack)
+        check(scrub.finish(fraction: 0.75, on: firstTrack, duration: 100) == nil,
+              "The same drag cannot bind to a different track or revive after switching back")
+        scrub.update(fraction: 0.5, on: nextTrack)
+        scrub.invalidate()
+        scrub.update(fraction: 0.6, on: nextTrack)
+        check(scrub.finish(fraction: 0.6, on: nextTrack, duration: 100) == nil,
+              "Loss of seek capability cancels the gesture even if it returns before release")
+        scrub.update(fraction: 0.5, on: nextTrack)
+        check(scrub.finish(fraction: 0.75, on: nextTrack, duration: 120) == 90 && scrub.preview(on: nextTrack) == nil,
+              "A fresh drag seeks using the current duration and clears its preview")
         var render = RenderPolicy(visible: true, onBattery: false, lowPower: false, hot: false, reduceMotion: false, mode: .adaptive)
         check(render.framesPerSecond == 24, "standby adapts to 24 fps on AC power")
         render.onBattery = true

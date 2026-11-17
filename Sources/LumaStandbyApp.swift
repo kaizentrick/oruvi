@@ -325,7 +325,7 @@ struct TrackProgress: View {
     let model: StandbyModel
     var prominent = false
     @Environment(\.colorScheme) private var scheme
-    @State private var dragProgress: Double?
+    @State private var scrub = PlaybackScrub.idle
     var body: some View {
         Group {
             if model.anchor.playing && model.policy.visible && !model.isResynchronizing {
@@ -337,11 +337,11 @@ struct TrackProgress: View {
     private var progress: some View {
         let position = model.anchor.value(at: ProcessInfo.processInfo.systemUptime)
         let duration = model.anchor.duration
-        let shownPosition = model.canSeek ? (dragProgress.map { $0 * duration } ?? position) : position
+        let shownPosition = model.canSeek ? (scrub.preview(on: model.track).map { $0 * duration } ?? position) : position
         return VStack(spacing: 7) {
             if duration > 0 {
                 PlaybackScrubber(model: model, position: position, thickness: prominent ? 5 : 3,
-                                 trackColor: .primary.opacity(0.14), fillColor: .primary.opacity(0.75), dragProgress: $dragProgress)
+                                 trackColor: .primary.opacity(0.14), fillColor: .primary.opacity(0.75), scrub: $scrub)
                     .frame(height: prominent ? 20 : 12)
             }
             HStack {
@@ -364,14 +364,15 @@ struct PlaybackScrubber: View {
     let thickness: CGFloat
     let trackColor: Color
     let fillColor: Color
-    @Binding var dragProgress: Double?
-    @State private var draggedTrack: TrackIdentity?
+    @Binding var scrub: PlaybackScrub
+    @GestureState private var gestureActive = false
 
     var body: some View {
         GeometryReader { geometry in
             let duration = model.anchor.duration
             let width = geometry.size.width
-            let fraction = (model.canSeek ? dragProgress : nil) ?? unit(position / duration)
+            let renderedTrack = model.track
+            let fraction = (model.canSeek ? scrub.preview(on: renderedTrack) : nil) ?? unit(position / duration)
             let positionDescription = PlaybackTime.format(position) + " de " + PlaybackTime.format(duration)
             let bar = Capsule().fill(trackColor)
                 .overlay(alignment: .leading) {
@@ -381,19 +382,18 @@ struct PlaybackScrubber: View {
                 .contentShape(Rectangle())
             if model.canSeek {
                 bar.gesture(DragGesture(minimumDistance: 0)
+                    .updating($gestureActive) { _, active, _ in active = true }
                     .onChanged { value in
-                        if draggedTrack == nil { draggedTrack = model.track }
-                        dragProgress = unit(value.location.x / max(1, width))
+                        scrub.update(fraction: unit(value.location.x / max(1, width)), on: renderedTrack)
                     }
                     .onEnded { value in
-                        if draggedTrack == model.track {
-                            model.control("seek", position: unit(value.location.x / max(1, width)) * model.anchor.duration)
-                        }
-                        resetDrag()
+                        let target = scrub.finish(fraction: unit(value.location.x / max(1, width)),
+                                                  on: model.track, duration: model.anchor.duration)
+                        if let target { model.control("seek", position: target) }
                     })
                     .accessibilityRepresentation {
                         Slider(value: Binding(get: { duration * unit(position / duration) },
-                                              set: { model.control("seek", position: $0) }),
+                                              set: { if model.track == renderedTrack { model.control("seek", position: $0) } }),
                                in: 0...duration, step: min(5, duration)) {
                             Text("Posición de reproducción")
                         }.accessibilityValue(positionDescription)
@@ -402,12 +402,12 @@ struct PlaybackScrubber: View {
                 bar.accessibilityRepresentation { Text("Posición de reproducción, \(positionDescription)") }
             }
         }
-        .onChange(of: model.track) { _, _ in resetDrag() }
-        .onChange(of: model.canSeek) { _, _ in resetDrag() }
-        .onDisappear { resetDrag() }
+        .onChange(of: model.track) { _, _ in scrub.invalidate() }
+        .onChange(of: model.canSeek) { _, _ in scrub.invalidate() }
+        .onChange(of: gestureActive) { _, active in if !active { scrub = .idle } }
+        .onDisappear { scrub = .idle }
     }
     private func unit(_ value: Double) -> Double { min(1, max(0, value)) }
-    private func resetDrag() { dragProgress = nil; draggedTrack = nil }
 }
 
 private struct WindowAccessor: NSViewRepresentable {
