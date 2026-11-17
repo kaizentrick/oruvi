@@ -163,6 +163,17 @@ struct VerifySurfaces {
         cueSample["position"] = 120
         model.apply(cueSample)
         expect(model.scheduledLyricCue == nil, "a line past the known end of the track never schedules a wake")
+        model.apply(["status": "error"])
+        expect(!model.isResynchronizing && model.currentLyricText == "Current" && model.canSeek,
+               "a brief timeout keeps the recently confirmed lyric and controls")
+        model.apply(["status": "transition"])
+        model.apply(["status": "error"])
+        expect(model.isResynchronizing && model.currentLyricText == nil && !model.canSeek && model.scheduledLyricCue == nil,
+               "a timeout after a transition cannot restore stale lyrics or seeking")
+        cueSample["sampleUptime"] = ProcessInfo.processInfo.systemUptime
+        model.apply(cueSample)
+        expect(!model.isResynchronizing && model.currentLyricText == "Current" && model.canSeek,
+               "a valid sample can restore lyrics and seeking immediately")
         model.notchPlayerPreference = .automatic
         defaults.set(false, forKey: "musicEnabled")
         defaults.set(false, forKey: "notchMusicEnabled")

@@ -146,7 +146,12 @@ final class StandbyModel {
     var settingsOpen = false
     var settingsSection: SettingsSection = .typography
     var isResynchronizing = true {
-        didSet { if isResynchronizing { cancelPendingArtwork() } }
+        didSet {
+            if isResynchronizing {
+                stopLyricsUpdates()
+                cancelPendingArtwork()
+            }
+        }
     }
     var automaticActivationStatus = "En espera"
     var automaticActivationPause: IdleActivationPause?
@@ -585,11 +590,11 @@ final class StandbyModel {
             return
         }
         guard status == "ok" else {
-            // One brief timeout is not a pause or a different recording. Retain a recent cue
-            // while retrying, but conceal it during track transitions or a prolonged outage.
+            // A brief timeout can keep a recently confirmed cue visible. Only a
+            // valid sample can confirm the recording again after a transition.
             recovery.fail()
             let age = ProcessInfo.processInfo.systemUptime - (recovery.lastSuccess ?? -.greatestFiniteMagnitude)
-            isResynchronizing = status == "transition" || age > 3 || !hasTrack
+            if status == "transition" || age > 3 || !hasTrack { isResynchronizing = true }
             connectionStatus = snapshot["message"] as? String ?? "Actualizando canción…"
             updateCue(); return
         }
